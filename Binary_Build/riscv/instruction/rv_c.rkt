@@ -1,0 +1,30 @@
+#lang racket
+(require "../../base.rkt"
+         "../base_range.rkt"
+         "../register.rkt")
+
+(define c.addi4spn (make-instruction rd_p c_nzuimm10 (bit-range-fixed 1 0 0) (bit-range-fixed 15 13 0)))
+(define c.lw (make-instruction rd_p rs1_p c_uimm7 (bit-range-fixed 1 0 0) (bit-range-fixed 15 13 2)))
+(define c.sw (make-instruction rs1_p rs2_p c_uimm7 (bit-range-fixed 1 0 0) (bit-range-fixed 15 13 6)))
+(define c.nop (make-instruction c_nzimm6 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 0) (bit-range-fixed 11 7 0)))
+(define c.addi (make-instruction rd_rs1_n0 c_nzimm6 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 0)))
+(define c.li (make-instruction rd_n0 c_imm6 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 2)))
+(define c.addi16sp (make-instruction c_nzimm10 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 3) (bit-range-fixed 11 7 2)))
+(define c.lui (make-instruction rd_n2 c_nzimm18 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 3)))
+(define c.andi (make-instruction rd_rs1_p c_imm6 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 4) (bit-range-fixed 11 10 2)))
+(define c.sub (make-instruction rd_rs1_p rs2_p (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 4) (bit-range-fixed 12 10 3) (bit-range-fixed 6 5 0)))
+(define c.xor (make-instruction rd_rs1_p rs2_p (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 4) (bit-range-fixed 12 10 3) (bit-range-fixed 6 5 1)))
+(define c.or (make-instruction rd_rs1_p rs2_p (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 4) (bit-range-fixed 12 10 3) (bit-range-fixed 6 5 2)))
+(define c.and (make-instruction rd_rs1_p rs2_p (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 4) (bit-range-fixed 12 10 3) (bit-range-fixed 6 5 3)))
+(define c.j (make-instruction c_imm12 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 5)))
+(define c.beqz (make-instruction rs1_p c_bimm9 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 6)))
+(define c.bnez (make-instruction rs1_p c_bimm9 (bit-range-fixed 1 0 1) (bit-range-fixed 15 13 7)))
+(define c.lwsp (make-instruction rd_n0 c_uimm8sp (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 2)))
+(define c.jr (make-instruction rs1_n0 12=0 (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 4) (bit-range-fixed 6 2 0)))
+(define c.mv (make-instruction rd_n0 c_rs2_n0 12=0 (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 4)))
+(define c.ebreak (make-instruction 12=1 (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 4) (bit-range-fixed 11 2 0)))
+(define c.jalr (make-instruction c_rs1_n0 12=1 (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 4) (bit-range-fixed 6 2 0)))
+(define c.add (make-instruction rd_rs1_n0 c_rs2_n0 12=1 (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 4)))
+(define c.swsp (make-instruction c_rs2 c_uimm8sp_s (bit-range-fixed 1 0 2) (bit-range-fixed 15 13 6)))
+
+(provide (all-defined-out))

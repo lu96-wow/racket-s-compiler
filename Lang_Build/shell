@@ -1,0 +1,22 @@
+经常要用防忘记的一些指令
+
+直接运行
+qemu-system-riscv32 -machine virt -nographic -bios none -kernel test-assemble -S -s
+
+调试
+qemu-system-riscv32 -machine virt -nographic -bios none -kernel test-assemble -S -s
+gdb-multiarch -ex "target remote :1234"
+
+
+反汇编查看
+qemu-system-riscv32 \
+ -machine virt \
+ -nographic \
+ -bios none \
+ -kernel test-assemble \
+ -d in_asm
+
+gdb常用
+
+set $pc = 0x80000000
+x/10i $pc

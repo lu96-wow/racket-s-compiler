@@ -1,0 +1,33 @@
+#lang racket
+(require "../../base.rkt"
+         "../base_range.rkt"
+         "../register.rkt")
+
+(define fld (make-instruction rd rs1 imm12 (bit-range-fixed 14 12 3) (bit-range-fixed 6 2 1) (bit-range-fixed 1 0 3)))
+(define fsd (make-instruction imm12 rs1 rs2 (bit-range-fixed 14 12 3) (bit-range-fixed 6 2 9) (bit-range-fixed 1 0 3)))
+(define fmadd.d (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 16) (bit-range-fixed 1 0 3)))
+(define fmsub.d (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 17) (bit-range-fixed 1 0 3)))
+(define fnmsub.d (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 18) (bit-range-fixed 1 0 3)))
+(define fnmadd.d (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 19) (bit-range-fixed 1 0 3)))
+(define fadd.d (make-instruction rd rs1 rs2 rm (bit-range-fixed 31 27 0) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fsub.d (make-instruction rd rs1 rs2 rm (bit-range-fixed 31 27 1) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fmul.d (make-instruction rd rs1 rs2 rm (bit-range-fixed 31 27 2) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fdiv.d (make-instruction rd rs1 rs2 rm (bit-range-fixed 31 27 3) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fsqrt.d (make-instruction rd rs1 rm (bit-range-fixed 24 20 0) (bit-range-fixed 31 27 11) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fsgnj.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 4) (bit-range-fixed 14 12 0) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fsgnjn.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 4) (bit-range-fixed 14 12 1) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fsgnjx.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 4) (bit-range-fixed 14 12 2) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fmin.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 5) (bit-range-fixed 14 12 0) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fmax.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 5) (bit-range-fixed 14 12 1) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.s.d (make-instruction rd rs1 rm (bit-range-fixed 24 20 1) (bit-range-fixed 31 27 8) (bit-range-fixed 26 25 0) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.d.s (make-instruction rd rs1 rm (bit-range-fixed 24 20 0) (bit-range-fixed 31 27 8) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define feq.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 20) (bit-range-fixed 14 12 2) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define flt.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 20) (bit-range-fixed 14 12 1) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fle.d (make-instruction rd rs1 rs2 (bit-range-fixed 31 27 20) (bit-range-fixed 14 12 0) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fclass.d (make-instruction rd rs1 (bit-range-fixed 24 20 0) (bit-range-fixed 31 27 28) (bit-range-fixed 14 12 1) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.w.d (make-instruction rd rs1 rm (bit-range-fixed 24 20 0) (bit-range-fixed 31 27 24) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.wu.d (make-instruction rd rs1 rm (bit-range-fixed 24 20 1) (bit-range-fixed 31 27 24) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.d.w (make-instruction rd rs1 rm (bit-range-fixed 24 20 0) (bit-range-fixed 31 27 26) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+(define fcvt.d.wu (make-instruction rd rs1 rm (bit-range-fixed 24 20 1) (bit-range-fixed 31 27 26) (bit-range-fixed 26 25 1) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))
+
+(provide (all-defined-out))
