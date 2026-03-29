@@ -30,18 +30,12 @@
     '(
       (aes64ks1i . 3)
     )))
-(define rv64_zknd-24=1
-  (make-immutable-hash
-    '(
-      (aes64ks1i . 4)
-    )))
 
-(define rv64_zknd-fields '(rd rs1 rs2 rnum 24=1 ))
+(define rv64_zknd-fields '(rd rs1 rs2 rnum ))
 
 (provide
   rv64_zknd-rd
   rv64_zknd-rs1
   rv64_zknd-rs2
   rv64_zknd-rnum
-  rv64_zknd-24=1
   rv64_zknd-fields)

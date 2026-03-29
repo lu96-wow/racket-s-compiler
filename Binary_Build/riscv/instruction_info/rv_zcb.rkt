@@ -29,17 +29,6 @@
       (c.lh . 3)
       (c.sh . 3)
     )))
-(define rv_zcb-6=0
-  (make-immutable-hash
-    '(
-      (c.lhu . 4)
-      (c.sh . 4)
-    )))
-(define rv_zcb-6=1
-  (make-immutable-hash
-    '(
-      (c.lh . 4)
-    )))
 (define rv_zcb-rs2_p
   (make-immutable-hash
     '(
@@ -58,15 +47,13 @@
       (c.mul . 1)
     )))
 
-(define rv_zcb-fields '(rd_p rs1_p c_uimm2 c_uimm1 6=0 6=1 rs2_p rd_rs1_p ))
+(define rv_zcb-fields '(rd_p rs1_p c_uimm2 c_uimm1 rs2_p rd_rs1_p ))
 
 (provide
   rv_zcb-rd_p
   rv_zcb-rs1_p
   rv_zcb-c_uimm2
   rv_zcb-c_uimm1
-  rv_zcb-6=0
-  rv_zcb-6=1
   rv_zcb-rs2_p
   rv_zcb-rd_rs1_p
   rv_zcb-fields)

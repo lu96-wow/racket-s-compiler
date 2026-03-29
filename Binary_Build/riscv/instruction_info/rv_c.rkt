@@ -104,24 +104,11 @@
     '(
       (c.jr . 1)
     )))
-(define rv_c-12=0
-  (make-immutable-hash
-    '(
-      (c.jr . 2)
-      (c.mv . 3)
-    )))
 (define rv_c-c_rs2_n0
   (make-immutable-hash
     '(
       (c.mv . 2)
       (c.add . 2)
-    )))
-(define rv_c-12=1
-  (make-immutable-hash
-    '(
-      (c.ebreak . 1)
-      (c.jalr . 2)
-      (c.add . 3)
     )))
 (define rv_c-c_rs1_n0
   (make-immutable-hash
@@ -139,7 +126,7 @@
       (c.swsp . 2)
     )))
 
-(define rv_c-fields '(rd_p c_nzuimm10 rs1_p c_uimm7 rs2_p c_nzimm6 rd_rs1_n0 rd_n0 c_imm6 c_nzimm10 rd_n2 c_nzimm18 rd_rs1_p c_imm12 c_bimm9 c_uimm8sp rs1_n0 12=0 c_rs2_n0 12=1 c_rs1_n0 c_rs2 c_uimm8sp_s ))
+(define rv_c-fields '(rd_p c_nzuimm10 rs1_p c_uimm7 rs2_p c_nzimm6 rd_rs1_n0 rd_n0 c_imm6 c_nzimm10 rd_n2 c_nzimm18 rd_rs1_p c_imm12 c_bimm9 c_uimm8sp rs1_n0 c_rs2_n0 c_rs1_n0 c_rs2 c_uimm8sp_s ))
 
 (provide
   rv_c-rd_p
@@ -159,9 +146,7 @@
   rv_c-c_bimm9
   rv_c-c_uimm8sp
   rv_c-rs1_n0
-  rv_c-12=0
   rv_c-c_rs2_n0
-  rv_c-12=1
   rv_c-c_rs1_n0
   rv_c-c_rs2
   rv_c-c_uimm8sp_s
