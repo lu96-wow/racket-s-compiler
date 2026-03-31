@@ -4,27 +4,32 @@
          "riscv-help.rkt")
 
 (provide assemble
-         Instr Label Jump Branch)
+         Instr Label Jump32 Jump64 Branch LoadImm32 LoadImm64)
 
 ;; IR
 
 (struct Instr (form) #:transparent)
 (struct Label (name) #:transparent)
-(struct Jump (label id) #:transparent)
-(struct Branch (op label rs1 rs2 id) #:transparent)
+
+(struct Jump32 (label rd id) #:transparent)
+(struct Jump64 (label rd tmp id) #:transparent)
+
+(struct LoadImm32 (rd imm) #:transparent)
+(struct LoadImm64 (rd imm tmp) #:transparent)
+
+(struct Branch (op label rs1 rs2) #:transparent)
 
 ;; ID
 
 (define jump-counter 0)
-(define branch-counter 0)
 
-(define (make-jump label)
+(define (make-jump32 label [rd 'x0])
   (set! jump-counter (+ jump-counter 1))
-  (Jump label jump-counter))
+  (Jump32 label rd jump-counter))
 
-(define (make-branch op label rs1 rs2)
-  (set! branch-counter (+ branch-counter 1))
-  (Branch op label rs1 rs2 branch-counter))
+(define (make-jump64 label rd tmp)
+  (set! jump-counter (+ jump-counter 1))
+  (Jump64 label rd tmp jump-counter))
 
 ;; lowering
 
@@ -39,14 +44,29 @@
        [(list 'label name)
         (Label name)]
 
-       [(list 'jump name)
-        (make-jump name)]
+       ;; jump32
+       [(list 'jump32 name)
+        (make-jump32 name)]
 
-       ;; branch DSL
+       [(list 'jump32 name rd)
+        (make-jump32 name rd)]
+
+       ;; jump64
+       [(list 'jump64 name rd tmp)
+        (make-jump64 name rd tmp)]
+
+       ;; load immediate
+       [(list 'load-immediate32 rd imm)
+        (LoadImm32 rd imm)]
+
+       [(list 'load-immediate64 rd imm tmp)
+        (LoadImm64 rd imm tmp)]
+
+       ;; branch
        [(list 'branch form)
         (match form
           [(list op label rs1 rs2)
-           (make-branch op label rs1 rs2)]
+           (Branch op label rs1 rs2)]
           [else
            (error "Bad branch form" form)])]
 
@@ -69,35 +89,52 @@
       [(Instr _)
        (set! pc (+ pc 4))]
 
-      [(Jump _ id)
+      [(Jump32 _ _ id)
        (define sz (hash-ref jump-size-table id 1))
        (set! pc (+ pc (* 4 sz)))]
 
-      [(Branch _ _ _ _ _)
+      [(Jump64 _ _ _ id)
+       (define sz (hash-ref jump-size-table id 1))
+       (set! pc (+ pc (* 4 sz)))]
+
+      [(LoadImm32 _ _)
+       ;; variable length
+       (set! pc (+ pc (* 4 2)))]
+
+      [(LoadImm64 _ _ _)
+       (set! pc (+ pc (* 4 4)))]
+
+      [(Branch _ _ _ _)
        (set! pc (+ pc 4))]))
 
   table)
 
 ;; jump size
 
-(define (calc-jump-size jump label-table pc)
-  (define target (hash-ref label-table (Jump-label jump)))
+(define (calc-jump32-size jump label-table pc)
+  (define target (hash-ref label-table (Jump32-label jump)))
   (define offset (- target pc))
-  (length (generate-32-jump 'x0 offset)))
+  (length (generate-32-jump (Jump32-rd jump) offset)))
 
-;; branch 检查
-
-(define (branch-offset-fit? offset)
-  (and (>= offset -4096) (<= offset 4094)))
+(define (calc-jump64-size jump label-table pc)
+  (define target (hash-ref label-table (Jump64-label jump)))
+  (define offset (- target pc))
+  (length (generate-64-jump (Jump64-rd jump)
+                            offset
+                            (Jump64-tmp jump))))
 
 ;; relax
+
 (define (relax ir)
   (define jump-size-table (make-hash))
 
   ;; init
   (for ([node ir])
-    (when (Jump? node)
-      (hash-set! jump-size-table (Jump-id node) 1)))
+    (cond
+      [(Jump32? node)
+       (hash-set! jump-size-table (Jump32-id node) 1)]
+      [(Jump64? node)
+       (hash-set! jump-size-table (Jump64-id node) 1)]))
 
   (let loop ()
     (define changed #f)
@@ -113,29 +150,36 @@
         [(Instr _)
          (set! pc (+ pc 4))]
 
-        [(Jump _ id)
-         (define new-size (calc-jump-size node label-table pc))
+        [(Jump32 _ _ id)
+         (define new-size (calc-jump32-size node label-table pc))
          (define old-size (hash-ref jump-size-table id))
-
          (when (not (= new-size old-size))
            (hash-set! jump-size-table id new-size)
            (set! changed #t))
-
          (set! pc (+ pc (* 4 new-size)))]
 
-        [(Branch op label rs1 rs2 _)
+        [(Jump64 _ _ _ id)
+         (define new-size (calc-jump64-size node label-table pc))
+         (define old-size (hash-ref jump-size-table id))
+         (when (not (= new-size old-size))
+           (hash-set! jump-size-table id new-size)
+           (set! changed #t))
+         (set! pc (+ pc (* 4 new-size)))]
+
+        [(LoadImm32 _ _)
+         (set! pc (+ pc (* 4 2)))]
+
+        [(LoadImm64 _ _ _)
+         (set! pc (+ pc (* 4 4)))]
+
+        [(Branch op label rs1 rs2)
          (define target (hash-ref label-table label))
          (define offset (- target pc))
-
-         (unless (branch-offset-fit? offset)
-           (error
-            (format "Branch out of range: ~a -> ~a (offset ~a)"
-                    op label offset)))
-
+         (unless (and (>= offset -4096) (<= offset 4094))
+           (error "Branch out of range"))
          (set! pc (+ pc 4))]))
 
-    (when changed
-      (loop)))
+    (when changed (loop)))
 
   jump-size-table)
 
@@ -150,33 +194,42 @@
   (for ([node ir])
     (match node
 
-      ;; 普通指令
       [(Instr form)
        (set! result (append result (list form)))
        (set! pc (+ pc 4))]
 
       [(Label _) (void)]
 
-      ;; jump
-      [(Jump label id)
+      [(Jump32 label rd id)
        (define target (hash-ref label-table label))
        (define offset (- target pc))
-
-       (define instrs (generate-32-jump 'x0 offset))
-
+       (define instrs (generate-32-jump rd offset))
        (set! result (append result instrs))
        (set! pc (+ pc (* 4 (length instrs))))]
 
-      ;;  branch emit（关键）
-      [(Branch op label rs1 rs2 _)
+      [(Jump64 label rd tmp id)
        (define target (hash-ref label-table label))
        (define offset (- target pc))
+       (define instrs (generate-64-jump rd offset tmp))
+       (set! result (append result instrs))
+       (set! pc (+ pc (* 4 (length instrs))))]
 
-       ;; 注意顺序：imm rs1 rs2（匹配你编码器）
-       (set! result
-             (append result
-                     (list `(,op ,offset ,rs1 ,rs2))))
+      [(LoadImm32 rd imm)
+       (define instrs (load-immediate-number-32 rd imm))
+       (unless instrs (error "Invalid imm32"))
+       (set! result (append result instrs))
+       (set! pc (+ pc (* 4 (length instrs))))]
 
+      [(LoadImm64 rd imm tmp)
+       (define instrs (load-immediate-number-64 rd imm tmp))
+       (unless instrs (error "Invalid imm64"))
+       (set! result (append result instrs))
+       (set! pc (+ pc (* 4 (length instrs))))]
+
+      [(Branch op label rs1 rs2)
+       (define target (hash-ref label-table label))
+       (define offset (- target pc))
+       (set! result (append result (list `(,op ,offset ,rs1 ,rs2))))
        (set! pc (+ pc 4))]))
 
   result)
@@ -187,4 +240,3 @@
   (define lowered (lower ir))
   (define jump-sizes (relax lowered))
   (emit lowered jump-sizes))
-

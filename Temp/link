@@ -1,0 +1,13 @@
+; 定义布局
+(layout
+    ; 基本块：标识 对齐 可选地址
+    (section (symbel .text)   (align 4) (address #x800000) (size (GB 1)))
+    (section (symbel .rodata) (align 4) )
+    (section (symbel .data)   (align 4) )
+    (section (symbel .bss)    (align 4) )
+    (section (address #x8100000) (size (bytes 1000)))
+    
+    ; 符号定义 (Symbol Assignment)
+    (symbel main .text)
+)
+

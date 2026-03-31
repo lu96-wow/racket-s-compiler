@@ -32,7 +32,7 @@
   '((label start)
 
     ;; x1 = 0x10000000 (UART)
-    (instr (lui x1 #x10000000))
+    (load-immediate32 x1 #x10000000)
 
     ;; x2 = 'a'
     (instr (addi x2 x0 97))
@@ -42,7 +42,7 @@
 
     ;; 死循环（防止跑飞）
     (label loop)
-    (jump loop)))
+    (jump32 loop)))
 
 ;; 生成 bytes
 (define result (assemble->bytes program))
