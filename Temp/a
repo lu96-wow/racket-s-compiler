@@ -1,4 +1,0 @@
-(label main)
-(instr ...)
-(instr ...)
-(jump a)

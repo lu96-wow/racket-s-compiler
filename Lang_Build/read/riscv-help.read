@@ -1,0 +1,161 @@
+一、加载立即数（Load Immediate）
+1. RV32（32位）
+函数：load-immediate-number-32 rd imm
+条件与处理方式：
+
+    无效输入：若 imm 不是精确整数（exact-integer?），返回 #f。
+    负数：若 imm < 0，检查是否能用 32 位有符号表示（min-signed-bits <= 32）。
+    非负数：若 imm >= 0，检查是否能用 32 位无符号表示（min-unsigned-bits <= 32）。
+
+如果满足上述条件，则调用 generate-32-instructions 生成指令：
+指令生成逻辑（generate-32-instructions）：
+
+    12位有符号立即数（-2048 ≤ imm ≤ 2047）：
+    racket
+
+(addi rd x0 imm)
+
+低12位为0（即 imm & 0xFFF == 0）：
+racket
+
+(lui rd imm)
+
+通用情况（拆分为高20位 + 低12位）：
+racket
+
+(lui rd hi)
+
+    (addi rd rd lo12)
+
+2. RV64（64位）
+函数：load-immediate-number-64 rd imm use-reg
+条件与处理方式：
+
+    无效输入：若 imm 不是精确整数，返回 #f。
+    负数：检查是否能用 64 位有符号表示。
+    非负数：检查是否能用 64 位无符号表示。
+
+如果满足条件，则调用 generate-64-instructions 生成指令：
+指令生成逻辑（generate-64-instructions）：
+
+    12位有符号立即数（-2048 ≤ imm ≤ 2047）：
+    racket
+
+(addi rd x0 imm)
+
+可符号扩展自32位（fits-in-32-bit? 为真）：
+racket
+
+(lui rd hi)
+
+(addiw rd rd lo12)  ; 注意使用 addiw（32位加法）
+
+低32位全为0（即 imm & 0xFFFFFFFF == 0）：
+racket
+
+(lui rd hi)
+
+(addi rd rd lo12)   ; 若 lo12 ≠ 0
+
+(slli rd rd 32)
+
+完整64位常量（需辅助寄存器 use-reg）：
+racket
+
+(lui rd high-hi)
+
+(addi rd rd high-lo12)     ; 若 high-lo12 ≠ 0
+
+(slli rd rd 32)
+
+(lui use-reg low-hi)
+
+(addi use-reg use-reg low-lo12)  ; 若 low-lo12 ≠ 0
+
+    (or rd rd use-reg)
+
+是否需要辅助寄存器（needs-temp-register-for-64?）：
+
+    不需要：12位立即数、32位可符号扩展、低32位为0。
+    需要：其他64位常量（完整64位加载）。
+
+二、跳转（Jump）
+1. 相对跳转（Relative Jump）
+RV32（generate-32-jump rd offset）：
+
+    ±1MB 范围内（-1048576 ≤ offset ≤ 1048575）：
+    racket
+
+(jal rd offset)
+
+超出范围（拆分为 AUIPC + JALR）：
+racket
+
+(auipc rd hi)
+
+    (jalr rd rd lo12)
+
+RV64（generate-64-jump rd offset use-reg）：
+
+    ±1MB 范围内：
+    racket
+
+(jal rd offset)
+
+32位有符号范围（-2³¹ ≤ offset < 2³¹）：
+使用 RV32 的跳转逻辑（generate-32-jump）。
+超出32位范围（需辅助寄存器）：
+racket
+
+(auipc rd high-hi)
+
+(addi rd rd high-lo12)     ; 若 high-lo12 ≠ 0
+
+(slli rd rd 32)
+
+(lui use-reg low-hi)
+
+(addi use-reg use-reg low-lo12)  ; 若 low-lo12 ≠ 0
+
+(or rd rd use-reg)
+
+    (jalr rd rd 0)
+
+2. 绝对地址跳转（Absolute Jump）
+RV32（jump-to-absolute-32 rd addr-reg addr）：
+
+    先用 load-immediate-number-32 加载地址到 addr-reg。
+    然后执行：
+    racket
+
+    (jalr rd addr-reg 0)
+
+    若无法加载立即数，返回 #f。
+
+RV64（jump-to-absolute-64 rd addr-reg temp-reg addr）：
+
+    先用 load-immediate-number-64 加载地址到 addr-reg（可能需要 temp-reg）。
+    然后执行：
+    racket
+
+    (jalr rd addr-reg 0)
+
+    若无法加载立即数，返回 #f。
+
+总结
+表格
+类型	位宽	条件	指令序列
+加载立即数	RV32	12位有符号	addi
+		低12位为0	lui
+		通用32位	lui + addi
+	RV64	12位有符号	addi
+		32位可符号扩展	lui + addiw
+		低32位为0	lui + (addi) + slli
+		完整64位	lui/addi/slli + lui/addi + or（需辅助寄存器）
+相对跳转	RV32	±1MB	jal
+		超出范围	auipc + jalr
+	RV64	±1MB	jal
+		32位范围内	同 RV32
+		超出32位	auipc/addi/slli + lui/addi + or + jalr（需辅助寄存器）
+绝对跳转	RV32/RV64	先加载地址，再 jalr	取决于地址大小
+该模块完整覆盖了 RISC-V 架构下 32 位和 64 位的立即数加载与跳转场景，并针对不同范围和位宽做了优化处理。

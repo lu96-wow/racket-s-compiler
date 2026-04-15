@@ -4,7 +4,6 @@
          "binary-receiver.rkt")
 
 ;; namespace
-
 (define ns (make-base-namespace))
 
 (parameterize ([current-namespace ns])
@@ -13,12 +12,8 @@
   (namespace-require "../Binary_Build/riscv/register.rkt"))
 
 ;; 执行 + 编码
-
-(define (assemble->bytes ir
-                         #:base        [base 0])
-  (define forms
-    (assemble ir
-              #:base base))
+(define (assemble->bytes ir)
+  (define forms (assemble ir))
 
   (define receiver
     (make-integer-byte-receiver 4 #f #f))
@@ -32,44 +27,27 @@
 
   (receiver-get-bytes receiver))
 
-;; 测试程序（新版本）
-
+;; 测试程序
 (define program
-  '(
-    ;;  起始地址
-    (label start)
+  '((label start)
 
-    ;; x1 = UART 地址
+    ;; x1 = 0x10000000 (UART)
     (load-immediate32 x1 #x10000000)
 
-    ;; x2 = 'A'
-    (instruction (addi x2 x0 65))
+    ;; x2 = 'a'
+    (instr (addi x2 x0 97))
 
     ;; *(x1) = x2
-    (instruction (sb 0 x1 x2))
+    (instr (sb 0 x1 x2))
 
-    ;;  loop 标签
+    ;; 死循环（防止跑飞）
     (label loop)
-
-    ;; x3 = &start
-    (load-address32 x3 start)
-
-    (label start)
-    ;; x4 = &loop
-    (load-address32 x4 loop)
-
-    ;; 死循环
-    (jump32 loop)
-
-    ))
+    (jump32 loop)))
 
 ;; 生成 bytes
+(define result (assemble->bytes program))
 
-(define result
-  (assemble->bytes
-   program
-   #:base #x8000000))
-
+;; 写文件
 (call-with-output-file "test-assemble"
   (lambda (out)
     (write-bytes result out))
