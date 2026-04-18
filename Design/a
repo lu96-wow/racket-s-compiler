@@ -1,7 +1,12 @@
-
-
-(define wow (a b)
-    (define a 1)
-    (define b 2)
-    (+ a b)
-)
+(bn )
+;基础字段就像int
+(pointr )
+;指针
+(arrary )
+;数组
+(string )
+;字符串
+(struct )
+;结构体
+(syntax )
+;编译期的lisp宏，这是重点。会提供编译器的操作原语方便自定义行为

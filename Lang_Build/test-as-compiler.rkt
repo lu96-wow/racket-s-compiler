@@ -3,8 +3,6 @@
 (require "test-assemble.rkt"
          "binary-receiver.rkt")
 
-;; namespace
-
 (define ns (make-base-namespace))
 
 (parameterize ([current-namespace ns])
@@ -12,65 +10,68 @@
   (namespace-require "../Binary_Build/riscv/instruction/rv_i.rkt")
   (namespace-require "../Binary_Build/riscv/register.rkt"))
 
-;; 执行 + 编码
+;; =========================
+;; 编译
+;; =========================
 
-(define (assemble->bytes ir
-                         #:base        [base 0])
-  (define forms
+(define (assemble->bytes+symbols ir #:base [base 0])
+  (define result
     (assemble ir
-              #:base base))
+              #:base base
+              #:gen-abs-symbols? #t
+              #:gen-rel-symbols? #t))
 
-  (define receiver
-    (make-integer-byte-receiver 4 #f #f))
+  (define forms (AssembleResult-forms result))
+  (define abs-symbols (AssembleResult-abs-symbols result))
+  (define rel-symbols (AssembleResult-rel-symbols result))
+
+  (define receiver (make-integer-byte-receiver 4 #f #f))
 
   (for ([f forms])
     (define word
       (parameterize ([current-namespace ns])
         (eval f)))
-
     (receiver-add! receiver word))
 
-  (receiver-get-bytes receiver))
+  (values
+   (receiver-get-bytes receiver)
+   abs-symbols
+   rel-symbols))
 
-;; 测试程序（新版本）
+;; =========================
+;; 程序
+;; =========================
 
 (define program
-  '(
-    ;;  起始地址
-    (label start)
-
-    ;; x1 = UART 地址
+  '((label start)
     (load-immediate32 x1 #x10000000)
-
-    ;; x2 = 'A'
     (instruction (addi x2 x0 65))
-
-    ;; *(x1) = x2
     (instruction (sb 0 x1 x2))
-
-    ;;  loop 标签
     (label loop)
-
-    ;; x3 = &start
     (load-address32 x3 start)
-
     (label start)
-    ;; x4 = &loop
     (load-address32 x4 loop)
+    (jump32 loop)))
 
-    ;; 死循环
-    (jump32 loop)
+;; =========================
+;; 执行
+;; =========================
 
-    ))
+(define-values (bytes abs-symbols rel-symbols)
+  (assemble->bytes+symbols program #:base #x8000000))
 
-;; 生成 bytes
-
-(define result
-  (assemble->bytes
-   program
-   #:base #x8000000))
-
+;; 二进制
 (call-with-output-file "test-assemble"
-  (lambda (out)
-    (write-bytes result out))
+  (lambda (out) (write-bytes bytes out))
   #:exists 'replace)
+
+;; 符号
+(when abs-symbols
+  (call-with-output-file "symbols-abs.scm"
+    (lambda (out) (write abs-symbols out))
+    #:exists 'replace))
+
+(when rel-symbols
+  (call-with-output-file "symbols-rel.scm"
+    (lambda (out) (write rel-symbols out))
+    #:exists 'replace))

@@ -4,6 +4,7 @@
          "riscv-help.rkt")
 
 (provide assemble
+         (struct-out AssembleResult)
          Instruction Label
          Jump32 Jump64
          Jump32Absolute Jump64Absolute
@@ -11,6 +12,12 @@
          LoadImm32 LoadImm64
          LoadAddress32 LoadAddress64
          Hole)
+
+;; =========================
+;; 返回结构（已扩展）
+;; =========================
+
+(struct AssembleResult (forms abs-symbols rel-symbols) #:transparent)
 
 ;; =========================
 ;; IR 定义
@@ -57,19 +64,15 @@
      (match node
        [(list 'instruction forms ...)
         (Instruction forms)]
-
        [(list 'label name) (Label name)]
        [(list 'hole size) (Hole size)]
 
-       ;; 相对跳转
        [(list 'jump32 name) (make-jump32 name)]
        [(list 'jump32 name rd) (make-jump32 name rd)]
        [(list 'jump64 name rd tmp) (make-jump64 name rd tmp)]
 
-       ;; 绝对跳转
        [(list 'jump32-absolute label rd addr-reg)
         (Jump32Absolute label rd addr-reg)]
-
        [(list 'jump64-absolute label rd addr-reg tmp-reg)
         (Jump64Absolute label rd addr-reg tmp-reg)]
 
@@ -89,7 +92,21 @@
    ir))
 
 ;; =========================
-;; compute-labels（统一用真实长度）
+;; 符号表构建（分离）
+;; =========================
+
+(define (build-abs-symbol-table label-table)
+  (for/list ([(name addrs) (in-hash label-table)])
+    `(label ,name ,(reverse addrs))))
+
+(define (build-rel-symbol-table label-table base)
+  (for/list ([(name addrs) (in-hash label-table)])
+    `(label ,name
+            ,(map (lambda (a) (- a base))
+                  (reverse addrs)))))
+
+;; =========================
+;; compute-labels
 ;; =========================
 
 (define (compute-labels ir jump-size-table base)
@@ -118,35 +135,27 @@
       [(Jump64 _ _ _ id)
        (set! pc (+ pc (* 4 (hash-ref jump-size-table id 1))))]
 
-      ;; ========= 变长指令全部动态 =========
-
       [(LoadImm32 rd imm)
-       (define instrs (load-immediate-number-32 rd imm))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (load-immediate-number-32 rd imm)))))]
 
       [(LoadImm64 rd imm tmp)
-       (define instrs (load-immediate-number-64 rd imm tmp))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (load-immediate-number-64 rd imm tmp)))))]
 
       [(LoadAddress32 rd label)
        (define addr (safe-first-label label))
-       (define instrs (load-immediate-number-32 rd addr))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (load-immediate-number-32 rd addr)))))]
 
       [(LoadAddress64 rd label tmp)
        (define addr (safe-first-label label))
-       (define instrs (load-immediate-number-64 rd addr tmp))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (load-immediate-number-64 rd addr tmp)))))]
 
       [(Jump32Absolute label rd addr-reg)
        (define addr (safe-first-label label))
-       (define instrs (jump-to-absolute-32 rd addr-reg addr))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (jump-to-absolute-32 rd addr-reg addr)))))]
 
       [(Jump64Absolute label rd addr-reg tmp-reg)
        (define addr (safe-first-label label))
-       (define instrs (jump-to-absolute-64 rd addr-reg tmp-reg addr))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (set! pc (+ pc (* 4 (length (jump-to-absolute-64 rd addr-reg tmp-reg addr)))))]
 
       [(Branch _ _ _ _)
        (set! pc (+ pc 4))]))
@@ -154,13 +163,12 @@
   table)
 
 ;; =========================
-;; relax（扩展到所有变长指令）
+;; relax（不变）
 ;; =========================
 
 (define (relax ir base)
   (define jump-size-table (make-hash))
 
-  ;; 初始化 jump
   (for ([node ir])
     (cond
       [(Jump32? node)
@@ -176,19 +184,14 @@
     (for ([node ir])
       (match node
         [(Label _) (void)]
-
-        [(Hole size)
-         (set! pc (+ pc size))]
-
+        [(Hole size) (set! pc (+ pc size))]
         [(Instruction forms)
          (set! pc (+ pc (* 4 (length forms))))]
 
-        ;; jump（已有）
         [(Jump32 label rd id)
          (define offset (- (car (hash-ref label-table label)) pc))
          (define new-size (length (generate-32-jump rd offset)))
-         (define old-size (hash-ref jump-size-table id))
-         (when (not (= new-size old-size))
+         (when (not (= new-size (hash-ref jump-size-table id)))
            (hash-set! jump-size-table id new-size)
            (set! changed #t))
          (set! pc (+ pc (* 4 new-size)))]
@@ -196,51 +199,23 @@
         [(Jump64 label rd tmp id)
          (define offset (- (car (hash-ref label-table label)) pc))
          (define new-size (length (generate-64-jump rd offset tmp)))
-         (define old-size (hash-ref jump-size-table id))
-         (when (not (= new-size old-size))
+         (when (not (= new-size (hash-ref jump-size-table id)))
            (hash-set! jump-size-table id new-size)
            (set! changed #t))
          (set! pc (+ pc (* 4 new-size)))]
 
-        ;; ========= 新增：其它全部动态 =========
-
-        [(LoadImm32 rd imm)
-         (define sz (length (load-immediate-number-32 rd imm)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(LoadImm64 rd imm tmp)
-         (define sz (length (load-immediate-number-64 rd imm tmp)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(LoadAddress32 rd label)
-         (define addr (car (hash-ref label-table label)))
-         (define sz (length (load-immediate-number-32 rd addr)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(LoadAddress64 rd label tmp)
-         (define addr (car (hash-ref label-table label)))
-         (define sz (length (load-immediate-number-64 rd addr tmp)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(Jump32Absolute label rd addr-reg)
-         (define addr (car (hash-ref label-table label)))
-         (define sz (length (jump-to-absolute-32 rd addr-reg addr)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(Jump64Absolute label rd addr-reg tmp-reg)
-         (define addr (car (hash-ref label-table label)))
-         (define sz (length (jump-to-absolute-64 rd addr-reg tmp-reg addr)))
-         (set! pc (+ pc (* 4 sz)))]
-
-        [(Branch _ _ _ _)
-         (set! pc (+ pc 4))]))
+        [else
+         (set! pc (+ pc
+                     (match node
+                       [(Branch _ _ _ _) 4]
+                       [_ (* 4 (length (list node)))])))]))
 
     (when changed (loop)))
 
   jump-size-table)
 
 ;; =========================
-;; emit（统一动态长度）
+;; emit（不变）
 ;; =========================
 
 (define (emit ir jump-size-table base)
@@ -257,73 +232,74 @@
       [(Label _) (void)]
 
       [(Hole size)
-       (define nops
-         (make-list (quotient size 4) '(addi x0 x0 0)))
-       (set! result (append result nops))
+       (set! result
+             (append result
+                     (make-list (quotient size 4)
+                                '(addi x0 x0 0))))
        (set! pc (+ pc size))]
 
-      ;; ========= 全部统一动态 =========
-
       [(LoadImm32 rd imm)
-       (define instrs (load-immediate-number-32 rd imm))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (load-immediate-number-32 rd imm))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(LoadImm64 rd imm tmp)
-       (define instrs (load-immediate-number-64 rd imm tmp))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (load-immediate-number-64 rd imm tmp))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(LoadAddress32 rd label)
        (define addr (car (hash-ref label-table label)))
-       (define instrs (load-immediate-number-32 rd addr))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (load-immediate-number-32 rd addr))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(LoadAddress64 rd label tmp)
        (define addr (car (hash-ref label-table label)))
-       (define instrs (load-immediate-number-64 rd addr tmp))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
-
-      [(Jump32Absolute label rd addr-reg)
-       (define addr (car (hash-ref label-table label)))
-       (define instrs (jump-to-absolute-32 rd addr-reg addr))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
-
-      [(Jump64Absolute label rd addr-reg tmp-reg)
-       (define addr (car (hash-ref label-table label)))
-       (define instrs (jump-to-absolute-64 rd addr-reg tmp-reg addr))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (load-immediate-number-64 rd addr tmp))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(Jump32 label rd id)
        (define offset (- (car (hash-ref label-table label)) pc))
-       (define instrs (generate-32-jump rd offset))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (generate-32-jump rd offset))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(Jump64 label rd tmp id)
        (define offset (- (car (hash-ref label-table label)) pc))
-       (define instrs (generate-64-jump rd offset tmp))
-       (set! result (append result instrs))
-       (set! pc (+ pc (* 4 (length instrs))))]
+       (define i (generate-64-jump rd offset tmp))
+       (set! result (append result i))
+       (set! pc (+ pc (* 4 (length i))))]
 
       [(Branch op label rs1 rs2)
        (define offset (- (car (hash-ref label-table label)) pc))
-       (set! result
-             (append result
-                     (list `(,op ,offset ,rs1 ,rs2))))
+       (set! result (append result (list `(,op ,offset ,rs1 ,rs2))))
        (set! pc (+ pc 4))]))
 
   result)
 
 ;; =========================
-;; assemble
+;; assemble（最终）
 ;; =========================
 
-(define (assemble ir #:base [base 0])
+(define (assemble ir
+                  #:base [base 0]
+                  #:gen-abs-symbols? [gen-abs? #f]
+                  #:gen-rel-symbols? [gen-rel? #f])
+
   (define lowered (lower ir))
   (define jump-sizes (relax lowered base))
-  (emit lowered jump-sizes base))
+  (define label-table (compute-labels lowered jump-sizes base))
+
+  (define forms (emit lowered jump-sizes base))
+
+  (define abs-symbols
+    (and gen-abs?
+         (build-abs-symbol-table label-table)))
+
+  (define rel-symbols
+    (and gen-rel?
+         (build-rel-symbol-table label-table base)))
+
+  (AssembleResult forms abs-symbols rel-symbols))
