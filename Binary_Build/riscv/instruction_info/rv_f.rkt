@@ -112,7 +112,162 @@
       (fcvt.s.wu . 3)
     )))
 
-(define rv_f-fields '(rd rs1 imm12 rs2 rs3 rm ))
+(define rv_f-fields '(rd rs1 imm12 rs2 rs3 rm))
+
+(define rv_f-param-count
+  (make-immutable-hash
+    '(
+      (flw . 3)
+      (fsw . 3)
+      (fmadd.s . 5)
+      (fmsub.s . 5)
+      (fnmsub.s . 5)
+      (fnmadd.s . 5)
+      (fadd.s . 4)
+      (fsub.s . 4)
+      (fmul.s . 4)
+      (fdiv.s . 4)
+      (fsqrt.s . 3)
+      (fsgnj.s . 3)
+      (fsgnjn.s . 3)
+      (fsgnjx.s . 3)
+      (fmin.s . 3)
+      (fmax.s . 3)
+      (fcvt.w.s . 3)
+      (fcvt.wu.s . 3)
+      (fmv.x.w . 2)
+      (feq.s . 3)
+      (flt.s . 3)
+      (fle.s . 3)
+      (fclass.s . 2)
+      (fcvt.s.w . 3)
+      (fcvt.s.wu . 3)
+      (fmv.w.x . 2)
+    )))
+
+(define rv_f-operands
+  (make-immutable-hash
+    '(
+      (flw . (rd rs1 imm12))
+      (fsw . (imm12 rs1 rs2))
+      (fmadd.s . (rd rs1 rs2 rs3 rm))
+      (fmsub.s . (rd rs1 rs2 rs3 rm))
+      (fnmsub.s . (rd rs1 rs2 rs3 rm))
+      (fnmadd.s . (rd rs1 rs2 rs3 rm))
+      (fadd.s . (rd rs1 rs2 rm))
+      (fsub.s . (rd rs1 rs2 rm))
+      (fmul.s . (rd rs1 rs2 rm))
+      (fdiv.s . (rd rs1 rs2 rm))
+      (fsqrt.s . (rd rs1 rm))
+      (fsgnj.s . (rd rs1 rs2))
+      (fsgnjn.s . (rd rs1 rs2))
+      (fsgnjx.s . (rd rs1 rs2))
+      (fmin.s . (rd rs1 rs2))
+      (fmax.s . (rd rs1 rs2))
+      (fcvt.w.s . (rd rs1 rm))
+      (fcvt.wu.s . (rd rs1 rm))
+      (fmv.x.w . (rd rs1))
+      (feq.s . (rd rs1 rs2))
+      (flt.s . (rd rs1 rs2))
+      (fle.s . (rd rs1 rs2))
+      (fclass.s . (rd rs1))
+      (fcvt.s.w . (rd rs1 rm))
+      (fcvt.s.wu . (rd rs1 rm))
+      (fmv.w.x . (rd rs1))
+    )))
+
+(define rv_f-asm
+  (make-immutable-hash
+    '(
+      (flw . "flw rd, rs1, imm12")
+      (fsw . "fsw imm12, rs1, rs2")
+      (fmadd.s . "fmadd.s rd, rs1, rs2, rs3, rm")
+      (fmsub.s . "fmsub.s rd, rs1, rs2, rs3, rm")
+      (fnmsub.s . "fnmsub.s rd, rs1, rs2, rs3, rm")
+      (fnmadd.s . "fnmadd.s rd, rs1, rs2, rs3, rm")
+      (fadd.s . "fadd.s rd, rs1, rs2, rm")
+      (fsub.s . "fsub.s rd, rs1, rs2, rm")
+      (fmul.s . "fmul.s rd, rs1, rs2, rm")
+      (fdiv.s . "fdiv.s rd, rs1, rs2, rm")
+      (fsqrt.s . "fsqrt.s rd, rs1, rm")
+      (fsgnj.s . "fsgnj.s rd, rs1, rs2")
+      (fsgnjn.s . "fsgnjn.s rd, rs1, rs2")
+      (fsgnjx.s . "fsgnjx.s rd, rs1, rs2")
+      (fmin.s . "fmin.s rd, rs1, rs2")
+      (fmax.s . "fmax.s rd, rs1, rs2")
+      (fcvt.w.s . "fcvt.w.s rd, rs1, rm")
+      (fcvt.wu.s . "fcvt.wu.s rd, rs1, rm")
+      (fmv.x.w . "fmv.x.w rd, rs1")
+      (feq.s . "feq.s rd, rs1, rs2")
+      (flt.s . "flt.s rd, rs1, rs2")
+      (fle.s . "fle.s rd, rs1, rs2")
+      (fclass.s . "fclass.s rd, rs1")
+      (fcvt.s.w . "fcvt.s.w rd, rs1, rm")
+      (fcvt.s.wu . "fcvt.s.wu rd, rs1, rm")
+      (fmv.w.x . "fmv.w.x rd, rs1")
+    )))
+
+(define rv_f-operand-types
+  (make-immutable-hash
+    '(
+      (flw . (reg reg imm))
+      (fsw . (imm reg reg))
+      (fmadd.s . (reg reg reg reg imm))
+      (fmsub.s . (reg reg reg reg imm))
+      (fnmsub.s . (reg reg reg reg imm))
+      (fnmadd.s . (reg reg reg reg imm))
+      (fadd.s . (reg reg reg imm))
+      (fsub.s . (reg reg reg imm))
+      (fmul.s . (reg reg reg imm))
+      (fdiv.s . (reg reg reg imm))
+      (fsqrt.s . (reg reg imm))
+      (fsgnj.s . (reg reg reg))
+      (fsgnjn.s . (reg reg reg))
+      (fsgnjx.s . (reg reg reg))
+      (fmin.s . (reg reg reg))
+      (fmax.s . (reg reg reg))
+      (fcvt.w.s . (reg reg imm))
+      (fcvt.wu.s . (reg reg imm))
+      (fmv.x.w . (reg reg))
+      (feq.s . (reg reg reg))
+      (flt.s . (reg reg reg))
+      (fle.s . (reg reg reg))
+      (fclass.s . (reg reg))
+      (fcvt.s.w . (reg reg imm))
+      (fcvt.s.wu . (reg reg imm))
+      (fmv.w.x . (reg reg))
+    )))
+
+(define rv_f-width 32)
+
+;; ====== Helper functions ======
+
+(define (rv_f-get-param-count mnemonic)
+  (hash-ref rv_f-param-count mnemonic #f))
+
+(define (rv_f-get-operands mnemonic)
+  (hash-ref rv_f-operands mnemonic '()))
+
+(define (rv_f-get-asm mnemonic)
+  (hash-ref rv_f-asm mnemonic #f))
+
+(define (rv_f-get-operand-types mnemonic)
+  (hash-ref rv_f-operand-types mnemonic '()))
+
+(define (rv_f-get-width) rv_f-width)
+
+(define (rv_f-exists? mnemonic)
+  (hash-has-key? rv_f-param-count mnemonic))
+
+(define (rv_f-get-field-position mnemonic field)
+  (case field
+    [(rd) (hash-ref rv_f-rd mnemonic #f)]
+    [(rs1) (hash-ref rv_f-rs1 mnemonic #f)]
+    [(imm12) (hash-ref rv_f-imm12 mnemonic #f)]
+    [(rs2) (hash-ref rv_f-rs2 mnemonic #f)]
+    [(rs3) (hash-ref rv_f-rs3 mnemonic #f)]
+    [(rm) (hash-ref rv_f-rm mnemonic #f)]
+    [else #f]))
 
 (provide
   rv_f-rd
@@ -121,4 +276,16 @@
   rv_f-rs2
   rv_f-rs3
   rv_f-rm
-  rv_f-fields)
+  rv_f-fields
+  rv_f-param-count
+  rv_f-operands
+  rv_f-asm
+  rv_f-operand-types
+  rv_f-width
+  rv_f-get-param-count
+  rv_f-get-operands
+  rv_f-get-asm
+  rv_f-get-operand-types
+  rv_f-get-width
+  rv_f-exists?
+  rv_f-get-field-position)

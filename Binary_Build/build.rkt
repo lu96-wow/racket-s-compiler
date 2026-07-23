@@ -1,55 +1,123 @@
 #lang racket
 
-(require "riscv/instruction_build.rkt"
-         "riscv/instruction_info_build.rkt")
+(require "riscv/parse/main.rkt"
+         "riscv/codegen.rkt")
+
+;; ============================================================
+;; 配置
+;; ============================================================
 
 (define input-dir "riscv-opcodes/extensions/")
 (define output-dir "riscv/instruction/")
 (define output-info-dir "riscv/instruction_info/")
 
-(for ([dir (list output-dir output-info-dir)])
-  (unless (directory-exists? dir)
-    (make-directory* dir)))
+;; ============================================================
+;; 第1步: 路径发现 → 源文件路径列表
+;; ============================================================
 
-(define (list-extension-files dir)
-  (filter (λ (name)
-            (let ([full-path (build-path dir name)])
-              (file-exists? full-path)))
-          (directory-list dir)))
+(define (discover-source-files dir)
+  (define all-entries (directory-list dir))
+  (define file-entries
+    (filter (λ (name)
+              (let ([p (build-path dir name)])
+                (file-exists? p)))
+            all-entries))
+  (sort file-entries (λ (a b) (string<? (path->string a) (path->string b)))))
 
-(define (filename->type-sym file)
-  (string->symbol (path->string (path-replace-suffix file ""))))
+;; ============================================================
+;; 第2步: 构造 extension-source 列表
+;; ============================================================
 
-(define (build-all-extensions in-dir out-dir out-info-dir)
-  (define file-infos '())
+(define (make-extension-sources dir files)
+  (for/list ([f (in-list files)])
+    (make-extension-source (build-path dir f))))
 
-  (for ([file (in-list (list-extension-files in-dir))])
-    (define in-path (build-path in-dir file))
-    (define base-name (path-replace-suffix file ""))
-    (define type-sym (filename->type-sym file))
+;; ============================================================
+;; 第3步: 计算输出路径
+;; ============================================================
 
-    (define out-instr (build-path out-dir (string-append (path->string base-name) ".rkt")))
-    (define out-info  (build-path out-info-dir (string-append (path->string base-name) ".rkt")))
+(define (output-paths esrc)
+  (define base (path-replace-suffix (file-name-from-path (extension-source-path esrc)) ""))
+  (define base-str (path->string base))
+  (values (build-path output-dir (string-append base-str ".rkt"))
+          (build-path output-info-dir (string-append base-str ".rkt"))))
 
-    (printf "Building ~a\n" in-path)
-    (printf "  -> ~a\n" out-instr)
-    (printf "  -> ~a\n" out-info)
+;; ============================================================
+;; 第4步: 处理单个扩展: 解析 → 生成 → 写入
+;; ============================================================
 
-    (build-riscv-instruction-file in-path out-instr)
-    (build-riscv-instruction-info-file in-path out-info type-sym)
+(define (process-extension esrc)
+  (define src-path (extension-source-path esrc))
+  (define type-sym (extension-source-type-sym esrc))
+  (define-values (instr-path info-path) (output-paths esrc))
 
-    (set! file-infos (cons (cons in-path type-sym) file-infos)))
+  ;; 解析
+  (define defs (parse-file src-path))
 
-  (define global-out (build-path out-info-dir "instruction_info.rkt"))
-  (printf "Building global instruction map -> ~a\n" global-out)
-  (build-global-instruction-extension-map (reverse file-infos) global-out)
-  (define stats-out (build-path out-info-dir "instruction_counts.rkt"))
+  ;; 生成
+  (define instr-content (gen-instruction-file-content defs))
+  (define info-content (gen-instruction-info-file-content type-sym defs))
+
+  ;; 写入
+  (display-to-file instr-content instr-path #:exists 'replace)
+  (display-to-file info-content info-path #:exists 'replace)
+
+  ;; 日志
+  (printf "Built ~a (~a instructions)\n" src-path (length defs))
+
+  ;; 返回用于后续全局处理的数据
+  (extension-defs esrc defs))
+
+;; ============================================================
+;; 第5步: 处理全局文件
+;; ============================================================
+
+(define (process-global-files ext-sources)
+  (define global-map-out (build-path output-info-dir "instruction_info.rkt"))
+  (define stats-out (build-path output-info-dir "instruction_counts.rkt"))
+  (define meta-out (build-path output-info-dir "instruction_meta.rkt"))
+
+  (printf "Building global instruction map -> ~a\n" global-map-out)
+  (define global-map-content (gen-global-extension-map-content ext-sources))
+  (display-to-file global-map-content global-map-out #:exists 'replace)
+
   (printf "Generating instruction statistics -> ~a\n" stats-out)
-  (define-values (uniq dup exts)
-    (build-instruction-counts (reverse file-infos) stats-out))
-  (printf "\nBuild Summary:\n")
-  (printf "  Total unique instructions: ~a\n" uniq)
-  (printf "  Total definitions (with duplicates): ~a\n" dup)
-  (printf "  Extensions: ~a\n\n" (length exts)))
+  (define stats-content (gen-instruction-counts-content ext-sources))
+  (display-to-file stats-content stats-out #:exists 'replace)
 
-(build-all-extensions input-dir output-dir output-info-dir)
+  (printf "Building global instruction metadata -> ~a\n" meta-out)
+  (define meta-content (gen-global-instruction-meta-content ext-sources))
+  (display-to-file meta-content meta-out #:exists 'replace))
+
+;; ============================================================
+;; 主入口
+;; ============================================================
+
+(define (build-all)
+  ;; 准备输出目录
+  (for ([dir (list output-dir output-info-dir)])
+    (unless (directory-exists? dir)
+      (make-directory* dir)))
+
+  ;; 管道: 发现 → 解析 → 生成 → 写入
+  (define source-files (discover-source-files input-dir))
+  (define ext-sources (make-extension-sources input-dir source-files))
+
+  (printf "Found ~a extension files\n" (length ext-sources))
+  (newline)
+
+  ;; 处理每个扩展
+  (for ([esrc (in-list ext-sources)])
+    (process-extension esrc))
+
+  (newline)
+
+  ;; 处理全局文件
+  (process-global-files ext-sources)
+
+  ;; 打印统计
+  (newline)
+  (printf "Build Summary:\n")
+  (printf "  Extensions processed: ~a\n" (length ext-sources)))
+
+(build-all)

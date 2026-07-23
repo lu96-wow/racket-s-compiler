@@ -121,7 +121,7 @@
          total-instructions-with-duplicates
          per-extension-instruction-count)
 
-;; ====== Auto-generated stats helper functions ======
+;; ====== Helper functions ======
 
 (define (get-extension-instruction-count ext-sym)
   (hash-ref per-extension-instruction-count ext-sym #f))

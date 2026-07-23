@@ -111,7 +111,129 @@
       (amomaxu.h . 5)
     )))
 
-(define rv_zabha-fields '(rd rs1 rs2 aq rl ))
+(define rv_zabha-fields '(rd rs1 rs2 aq rl))
+
+(define rv_zabha-param-count
+  (make-immutable-hash
+    '(
+      (amoswap.b . 5)
+      (amoadd.b . 5)
+      (amoxor.b . 5)
+      (amoand.b . 5)
+      (amoor.b . 5)
+      (amomin.b . 5)
+      (amomax.b . 5)
+      (amominu.b . 5)
+      (amomaxu.b . 5)
+      (amoswap.h . 5)
+      (amoadd.h . 5)
+      (amoxor.h . 5)
+      (amoand.h . 5)
+      (amoor.h . 5)
+      (amomin.h . 5)
+      (amomax.h . 5)
+      (amominu.h . 5)
+      (amomaxu.h . 5)
+    )))
+
+(define rv_zabha-operands
+  (make-immutable-hash
+    '(
+      (amoswap.b . (rd rs1 rs2 aq rl))
+      (amoadd.b . (rd rs1 rs2 aq rl))
+      (amoxor.b . (rd rs1 rs2 aq rl))
+      (amoand.b . (rd rs1 rs2 aq rl))
+      (amoor.b . (rd rs1 rs2 aq rl))
+      (amomin.b . (rd rs1 rs2 aq rl))
+      (amomax.b . (rd rs1 rs2 aq rl))
+      (amominu.b . (rd rs1 rs2 aq rl))
+      (amomaxu.b . (rd rs1 rs2 aq rl))
+      (amoswap.h . (rd rs1 rs2 aq rl))
+      (amoadd.h . (rd rs1 rs2 aq rl))
+      (amoxor.h . (rd rs1 rs2 aq rl))
+      (amoand.h . (rd rs1 rs2 aq rl))
+      (amoor.h . (rd rs1 rs2 aq rl))
+      (amomin.h . (rd rs1 rs2 aq rl))
+      (amomax.h . (rd rs1 rs2 aq rl))
+      (amominu.h . (rd rs1 rs2 aq rl))
+      (amomaxu.h . (rd rs1 rs2 aq rl))
+    )))
+
+(define rv_zabha-asm
+  (make-immutable-hash
+    '(
+      (amoswap.b . "amoswap.b rd, rs1, rs2, aq, rl")
+      (amoadd.b . "amoadd.b rd, rs1, rs2, aq, rl")
+      (amoxor.b . "amoxor.b rd, rs1, rs2, aq, rl")
+      (amoand.b . "amoand.b rd, rs1, rs2, aq, rl")
+      (amoor.b . "amoor.b rd, rs1, rs2, aq, rl")
+      (amomin.b . "amomin.b rd, rs1, rs2, aq, rl")
+      (amomax.b . "amomax.b rd, rs1, rs2, aq, rl")
+      (amominu.b . "amominu.b rd, rs1, rs2, aq, rl")
+      (amomaxu.b . "amomaxu.b rd, rs1, rs2, aq, rl")
+      (amoswap.h . "amoswap.h rd, rs1, rs2, aq, rl")
+      (amoadd.h . "amoadd.h rd, rs1, rs2, aq, rl")
+      (amoxor.h . "amoxor.h rd, rs1, rs2, aq, rl")
+      (amoand.h . "amoand.h rd, rs1, rs2, aq, rl")
+      (amoor.h . "amoor.h rd, rs1, rs2, aq, rl")
+      (amomin.h . "amomin.h rd, rs1, rs2, aq, rl")
+      (amomax.h . "amomax.h rd, rs1, rs2, aq, rl")
+      (amominu.h . "amominu.h rd, rs1, rs2, aq, rl")
+      (amomaxu.h . "amomaxu.h rd, rs1, rs2, aq, rl")
+    )))
+
+(define rv_zabha-operand-types
+  (make-immutable-hash
+    '(
+      (amoswap.b . (reg reg reg imm imm))
+      (amoadd.b . (reg reg reg imm imm))
+      (amoxor.b . (reg reg reg imm imm))
+      (amoand.b . (reg reg reg imm imm))
+      (amoor.b . (reg reg reg imm imm))
+      (amomin.b . (reg reg reg imm imm))
+      (amomax.b . (reg reg reg imm imm))
+      (amominu.b . (reg reg reg imm imm))
+      (amomaxu.b . (reg reg reg imm imm))
+      (amoswap.h . (reg reg reg imm imm))
+      (amoadd.h . (reg reg reg imm imm))
+      (amoxor.h . (reg reg reg imm imm))
+      (amoand.h . (reg reg reg imm imm))
+      (amoor.h . (reg reg reg imm imm))
+      (amomin.h . (reg reg reg imm imm))
+      (amomax.h . (reg reg reg imm imm))
+      (amominu.h . (reg reg reg imm imm))
+      (amomaxu.h . (reg reg reg imm imm))
+    )))
+
+(define rv_zabha-width 32)
+
+;; ====== Helper functions ======
+
+(define (rv_zabha-get-param-count mnemonic)
+  (hash-ref rv_zabha-param-count mnemonic #f))
+
+(define (rv_zabha-get-operands mnemonic)
+  (hash-ref rv_zabha-operands mnemonic '()))
+
+(define (rv_zabha-get-asm mnemonic)
+  (hash-ref rv_zabha-asm mnemonic #f))
+
+(define (rv_zabha-get-operand-types mnemonic)
+  (hash-ref rv_zabha-operand-types mnemonic '()))
+
+(define (rv_zabha-get-width) rv_zabha-width)
+
+(define (rv_zabha-exists? mnemonic)
+  (hash-has-key? rv_zabha-param-count mnemonic))
+
+(define (rv_zabha-get-field-position mnemonic field)
+  (case field
+    [(rd) (hash-ref rv_zabha-rd mnemonic #f)]
+    [(rs1) (hash-ref rv_zabha-rs1 mnemonic #f)]
+    [(rs2) (hash-ref rv_zabha-rs2 mnemonic #f)]
+    [(aq) (hash-ref rv_zabha-aq mnemonic #f)]
+    [(rl) (hash-ref rv_zabha-rl mnemonic #f)]
+    [else #f]))
 
 (provide
   rv_zabha-rd
@@ -119,4 +241,16 @@
   rv_zabha-rs2
   rv_zabha-aq
   rv_zabha-rl
-  rv_zabha-fields)
+  rv_zabha-fields
+  rv_zabha-param-count
+  rv_zabha-operands
+  rv_zabha-asm
+  rv_zabha-operand-types
+  rv_zabha-width
+  rv_zabha-get-param-count
+  rv_zabha-get-operands
+  rv_zabha-get-asm
+  rv_zabha-get-operand-types
+  rv_zabha-get-width
+  rv_zabha-exists?
+  rv_zabha-get-field-position)

@@ -890,7 +890,7 @@
 
 (provide instruction->extensions)
 
-;; ====== Auto-generated helper functions ======
+;; ====== Helper functions ======
 
 (define (get-extensions mnemonic)
   (hash-ref instruction->extensions mnemonic '()))
