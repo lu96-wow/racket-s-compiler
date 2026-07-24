@@ -30,6 +30,9 @@
       (substring s 0 (- (string-length s) 2))
       s))
 
+(define (subst new old lst)
+  (map (λ (x) (if (equal? x old) new x)) lst))
+
 ;; ============================================================
 ;; 主解析函数: 一行 → instruction-def 或 #f
 ;; ============================================================
@@ -49,8 +52,14 @@
        (filter (λ (t) (not (looks-like-fixed-field? t))) rest))
 
      ;; 合并 hi/lo 对：去重，保持顺序
+     ;; 特殊: imm12hi+imm12lo → simm12 (S型立即数)
+     (define has-hi (member "imm12hi" operand-tokens))
+     (define has-lo (member "imm12lo" operand-tokens))
      (define operands
-       (remove-duplicates (map strip-hi/lo operand-tokens)))
+       (let ([ops (remove-duplicates (map strip-hi/lo operand-tokens))])
+         (if (and has-hi has-lo (member "imm12" ops))
+             (subst 'simm12 "imm12" ops)
+             ops)))
 
      ;; 解析固定字段
      (define ffs
