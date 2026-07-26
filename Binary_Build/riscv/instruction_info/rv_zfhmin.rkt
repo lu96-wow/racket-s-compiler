@@ -23,6 +23,10 @@
   (make-immutable-hash
     '(
       (flh . 3)
+    )))
+(define rv_zfhmin-simm12
+  (make-immutable-hash
+    '(
       (fsh . 1)
     )))
 (define rv_zfhmin-rs2
@@ -37,7 +41,7 @@
       (fcvt.h.s . 3)
     )))
 
-(define rv_zfhmin-fields '(rd rs1 imm12 rs2 rm))
+(define rv_zfhmin-fields '(rd rs1 imm12 simm12 rs2 rm))
 
 (define rv_zfhmin-param-count
   (make-immutable-hash
@@ -54,7 +58,7 @@
   (make-immutable-hash
     '(
       (flh . (rd rs1 imm12))
-      (fsh . (imm12 rs1 rs2))
+      (fsh . (simm12 rs1 rs2))
       (fcvt.s.h . (rd rs1 rm))
       (fcvt.h.s . (rd rs1 rm))
       (fmv.x.h . (rd rs1))
@@ -65,7 +69,7 @@
   (make-immutable-hash
     '(
       (flh . "flh rd, rs1, imm12")
-      (fsh . "fsh imm12, rs1, rs2")
+      (fsh . "fsh simm12, rs1, rs2")
       (fcvt.s.h . "fcvt.s.h rd, rs1, rm")
       (fcvt.h.s . "fcvt.h.s rd, rs1, rm")
       (fmv.x.h . "fmv.x.h rd, rs1")
@@ -109,6 +113,7 @@
     [(rd) (hash-ref rv_zfhmin-rd mnemonic #f)]
     [(rs1) (hash-ref rv_zfhmin-rs1 mnemonic #f)]
     [(imm12) (hash-ref rv_zfhmin-imm12 mnemonic #f)]
+    [(simm12) (hash-ref rv_zfhmin-simm12 mnemonic #f)]
     [(rs2) (hash-ref rv_zfhmin-rs2 mnemonic #f)]
     [(rm) (hash-ref rv_zfhmin-rm mnemonic #f)]
     [else #f]))
@@ -117,6 +122,7 @@
   rv_zfhmin-rd
   rv_zfhmin-rs1
   rv_zfhmin-imm12
+  rv_zfhmin-simm12
   rv_zfhmin-rs2
   rv_zfhmin-rm
   rv_zfhmin-fields

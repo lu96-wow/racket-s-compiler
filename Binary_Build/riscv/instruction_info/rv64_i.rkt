@@ -42,8 +42,12 @@
     '(
       (lwu . 3)
       (ld . 3)
-      (sd . 1)
       (addiw . 3)
+    )))
+(define rv64_i-simm12
+  (make-immutable-hash
+    '(
+      (sd . 1)
     )))
 (define rv64_i-rs2
   (make-immutable-hash
@@ -70,7 +74,7 @@
       (sraiw . 3)
     )))
 
-(define rv64_i-fields '(rd rs1 imm12 rs2 shamtd shamtw))
+(define rv64_i-fields '(rd rs1 imm12 simm12 rs2 shamtd shamtw))
 
 (define rv64_i-param-count
   (make-immutable-hash
@@ -97,7 +101,7 @@
     '(
       (lwu . (rd rs1 imm12))
       (ld . (rd rs1 imm12))
-      (sd . (imm12 rs1 rs2))
+      (sd . (simm12 rs1 rs2))
       (slli . (rd rs1 shamtd))
       (srli . (rd rs1 shamtd))
       (srai . (rd rs1 shamtd))
@@ -117,7 +121,7 @@
     '(
       (lwu . "lwu rd, rs1, imm12")
       (ld . "ld rd, rs1, imm12")
-      (sd . "sd imm12, rs1, rs2")
+      (sd . "sd simm12, rs1, rs2")
       (slli . "slli rd, rs1, shamtd")
       (srli . "srli rd, rs1, shamtd")
       (srai . "srai rd, rs1, shamtd")
@@ -178,6 +182,7 @@
     [(rd) (hash-ref rv64_i-rd mnemonic #f)]
     [(rs1) (hash-ref rv64_i-rs1 mnemonic #f)]
     [(imm12) (hash-ref rv64_i-imm12 mnemonic #f)]
+    [(simm12) (hash-ref rv64_i-simm12 mnemonic #f)]
     [(rs2) (hash-ref rv64_i-rs2 mnemonic #f)]
     [(shamtd) (hash-ref rv64_i-shamtd mnemonic #f)]
     [(shamtw) (hash-ref rv64_i-shamtw mnemonic #f)]
@@ -187,6 +192,7 @@
   rv64_i-rd
   rv64_i-rs1
   rv64_i-imm12
+  rv64_i-simm12
   rv64_i-rs2
   rv64_i-shamtd
   rv64_i-shamtw

@@ -4,7 +4,7 @@
          "../register.rkt")
 
 (define flw (make-instruction rd rs1 imm12 (bit-range-fixed 14 12 2) (bit-range-fixed 6 2 1) (bit-range-fixed 1 0 3)))
-(define fsw (make-instruction imm12 rs1 rs2 (bit-range-fixed 14 12 2) (bit-range-fixed 6 2 9) (bit-range-fixed 1 0 3)))
+(define fsw (make-instruction simm12 rs1 rs2 (bit-range-fixed 14 12 2) (bit-range-fixed 6 2 9) (bit-range-fixed 1 0 3)))
 (define fmadd.s (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 0) (bit-range-fixed 6 2 16) (bit-range-fixed 1 0 3)))
 (define fmsub.s (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 0) (bit-range-fixed 6 2 17) (bit-range-fixed 1 0 3)))
 (define fnmsub.s (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 0) (bit-range-fixed 6 2 18) (bit-range-fixed 1 0 3)))

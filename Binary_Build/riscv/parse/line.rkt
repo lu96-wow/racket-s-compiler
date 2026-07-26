@@ -58,7 +58,7 @@
      (define operands
        (let ([ops (remove-duplicates (map strip-hi/lo operand-tokens))])
          (if (and has-hi has-lo (member "imm12" ops))
-             (subst 'simm12 "imm12" ops)
+             (subst "simm12" "imm12" ops)
              ops)))
 
      ;; 解析固定字段

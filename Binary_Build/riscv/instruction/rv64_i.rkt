@@ -5,7 +5,7 @@
 
 (define lwu (make-instruction rd rs1 imm12 (bit-range-fixed 14 12 6) (bit-range-fixed 6 2 0) (bit-range-fixed 1 0 3)))
 (define ld (make-instruction rd rs1 imm12 (bit-range-fixed 14 12 3) (bit-range-fixed 6 2 0) (bit-range-fixed 1 0 3)))
-(define sd (make-instruction imm12 rs1 rs2 (bit-range-fixed 14 12 3) (bit-range-fixed 6 2 8) (bit-range-fixed 1 0 3)))
+(define sd (make-instruction simm12 rs1 rs2 (bit-range-fixed 14 12 3) (bit-range-fixed 6 2 8) (bit-range-fixed 1 0 3)))
 (define slli (make-instruction rd rs1 shamtd (bit-range-fixed 31 26 0) (bit-range-fixed 14 12 1) (bit-range-fixed 6 2 4) (bit-range-fixed 1 0 3)))
 (define srli (make-instruction rd rs1 shamtd (bit-range-fixed 31 26 0) (bit-range-fixed 14 12 5) (bit-range-fixed 6 2 4) (bit-range-fixed 1 0 3)))
 (define srai (make-instruction rd rs1 shamtd (bit-range-fixed 31 26 16) (bit-range-fixed 14 12 5) (bit-range-fixed 6 2 4) (bit-range-fixed 1 0 3)))

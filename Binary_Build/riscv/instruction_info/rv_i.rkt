@@ -86,9 +86,6 @@
       (lw . 3)
       (lbu . 3)
       (lhu . 3)
-      (sb . 1)
-      (sh . 1)
-      (sw . 1)
       (addi . 3)
       (slti . 3)
       (sltiu . 3)
@@ -129,6 +126,13 @@
       (or . 3)
       (and . 3)
     )))
+(define rv_i-simm12
+  (make-immutable-hash
+    '(
+      (sb . 1)
+      (sh . 1)
+      (sw . 1)
+    )))
 (define rv_i-fm
   (make-immutable-hash
     '(
@@ -145,7 +149,7 @@
       (fence . 3)
     )))
 
-(define rv_i-fields '(rd imm20 jimm20 rs1 imm12 bimm12 rs2 fm pred succ))
+(define rv_i-fields '(rd imm20 jimm20 rs1 imm12 bimm12 rs2 simm12 fm pred succ))
 
 (define rv_i-param-count
   (make-immutable-hash
@@ -207,9 +211,9 @@
       (lw . (rd rs1 imm12))
       (lbu . (rd rs1 imm12))
       (lhu . (rd rs1 imm12))
-      (sb . (imm12 rs1 rs2))
-      (sh . (imm12 rs1 rs2))
-      (sw . (imm12 rs1 rs2))
+      (sb . (simm12 rs1 rs2))
+      (sh . (simm12 rs1 rs2))
+      (sw . (simm12 rs1 rs2))
       (addi . (rd rs1 imm12))
       (slti . (rd rs1 imm12))
       (sltiu . (rd rs1 imm12))
@@ -249,9 +253,9 @@
       (lw . "lw rd, rs1, imm12")
       (lbu . "lbu rd, rs1, imm12")
       (lhu . "lhu rd, rs1, imm12")
-      (sb . "sb imm12, rs1, rs2")
-      (sh . "sh imm12, rs1, rs2")
-      (sw . "sw imm12, rs1, rs2")
+      (sb . "sb simm12, rs1, rs2")
+      (sh . "sh simm12, rs1, rs2")
+      (sw . "sw simm12, rs1, rs2")
       (addi . "addi rd, rs1, imm12")
       (slti . "slti rd, rs1, imm12")
       (sltiu . "sltiu rd, rs1, imm12")
@@ -345,6 +349,7 @@
     [(imm12) (hash-ref rv_i-imm12 mnemonic #f)]
     [(bimm12) (hash-ref rv_i-bimm12 mnemonic #f)]
     [(rs2) (hash-ref rv_i-rs2 mnemonic #f)]
+    [(simm12) (hash-ref rv_i-simm12 mnemonic #f)]
     [(fm) (hash-ref rv_i-fm mnemonic #f)]
     [(pred) (hash-ref rv_i-pred mnemonic #f)]
     [(succ) (hash-ref rv_i-succ mnemonic #f)]
@@ -358,6 +363,7 @@
   rv_i-imm12
   rv_i-bimm12
   rv_i-rs2
+  rv_i-simm12
   rv_i-fm
   rv_i-pred
   rv_i-succ

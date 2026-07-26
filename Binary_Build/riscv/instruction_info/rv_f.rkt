@@ -63,6 +63,10 @@
   (make-immutable-hash
     '(
       (flw . 3)
+    )))
+(define rv_f-simm12
+  (make-immutable-hash
+    '(
       (fsw . 1)
     )))
 (define rv_f-rs2
@@ -112,7 +116,7 @@
       (fcvt.s.wu . 3)
     )))
 
-(define rv_f-fields '(rd rs1 imm12 rs2 rs3 rm))
+(define rv_f-fields '(rd rs1 imm12 simm12 rs2 rs3 rm))
 
 (define rv_f-param-count
   (make-immutable-hash
@@ -149,7 +153,7 @@
   (make-immutable-hash
     '(
       (flw . (rd rs1 imm12))
-      (fsw . (imm12 rs1 rs2))
+      (fsw . (simm12 rs1 rs2))
       (fmadd.s . (rd rs1 rs2 rs3 rm))
       (fmsub.s . (rd rs1 rs2 rs3 rm))
       (fnmsub.s . (rd rs1 rs2 rs3 rm))
@@ -180,7 +184,7 @@
   (make-immutable-hash
     '(
       (flw . "flw rd, rs1, imm12")
-      (fsw . "fsw imm12, rs1, rs2")
+      (fsw . "fsw simm12, rs1, rs2")
       (fmadd.s . "fmadd.s rd, rs1, rs2, rs3, rm")
       (fmsub.s . "fmsub.s rd, rs1, rs2, rs3, rm")
       (fnmsub.s . "fnmsub.s rd, rs1, rs2, rs3, rm")
@@ -264,6 +268,7 @@
     [(rd) (hash-ref rv_f-rd mnemonic #f)]
     [(rs1) (hash-ref rv_f-rs1 mnemonic #f)]
     [(imm12) (hash-ref rv_f-imm12 mnemonic #f)]
+    [(simm12) (hash-ref rv_f-simm12 mnemonic #f)]
     [(rs2) (hash-ref rv_f-rs2 mnemonic #f)]
     [(rs3) (hash-ref rv_f-rs3 mnemonic #f)]
     [(rm) (hash-ref rv_f-rm mnemonic #f)]
@@ -273,6 +278,7 @@
   rv_f-rd
   rv_f-rs1
   rv_f-imm12
+  rv_f-simm12
   rv_f-rs2
   rv_f-rs3
   rv_f-rm
