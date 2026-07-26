@@ -105,7 +105,7 @@
                    (bit-range 12 31)))
 
 (define bimm12
-  (make-signed-field/aligned bimm12-base 'bimm12 0 11 2))
+  (make-signed-field/aligned bimm12-base 'bimm12 0 12 2))
 
 ;; -------- J-type --------
 (define jimm20-base
@@ -115,7 +115,7 @@
                    (bit-range 12 19 12 19)))
 
 (define jimm20
-  (make-signed-field/aligned jimm20-base 'jimm20 0 19 2))
+  (make-signed-field/aligned jimm20-base 'jimm20 0 20 2))
 
 ;; -------- 其它字段 --------
 (define fm    (make-bitfield-field (bit-range 0 3 28 31) 'fm    0 3))
