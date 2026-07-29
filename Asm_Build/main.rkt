@@ -165,12 +165,10 @@
     (define any-change? #f)
     (for ([item (in-list items)]
           [idx (in-naturals)])
-      (match (cons item (list-ref-null layout idx))
-        ;; layout 里对应位置的 (offset . item)
-        [(list (asm-insn mnemonic (list off-sym rs1-sym rs2-sym))
-               offset
-               _)
-         #:when (branch-mnemonic? mnemonic)
+      (match (list item (layout-offset layout idx))
+        [(list (asm-insn (and mnemonic (? branch-mnemonic?))
+                         (list off-sym rs1-sym rs2-sym))
+               (? exact-integer? offset))
          (define target (hash-ref symtab off-sym #f))
          (when target
            (define b-off (- target offset))
@@ -191,8 +189,14 @@
 ;; 辅助：从 layout 取第 idx 个元素（layout 是 (cons offset item) 的列表）
 (define (list-ref-null lst idx)
   (cond [(null? lst) #f]
-        [(zero? idx) (car lst)]
+        [(zero? idx) (list (car (car lst)) (cdr (car lst)))]
         [else (list-ref-null (cdr lst) (sub1 idx))]))
+
+;; 辅助：layout 第 idx 项的偏移
+(define (layout-offset layout idx)
+  (match (list-ref-null layout idx)
+    [(list offset _) offset]
+    [_ #f]))
 
 ;; ============================================================
 ;; Pass 2: 编码 —— 解析符号 + 写出字节
