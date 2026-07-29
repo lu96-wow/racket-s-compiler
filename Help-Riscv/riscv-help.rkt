@@ -12,7 +12,11 @@
 
 ;; 判断 n 是否为某32位值的符号扩展（RV64 Case 2 用）
 (define (fits-in-32-bit? n)
-  (= n (sign-extend-32 (bitwise-and n #xFFFFFFFF))))
+  ;; 64位值是否来自32位值的符号扩展
+  ;; 用64位掩码统一处理正/负数（Racket 整数无限精度，负数需要截断到64位）
+  (let ([n64 (bitwise-and n #xFFFFFFFFFFFFFFFF)])
+    (= n64 (bitwise-and (sign-extend-32 (bitwise-and n64 #xFFFFFFFF))
+                        #xFFFFFFFFFFFFFFFF))))
 
 ;; 核心：将原始无符号值拆成 (values hi lo)
 ;;   lo = low12-signed(raw)
