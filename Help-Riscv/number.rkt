@@ -79,6 +79,38 @@
 (define (low12-zero? n)
   (= (bitwise-and n #xFFF) 0))
 
+;; ============================================================
+;; 范围判断（用于入口校验 + 快速路径选择）
+;; ============================================================
+
+;; 12位有符号范围 [-2048, 2047]
+(define (fits-signed-12? n)
+  (<= -2048 n 2047))
+
+;; 32位有符号范围 [-2^31, 2^31-1]
+(define (fits-signed-32? n)
+  (<= (- (arithmetic-shift 1 31)) n (sub1 (arithmetic-shift 1 31))))
+
+;; 32位无符号范围 [0, 2^32-1]
+(define (fits-unsigned-32? n)
+  (<= 0 n (sub1 (arithmetic-shift 1 32))))
+
+;; 综合：能否放入 32 位（有符号或无符号都算）
+(define (fits-32? n)
+  (and (exact-integer? n)
+       (or (fits-signed-32? n) (fits-unsigned-32? n))))
+
+;; 综合：能否放入 64 位
+(define (fits-signed-64? n)
+  (<= (- (arithmetic-shift 1 63)) n (sub1 (arithmetic-shift 1 63))))
+
+(define (fits-unsigned-64? n)
+  (<= 0 n (sub1 (arithmetic-shift 1 64))))
+
+(define (fits-64? n)
+  (and (exact-integer? n)
+       (or (fits-signed-64? n) (fits-unsigned-64? n))))
+
 (require "help.rkt")
 (define (parse-symbol-number sym)
   (parse-byte-number (symbol->bytes sym)))
@@ -91,4 +123,11 @@
  align-down
  align-up
  low12-signed
- low12-zero?)
+ low12-zero?
+ fits-signed-12?
+ fits-signed-32?
+ fits-unsigned-32?
+ fits-32?
+ fits-signed-64?
+ fits-unsigned-64?
+ fits-64?)

@@ -51,20 +51,10 @@
 ;; ============================================================
 
 (define (load-immediate-number-32 rd imm)
-  (cond
-    [(not (exact-integer? imm)) #f]
-    [(< imm 0)
-     (if (> (min-signed-bits imm) 32) #f (gen-32-load rd imm))]
-    [else
-     (if (> (min-unsigned-bits imm) 32) #f (gen-32-load rd imm))]))
+  (if (fits-32? imm) (gen-32-load rd imm) #f))
 
 (define (load-immediate-number-64 rd imm use-reg)
-  (cond
-    [(not (exact-integer? imm)) #f]
-    [(< imm 0)
-     (if (> (min-signed-bits imm) 64) #f (gen-64-load rd imm use-reg))]
-    [else
-     (if (> (min-unsigned-bits imm) 64) #f (gen-64-load rd imm use-reg))]))
+  (if (fits-64? imm) (gen-64-load rd imm use-reg) #f))
 
 ;; ── RV32 立即数构造 ──
 
@@ -72,7 +62,7 @@
   (define raw    (bitwise-and imm #xFFFFFFFF))
   (define signed (sign-extend-32 raw))
   ;; 12位有符号范围内直接 addi，避免 hi=0x100000000 导致假的 lui
-  (if (<= -2048 signed 2047)
+  (if (fits-signed-12? signed)
       `((addi ,rd x0 ,signed))
       (let-values ([(hi lo) (split-hi-lo raw)])
         (emit-hi-lo rd hi lo))))
@@ -82,7 +72,7 @@
 (define (gen-64-load rd imm use-reg)
   (cond
     ;; Case 1: 12位有符号 — 单条 addi（必须优先，否则负数进入 Case 2 会生成假的 lui）
-    [(<= -2048 imm 2047)
+    [(fits-signed-12? imm)
      `((addi ,rd x0 ,imm))]
     ;; Case 2: 来自32位符号扩展 — lui + addi(addiw同效)
     [(fits-in-32-bit? imm)
@@ -104,7 +94,7 @@
 ;; 预测：加载这个 64 位立即数是否需要辅助寄存器（Case 4 才需要）
 (define (needs-temp-register-for-64? imm)
   (and (exact-integer? imm)
-       (not (<= -2048 imm 2047))
+       (not (fits-signed-12? imm))
        (not (fits-in-32-bit? imm))
        (not (= (bitwise-and imm #xFFFFFFFF) 0))))
 
@@ -126,7 +116,7 @@
   (cond
     [(jal-offset? offset)
      `((jal ,rd ,offset))]
-    [(<= (- (expt 2 31)) offset (sub1 (expt 2 31)))
+    [(fits-signed-32? offset)
      (generate-32-jump rd offset)]
     [else
      ;; 超 32 位偏移: 先将完整 offset 加载到 use-reg，
