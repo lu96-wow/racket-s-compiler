@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define c.lbu (make-instruction rd_p rs1_p c_uimm2 (bit-range-fixed 1 0 0) (bit-range-fixed 15 13 4) (bit-range-fixed 12 10 0)))

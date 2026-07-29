@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define clzw (make-instruction rd rs1 (bit-range-fixed 31 20 1536) (bit-range-fixed 14 12 1) (bit-range-fixed 6 2 6) (bit-range-fixed 1 0 3)))

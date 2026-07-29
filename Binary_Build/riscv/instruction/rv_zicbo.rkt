@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define cbo.clean (make-instruction rs1 (bit-range-fixed 31 20 1) (bit-range-fixed 14 12 2) (bit-range-fixed 11 7 0) (bit-range-fixed 6 2 3) (bit-range-fixed 1 0 3)))

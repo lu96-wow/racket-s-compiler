@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define vsm3c.vi (make-instruction vs2 zimm5 vd (bit-range-fixed 31 26 43) (bit-range-fixed 25 25 1) (bit-range-fixed 14 12 2) (bit-range-fixed 6 0 119)))

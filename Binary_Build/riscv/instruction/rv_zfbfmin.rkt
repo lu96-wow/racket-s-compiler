@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define fcvt.bf16.s (make-instruction rd rs1 rm (bit-range-fixed 24 20 8) (bit-range-fixed 31 27 8) (bit-range-fixed 26 25 2) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))

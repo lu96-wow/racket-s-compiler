@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define fmadd.h (make-instruction rd rs1 rs2 rs3 rm (bit-range-fixed 26 25 2) (bit-range-fixed 6 2 16) (bit-range-fixed 1 0 3)))

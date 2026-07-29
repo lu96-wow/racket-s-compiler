@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define vfwmaccbf16.vv (make-instruction vm vs2 vs1 vd (bit-range-fixed 31 26 59) (bit-range-fixed 14 12 1) (bit-range-fixed 6 0 87)))

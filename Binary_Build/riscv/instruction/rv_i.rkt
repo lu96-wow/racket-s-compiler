@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define lui (make-instruction rd imm20 (bit-range-fixed 6 2 13) (bit-range-fixed 1 0 3)))

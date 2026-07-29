@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define sha512sum0r (make-instruction rd rs1 rs2 (bit-range-fixed 31 30 1) (bit-range-fixed 29 25 8) (bit-range-fixed 14 12 0) (bit-range-fixed 6 0 51)))

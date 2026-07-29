@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define fli.q (make-instruction rd rs1 (bit-range-fixed 24 20 1) (bit-range-fixed 31 27 30) (bit-range-fixed 14 12 0) (bit-range-fixed 26 25 3) (bit-range-fixed 6 2 20) (bit-range-fixed 1 0 3)))

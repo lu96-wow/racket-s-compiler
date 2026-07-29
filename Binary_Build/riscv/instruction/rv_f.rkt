@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define flw (make-instruction rd rs1 imm12 (bit-range-fixed 14 12 2) (bit-range-fixed 6 2 1) (bit-range-fixed 1 0 3)))

@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define vsha2ms.vv (make-instruction vs2 vs1 vd (bit-range-fixed 31 26 45) (bit-range-fixed 25 25 1) (bit-range-fixed 14 12 2) (bit-range-fixed 6 0 119)))

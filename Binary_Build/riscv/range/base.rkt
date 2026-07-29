@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../base.rkt")
+(require "../../base.rkt")
 
 ;; 基础检查函数
 

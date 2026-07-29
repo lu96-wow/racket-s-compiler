@@ -1,6 +1,6 @@
 #lang racket
 (require "../../base.rkt"
-         "../base_range.rkt"
+         "../range.rkt"
          "../register.rkt")
 
 (define c.addi4spn (make-instruction rd_p c_nzuimm10 (bit-range-fixed 1 0 0) (bit-range-fixed 15 13 0)))
