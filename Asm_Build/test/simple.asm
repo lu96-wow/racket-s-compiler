@@ -7,6 +7,6 @@
   (label loop)
   (addi a1 a1 1)          ;; a1++
   (addi a0 a0 -1)         ;; a0--
-  (bne a0 zero loop)      ;; if a0!=0, jump back to loop
+  (bne loop a0 zero)      ;; 偏移在前: (bne offset rs1 rs2)
   ;; 此时 a1 应该等于 42
   (ebreak))

@@ -56,41 +56,20 @@
       (dynamic-require mod-path mnemonic))))
 
 ;; ============================================================
-;; 寄存器名 → 编号
+;; 寄存器名 → 编号（加载 register.rkt 一次，枚举全部导出）
 ;; ============================================================
+(define-runtime-path reg-path "../Binary_Build/riscv/register.rkt")
 (define reg-table
-  (let ([h (make-hash)])
-    (for ([pair (in-list
-                  '((zero . 0)  (ra . 1)  (sp . 2)  (gp . 3)  (tp . 4)
-                    (t0 . 5)    (t1 . 6)  (t2 . 7)
-                    (s0 . 8)    (fp . 8)  (s1 . 9)
-                    (a0 . 10)   (a1 . 11) (a2 . 12) (a3 . 13)
-                    (a4 . 14)   (a5 . 15) (a6 . 16) (a7 . 17)
-                    (s2 . 18)   (s3 . 19) (s4 . 20) (s5 . 21)
-                    (s6 . 22)   (s7 . 23) (s8 . 24) (s9 . 25)
-                    (s10 . 26)  (s11 . 27)
-                    (t3 . 28)   (t4 . 29) (t5 . 30) (t6 . 31)))])
-      (hash-set! h (car pair) (cdr pair)))
-    (for ([i (in-range 32)])
-      (hash-set! h (string->symbol (format "x~a" i)) i))
-    h))
+  (let ([ns (make-base-empty-namespace)])
+    (parameterize ([current-namespace ns])
+      (namespace-require `(file ,(path->string reg-path))))
+    (for/hash ([sym (in-list (namespace-mapped-symbols ns))])
+      (define val (namespace-variable-value sym #t #f ns))
+      (when (exact-integer? val)
+        (values sym val)))))
 
-;; ============================================================
-;; 汇编参数顺序 → 编码参数顺序 的重排规则
-;; ============================================================
-;; 指令函数定义使用编码顺序，而 S 表达式源使用汇编顺序。
-;; 对 B-type (beq 等): 汇编 (rs1 rs2 offset) → 编码 (offset rs1 rs2)
-;; 对 S-type (sb 等):   汇编 (rs2 rs1 offset) → 编码 (offset rs1 rs2)
-(define (make-reorder operands)
-  (match operands
-    [(list (or 'bimm12) 'rs1 'rs2)  '(2 0 1)]  ;; 汇编(rs1 rs2 off) → 编码(off rs1 rs2)
-    [(list (or 'simm12) 'rs1 'rs2)  '(2 1 0)]  ;; 汇编(rs2 rs1 off) → 编码(off rs1 rs2)
-    [_  #f]))
-
-(define (reorder-args args reorder)
-  (if reorder
-      (for/list ([i (in-list reorder)]) (list-ref args i))
-      args))
+(define (branch-mnemonic? mnemonic)
+  (memq mnemonic '(beq bne blt bge bltu bgeu)))
 
 ;; ============================================================
 ;; 符号解析：arg → 具体整数值
@@ -119,7 +98,6 @@
         (unless insns (error 'li "cannot load immediate ~a in rv64" imm))
         (values insns (* 4 (length insns)))]
        [else
-        ;; 需要临时寄存器：选一个不与 rd 冲突的
         (define temp (if (= rd-num 5) 6 5))  ;; t0=5, t1=6
         (define insns (load-immediate-number-64 rd-num imm temp))
         (unless insns (error 'li "cannot load immediate ~a in rv64" imm))
@@ -127,20 +105,44 @@
     [else (error 'li "unknown word-size: ~a" word-size)]))
 
 ;; ============================================================
-;; Pass 1: 布局 —— 算偏移 + 建符号表
+;; 分支展开（封装 expand-branch-if-needed 的调用细节）
+;; 返回 (values expanded-list byte-size)
+;; 若 offset 已知且在范围内则返回 (values #f 4)
 ;; ============================================================
-(define (pass-1 items word-size allowed-exts)
+(define (branch-size mnemonic off-sym rs1-sym rs2-sym symtab current-offset word-size)
+  (match (hash-ref symtab off-sym #f)
+    [#f 4]  ;; 向前跳转，未知偏移，保守假设 4 字节
+    [target
+     (define branch-off (- target current-offset))
+     (define rs1-num (hash-ref reg-table rs1-sym))
+     (define rs2-num (hash-ref reg-table rs2-sym))
+     (let-values ([(expanded esize)
+                   (expand-branch-if-needed mnemonic branch-off rs1-num rs2-num word-size)])
+       (if expanded esize 4))]))
+
+;; ============================================================
+;; Pass 1: 布局 —— 算偏移 + 建符号表
+;; forced-sizes: item-index → 强制使用的字节数（松弛用），缺省则自动计算
+;; ============================================================
+(define (pass-1 items word-size allowed-exts [forced-sizes (hash)])
   (define symtab (make-hash))
   (define layout '())
   (define offset 0)
 
-  (for ([item (in-list items)])
+  (for ([item (in-list items)]
+        [idx (in-naturals)])
     (match item
       [(asm-label name)
        (hash-set! symtab name offset)]
       [(asm-insn 'li (list rd imm))
        (define rd-num (hash-ref reg-table rd))
        (define-values (_ size) (expand-li rd-num imm word-size))
+       (set! layout (cons (cons offset item) layout))
+       (set! offset (+ offset size))]
+      [(asm-insn mnemonic (list off-sym rs1-sym rs2-sym))
+       #:when (branch-mnemonic? mnemonic)
+       (define size (or (hash-ref forced-sizes idx #f)
+                        (branch-size mnemonic off-sym rs1-sym rs2-sym symtab offset word-size)))
        (set! layout (cons (cons offset item) layout))
        (set! offset (+ offset size))]
       [(asm-insn mnemonic _args)
@@ -151,11 +153,58 @@
   (values (reverse layout) symtab offset))
 
 ;; ============================================================
+;; 松弛迭代：反复 Pass 1 直到所有分支偏移收敛
+;; ============================================================
+(define (relax items word-size allowed-exts)
+  (define forced-sizes (make-hash))  ;; item-index → byte-size
+
+  (let loop ([iter 0])
+    (define-values (layout symtab total)
+      (pass-1 items word-size allowed-exts forced-sizes))
+
+    (define any-change? #f)
+    (for ([item (in-list items)]
+          [idx (in-naturals)])
+      (match (cons item (list-ref-null layout idx))
+        ;; layout 里对应位置的 (offset . item)
+        [(list (asm-insn mnemonic (list off-sym rs1-sym rs2-sym))
+               offset
+               _)
+         #:when (branch-mnemonic? mnemonic)
+         (define target (hash-ref symtab off-sym #f))
+         (when target
+           (define b-off (- target offset))
+           (unless (fits-branch-offset? b-off)
+             (define rs1-num (hash-ref reg-table rs1-sym))
+             (define rs2-num (hash-ref reg-table rs2-sym))
+             (let-values ([(expanded esize)
+                           (expand-branch-if-needed mnemonic b-off rs1-num rs2-num word-size)])
+               (unless (= (hash-ref forced-sizes idx 4) esize)
+                 (hash-set! forced-sizes idx esize)
+                 (set! any-change? #t)))))]
+        [_ (void)]))
+
+    (if (and any-change? (< iter 10))
+        (loop (add1 iter))
+        (values layout symtab total))))
+
+;; 辅助：从 layout 取第 idx 个元素（layout 是 (cons offset item) 的列表）
+(define (list-ref-null lst idx)
+  (cond [(null? lst) #f]
+        [(zero? idx) (car lst)]
+        [else (list-ref-null (cdr lst) (sub1 idx))]))
+
+;; ============================================================
 ;; Pass 2: 编码 —— 解析符号 + 写出字节
 ;; ============================================================
 (define (pass-2 layout symtab word-size allowed-exts)
   (define out (open-output-bytes))
   (define offset 0)
+
+  (define (emit-word func args)
+    (define word (apply func args))
+    (write-bytes (integer->integer-bytes word 4 #f #f) out)
+    (set! offset (+ offset 4)))
 
   (for ([pair (in-list layout)])
     (match-define (cons _orig-offset item) pair)
@@ -170,17 +219,31 @@
            [`(,mn ,args ...)
             (define resolved (map (λ (a) (resolve-arg a symtab offset)) args))
             (define func (get-insn-func mn allowed-exts))
-            (define word (apply func resolved))
-            (write-bytes (integer->integer-bytes word 4 #f #f) out)
-            (set! offset (+ offset 4))]))]
+            (emit-word func resolved)]))]
+
+      ;; ── 分支指令（可能需要展开）──
+      [(asm-insn (and mnemonic (? branch-mnemonic?)) (list off-sym rs1-sym rs2-sym))
+       (define resolved-rs1 (resolve-arg rs1-sym symtab offset))
+       (define resolved-rs2 (resolve-arg rs2-sym symtab offset))
+       (define branch-off (resolve-arg off-sym symtab offset))
+       (let-values ([(expanded _)
+                     (expand-branch-if-needed
+                      mnemonic branch-off resolved-rs1 resolved-rs2 word-size)])
+         (if expanded
+             (for ([form (in-list expanded)])
+               (match form
+                 [`(,mn ,as ...)
+                  (define rs (map (λ (a) (resolve-arg a symtab offset)) as))
+                  (define func (get-insn-func mn allowed-exts))
+                  (emit-word func rs)]))
+             (let ([func (get-insn-func mnemonic allowed-exts)])
+               (emit-word func (list branch-off resolved-rs1 resolved-rs2)))))]
 
       ;; ── 普通指令 ──
       [(asm-insn mnemonic args)
        (define resolved (map (λ (a) (resolve-arg a symtab offset)) args))
-       (define reorder (make-reorder (get-operands mnemonic)))
-       (define encoded (reorder-args resolved reorder))
        (define func (get-insn-func mnemonic allowed-exts))
-       (define word (apply func encoded))
+       (define word (apply func resolved))
        (define width (get-instruction-width mnemonic))
        (write-bytes (integer->integer-bytes word (/ width 8) #f #f) out)
        (set! offset (+ offset (/ width 8)))]))
@@ -194,7 +257,7 @@
   (define prog (parse sexp))
   (match-define (asm-prog word-size exts items) prog)
   (define-values (layout symtab _total)
-    (pass-1 items word-size exts))
+    (relax items word-size exts))
   (pass-2 layout symtab word-size exts))
 
 (define (assemble-file path)

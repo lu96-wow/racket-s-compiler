@@ -17,6 +17,6 @@
   (label loop)
   (addi a2 a2 1)
   (li a3 5)
-  (bne a2 a3 loop)              ;; 向后跳转
+  (bne loop a2 a3)              ;; 偏移在前，向后跳转
   (label end)
   (ebreak))

@@ -146,6 +146,44 @@
     (and insns (append insns `((jalr ,rd ,addr-reg 0))))))
 
 ;; ============================================================
+;; 分支扩展（偏移超出 B-type 12 位范围时）
+;; ============================================================
+
+;; B-type 偏移范围：12 位有符号，2 字节对齐 → [-4096, 4094]
+(define (fits-branch-offset? offset)
+  (and (<= -4096 offset 4094)
+       (= (bitwise-and offset 1) 0)))
+
+;; 分支条件取反
+(define (branch-inverse mnemonic)
+  (case mnemonic
+    [(beq) 'bne]  [(bne) 'beq]
+    [(blt) 'bge]  [(bge) 'blt]
+    [(bltu) 'bgeu] [(bgeu) 'bltu]
+    [else (error 'branch-inverse "unknown branch: ~a" mnemonic)]))
+
+;; 展开过长分支：条件反转 + 短跳 + 长跳转
+;; offset = target_pc - branch_pc
+;; 返回 (values expanded-list byte-size)
+;; 若偏移合法则返回 (values #f 4)
+(define (expand-branch-if-needed mnemonic offset rs1 rs2 word-size)
+  (if (fits-branch-offset? offset)
+      (values #f 4)
+      (let* ([inv         (branch-inverse mnemonic)]
+             [jump-offset (- offset 4)]
+             [jump-seq    (if (eq? word-size 'rv64)
+                             (generate-64-jump 'zero jump-offset 'zero)
+                             (generate-32-jump 'zero jump-offset))]
+             [_           (unless jump-seq
+                            (error 'expand-branch
+                                   "cannot jump to offset ~a" offset))]
+             [jump-size   (* 4 (length jump-seq))]
+             [skip        (+ 4 jump-size)]
+             [full        `((,inv ,skip ,rs1 ,rs2) ,@jump-seq)]
+             [total-size  (+ 4 jump-size)])
+        (values full total-size))))
+
+;; ============================================================
 (provide
  load-immediate-number-32
  load-immediate-number-64
@@ -153,4 +191,7 @@
  generate-64-jump
  needs-temp-register-for-64?
  jump-to-absolute-32
- jump-to-absolute-64)
+ jump-to-absolute-64
+ fits-branch-offset?
+ branch-inverse
+ expand-branch-if-needed)
