@@ -14,7 +14,7 @@
 (struct asm-space (size)         #:transparent)
 
 ;; ============================================================
-;; 环境初始化（由 main.rkt 在解析 asm 声明后调用）
+;; 指令函数加载（assemble 调用时初始化）
 ;; ============================================================
 (define-runtime-path insn-dir "../Binary_Build/riscv/instruction")
 (define-runtime-path reg-path "../Binary_Build/riscv/register.rkt")
@@ -47,7 +47,7 @@
       (dynamic-require (build-path insn-dir (format "~a.rkt" ext)) mnemonic))))
 
 ;; ============================================================
-;; 解析（main.rkt 已经把 S 表达式转成了 items）
+;; 各阶段说明
 ;; ============================================================
 
 (define (branch-mnemonic? m) (memq m '(beq bne blt bge bltu bgeu)))

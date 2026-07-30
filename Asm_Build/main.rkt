@@ -1,87 +1,72 @@
 #lang racket
 
-(require "asm.rkt"
-         "module.rkt"
-         racket/match)
+(require (for-syntax "asm.rkt"
+                     "module-process.rkt"
+                     racket/base
+                     racket/match
+                     syntax/parse))
 
 ;; ============================================================
-;; 入口：分发 (asm ...) | (module ...) | (link ...)
+;; asm — 编译期汇编
+;;
+;; 所有 form 必须是 (quote ...) 形式。
+;; 用户宏展开为 (begin '(insn) '(insn) ...)。
+;; asm 只剥 quote → 模块消解 → 汇编 → bytes 字面量。
 ;; ============================================================
 
-(define (assemble-sexp sexp)
-  (match sexp
+(define-syntax (asm stx)
+  (syntax-parse stx
+    [(_asm word-size:expr exts:expr form ...)
+     ;; 1. 展开用户宏（asm 指令被 quote 保护，只需阻止 asm 指令名）
+     (define stop-list
+       (list #'module #'module+ #'provide #'require #'label #'space #'li))
 
-    ;; ---- 单文件汇编（统一走模块层）----
-    [`(asm ,word-size ,exts ,body ...)
-     (validate-isa! word-size exts)
-     (assemble-modules (parse-asm-body body '()) word-size exts)]
+     (define expanded
+       (for/list ([f (in-list (syntax->list #'(form ...)))])
+         (local-expand f 'expression stop-list)))
 
-    ;; ---- 多文件链接 ----
-    [`(link ,word-size ,exts ,file-or-mod ...)
-     (validate-isa! word-size exts)
-     (define root-mods (link-items->modules file-or-mod))
-     (assemble-modules root-mods word-size exts)]
+     ;; 2. 展平 begin，提取 quote
+     (define items (extract-quoted (flatten-begins expanded)))
 
-    [_ (error 'asm "expected (asm rv32|rv64 (ext...) ...) or (link ...)")]))
+     ;; 3. 模块处理
+     (define flat-items (process-modules items))
 
-;; ============================================================
-;; 辅助
-;; ============================================================
+     ;; 4. → struct
+     (define structs
+       (for/list ([item (in-list flat-items)])
+         (match item
+           [`(asm-label ',name)     (asm-label name)]
+           [`(asm-insn ',mn ',args) (asm-insn mn args)]
+           [`(asm-space ,size)      (asm-space size)]
+           [_ (error 'asm "bad item: ~a" item)])))
 
-(define (validate-isa! word-size exts)
-  (unless (memq word-size '(rv32 rv64))
-    (error 'asm "word-size must be rv32 or rv64, got: ~a" word-size))
-  (unless (and (list? exts) (andmap symbol? exts))
-    (error 'asm "extensions must be (ext...), got: ~a" exts)))
+     ;; 5. 汇编
+     (define bytes (assemble structs (syntax->datum #'word-size) (syntax->datum #'exts)))
 
-;; 解析 (link ...) 内部的 (file "...") 和 (module ...) 项
-(define (link-items->modules items)
-  (define mods '())
-  (for ([item (in-list items)])
-    (match item
-      [`(file ,(? string? path))
-       (define file-mods (read-module-file path))
-       (set! mods (append mods file-mods))]
-      [`(module ,name ,sub-body ...)
-       (set! mods (cons (parse-module-from-sexp 'module name sub-body '()) mods))]
-      [`(module+ ,name ,sub-body ...)
-       (set! mods (cons (parse-module-from-sexp 'module+ name sub-body '()) mods))]
-      [_ (error 'link "expected (file \"...\") or (module ...), got: ~a" item)]))
-  (reverse mods))
+     ;; 6. bytes 字面量
+     (datum->syntax stx bytes stx stx)]))
 
-;; 读取一个 .asm 文件，返回顶层模块列表
-(define (read-module-file path)
-  (define p (if (string? path) (string->path path) path))
-  (call-with-input-file p
-    (λ (in)
-      (define s (read in))
-      (match s
-        [`(module ,name ,body ...)
-         (list (parse-module-from-sexp 'module name body '()))]
-        [`(module+ ,name ,body ...)
-         (list (parse-module-from-sexp 'module+ name body '()))]
-        [`(asm ,word-size ,exts ,body ...)
-         (validate-isa! word-size exts)
-         (parse-asm-body body (path-to-mod-path p))]
-        [_ (error 'link "file ~a must contain (module ...) or (asm ...), got: ~a" path s)]))))
+;; 从展开+展平后的 syntax 列表中提取所有 (quote ...) → 数据列表
+;; 模块 body 内部递归剥 quote
+(define-for-syntax (extract-quoted stx-list)
+  (for/list ([stx (in-list stx-list)])
+    (match (syntax->datum stx)
+      [`(quote ,item) (unwrap-quote item)]
+      [other (error 'asm "expected (quote ...), got: ~a" other)])))
 
-;; 路径辅助 — 统一接受 string 或 path
-(define (->string v) (if (string? v) v (path->string v)))
+(define-for-syntax (unwrap-quote item)
+  (match item
+    [`(quote ,inner)     (unwrap-quote inner)]
+    [`(module ,name ,body ...)   `(module ,name ,@(map unwrap-quote body))]
+    [`(module+ ,name ,body ...)  `(module+ ,name ,@(map unwrap-quote body))]
+    [_ item]))
 
-(define (path-remove-ext p)
-  (regexp-replace #rx"\\.[^.]*$" (->string p) ""))
+;; 展平 begin
+(define-for-syntax (flatten-begins stx-list)
+  (apply append
+    (for/list ([stx (in-list stx-list)])
+      (match (syntax->datum stx)
+        [`(begin ,sub ...) (flatten-begins (cdr (syntax-e stx)))]
+        [_ (list stx)]))))
 
-(define (path-to-mod-path p)
-  (map string->symbol (string-split (path-remove-ext (->string p)) "/")))
-
-;; ============================================================
-;; assemble-file：读取一个文件，自动检测类型
-;; ============================================================
-(define (assemble-file path)
-  (call-with-input-file path
-    (λ (in)
-      (let loop ()
-        (define s (read in))
-        (if (eof-object? s) #"" (assemble-sexp s))))))
-
-(provide assemble-sexp assemble-file)
+(provide asm)
