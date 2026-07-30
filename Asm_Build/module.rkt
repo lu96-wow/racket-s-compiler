@@ -111,25 +111,24 @@
 ;; 从 S 表达式入口解析顶层模块列表
 ;; ============================================================
 
-;; 从 (asm ...) 或 (link ...) 的 body 中提取所有顶层 item
-;; 检测到 (module ...) / (module+ ...) 就递归解析
-;; 非模块 item 归入匿名模块（路径为 (filename)）
-(define (parse-top-level-items body-sexps anonymous-name)
+;; 解析 (asm ...) 的 body：检测到 (module ...) / (module+ ...) 就递归解析
+;; 非模块 item 归入匿名模块（路径为 default-path）
+(define (parse-asm-body body-sexps default-path)
   (define anon-body '())
   (define anon-provides '())
   (define anon-requires '())
   (define modules '())
-  (define seen-module? #f)
+  (define has-explicit? #f)
 
   (for ([item (in-list body-sexps)])
     (match item
       [`(module ,name ,body ...)
-       (set! seen-module? #t)
+       (set! has-explicit? #t)
        (set! modules
              (cons (parse-module-from-sexp 'module name body '())
                    modules))]
       [`(module+ ,name ,body ...)
-       (set! seen-module? #t)
+       (set! has-explicit? #t)
        (set! modules
              (cons (parse-module-from-sexp 'module+ name body '())
                    modules))]
@@ -142,12 +141,12 @@
 
   ;; 始终返回模块列表：至少包含匿名模块
   (define anon-mod
-    (mod-info anonymous-name 'module
+    (mod-info default-path 'module
               (reverse anon-provides)
               (reverse anon-requires)
               (reverse anon-body)
               '()))
-  (if seen-module?
+  (if has-explicit?
       (cons anon-mod (reverse modules))
       (list anon-mod)))
 
@@ -334,5 +333,5 @@
          require-spec-target-path require-spec-symbols
          item-sexp->ast
          parse-module-from-sexp
-         parse-top-level-items
+         parse-asm-body
          assemble-modules)

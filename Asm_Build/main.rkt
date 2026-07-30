@@ -14,7 +14,7 @@
     ;; ---- 单文件汇编（统一走模块层）----
     [`(asm ,word-size ,exts ,body ...)
      (validate-isa! word-size exts)
-     (assemble-modules (parse-top-level-items body '()) word-size exts)]
+     (assemble-modules (parse-asm-body body '()) word-size exts)]
 
     ;; ---- 多文件链接 ----
     [`(link ,word-size ,exts ,file-or-mod ...)
@@ -62,7 +62,7 @@
          (list (parse-module-from-sexp 'module+ name body '()))]
         [`(asm ,word-size ,exts ,body ...)
          (validate-isa! word-size exts)
-         (parse-top-level-items body (path-to-mod-path p))]
+         (parse-asm-body body (path-to-mod-path p))]
         [_ (error 'link "file ~a must contain (module ...) or (asm ...), got: ~a" path s)]))))
 
 ;; 路径辅助 — 统一接受 string 或 path
