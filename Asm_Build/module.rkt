@@ -1,7 +1,7 @@
 #lang racket
 
 (require "asm.rkt"
-         "env.rkt"
+         "scope.rkt"
          racket/match
          racket/set)
 
@@ -354,7 +354,8 @@
 ;; root-mods: (listof mod-info) — 顶层模块（按 link 声明顺序）
 ;; word-size: 'rv32 | 'rv64
 ;; exts: (listof symbol) — 扩展列表
-(define (assemble-modules root-mods word-size exts)
+;; strategy: 'stack | 'bump | 'gc | 'manual
+(define (assemble-modules root-mods word-size exts [strategy 'stack])
   ;; 1. 收集所有模块到注册表
   (define registry (collect-modules root-mods))
 
@@ -370,8 +371,8 @@
   ;; 5. 重写 + 展平
   (define flat-items (rewrite-and-flatten registry import-maps module-order))
 
-  ;; 6. 展开 env（虚拟寄存器 → 物理寄存器）
-  (define resolved-items (resolve-env flat-items))
+  ;; 6. 作用域分析 + 资源分配 + 名字消解 + 回收
+  (define resolved-items (analyze-and-resolve flat-items strategy))
 
   ;; 7. 喂给现有汇编引擎
   (assemble resolved-items word-size exts))
