@@ -228,4 +228,7 @@
   (define-values (layout symtab _) (relax items word-size))
   (pass-2 layout symtab word-size))
 
-(provide assemble reg-num asm-label asm-insn asm-space asm-label? asm-insn? asm-space?)
+(provide assemble reg-num
+         asm-label asm-label-name asm-insn asm-insn-args asm-space
+         asm-label? asm-insn? asm-space?
+         asm-insn-mnemonic)
