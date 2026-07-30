@@ -11,6 +11,7 @@
 ;; ============================================================
 (struct asm-label (name)         #:transparent)
 (struct asm-insn (mnemonic args) #:transparent)
+(struct asm-space (size)         #:transparent)
 
 ;; ============================================================
 ;; 环境初始化（由 main.rkt 在解析 asm 声明后调用）
@@ -101,6 +102,9 @@
       [(asm-label name)
        (hash-set! symtab name offset)
        (set! layout (cons (cons offset item) layout))]
+      [(asm-space size)
+       (set! layout (cons (cons offset item) layout))
+       (set! offset (+ offset size))]
       [(asm-insn 'li (list rd imm))
        (define rd-num (reg-num rd))
        (let-values ([(insns size) (li-expand rd-num imm word-size)])
@@ -191,6 +195,9 @@
     (match-define (cons _ item) pair)
     (match item
       [(asm-label _) (void)]
+      [(asm-space size)
+       (write-bytes (make-bytes size 0) out)
+       (set! offset (+ offset size))]
       [(asm-insn 'li (list rd imm))
        (let-values ([(expanded _) (li-expand (reg-num rd) imm word-size)])
          (for ([f (in-list expanded)]) (encode f)))]
@@ -221,4 +228,4 @@
   (define-values (layout symtab _) (relax items word-size))
   (pass-2 layout symtab word-size))
 
-(provide assemble reg-num asm-label asm-insn asm-label? asm-insn?)
+(provide assemble reg-num asm-label asm-insn asm-space asm-label? asm-insn? asm-space?)
