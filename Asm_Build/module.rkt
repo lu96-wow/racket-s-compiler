@@ -1,6 +1,7 @@
 #lang racket
 
 (require "asm.rkt"
+         "env.rkt"
          racket/match
          racket/set)
 
@@ -88,6 +89,9 @@
        (set! children
              (cons (parse-module-from-sexp 'module+ sub-name sub-body path)
                    children))]
+      ;; let-reg 寄存器绑定
+      [`(let-reg ,_ ...)
+       (set! body (cons (parse-let-reg-sexp item) body))]
       ;; 普通指令/标签/space
       [_ (set! body (cons (item-sexp->ast item) body))]))
 
@@ -106,6 +110,31 @@
     (unless (symbol? s)
       (error 'module "invalid require symbol: ~a" s)))
   (cons req-path more))
+
+;; 解析 (let-reg ([name spec] ...) body ...)
+;; spec: (get-reg) 自动分配 | xN 显式物理寄存器
+(define (parse-let-reg-sexp item)
+  (match item
+    [`(let-reg ([,names ,specs] ...) ,body ...)
+     (define bindings
+       (for/list ([n (in-list names)] [s (in-list specs)])
+         (cons n (match s
+                   [`(get-reg) 'get-reg]
+                   [(? symbol?)
+                    (unless (reg-num s)
+                      (error 'let-reg "~a is not a register" s))
+                    (when (eq? s 'x0)
+                      (error 'let-reg "cannot bind to x0"))
+                    s]
+                   [_ (error 'let-reg "invalid binding spec: ~a" s)]))))
+     (define parsed-body
+       (for/list ([sub (in-list body)])
+         (cond
+           [(and (pair? sub) (eq? (car sub) 'let-reg))
+            (parse-let-reg-sexp sub)]
+           [else (item-sexp->ast sub)])))
+     (env-let-reg bindings parsed-body)]
+    [_ (error 'let-reg "invalid let-reg form: ~a" item)]))
 
 ;; ============================================================
 ;; 从 S 表达式入口解析顶层模块列表
@@ -137,6 +166,8 @@
       [`(require ,mod-ref ,more ...)
        (match-define (cons req-path syms) (parse-require-spec mod-ref more))
        (set! anon-requires (cons (require-spec req-path syms) anon-requires))]
+      [`(let-reg ,_ ...)
+       (set! anon-body (cons (parse-let-reg-sexp item) anon-body))]
       [_ (set! anon-body (cons (item-sexp->ast item) anon-body))]))
 
   ;; 始终返回模块列表：至少包含匿名模块
@@ -166,6 +197,14 @@
       (hash-set! registry path m)
       (loop (mod-info-children m))))
   registry)
+
+;; 递归收集 body 中所有 label（包括嵌套在 env-let-reg 内的）
+(define (collect-nested-labels items)
+  (for/fold ([labels (set)]) ([item (in-list items)])
+    (match item
+      [(asm-label name) (set-add labels name)]
+      [(env-let-reg _ body) (set-union labels (collect-nested-labels body))]
+      [_ labels])))
 
 ;; 为每个模块构建 import map
 ;; 返回: (hash/c (listof symbol) (hash/c symbol (listof symbol)))
@@ -217,10 +256,7 @@
 (define (build-export-tables registry)
   (define tables (make-hash))
   (for ([(path m) (in-hash registry)])
-    (define local-labels
-      (for/set ([item (in-list (mod-info-body m))]
-                #:when (asm-label? item))
-        (asm-label-name item)))
+    (define local-labels (collect-nested-labels (mod-info-body m)))
     (define provided (mod-info-provides m))
     ;; 验证：provide 的符号必须在模块内定义
     (for ([sym (in-list provided)])
@@ -242,42 +278,48 @@
     (define m (hash-ref registry path))
     (define im (hash-ref import-maps path))
 
-    ;; 收集模块内定义的本地 label 名
-    (define local-labels
-      (for/set ([item (in-list (mod-info-body m))]
-                #:when (asm-label? item))
-        (asm-label-name item)))
+    (define local-labels (collect-nested-labels (mod-info-body m)))
 
-    ;; module+ 额外可见的父模块符号（父模块自身的 label，不含父的 import）
     (define parent-local-labels
       (if (eq? (mod-info-kind m) 'module+)
           (let ([pp (drop-right path 1)])
             (if (and (pair? pp) (hash-has-key? registry pp))
-                (for/set ([item (in-list (mod-info-body (hash-ref registry pp)))]
-                          #:when (asm-label? item))
-                  (asm-label-name item))
+                (collect-nested-labels (mod-info-body (hash-ref registry pp)))
                 (set)))
           (set)))
 
     (for ([item (in-list (mod-info-body m))])
-      (define new-item
-        (match item
-          [(asm-label name)
-           (asm-label (if (null? path) name (append path (list name))))]
-          [(asm-insn mnemonic args)
-           (asm-insn mnemonic
-             (for/list ([arg (in-list args)])
-               (resolve-symbol arg local-labels parent-local-labels im path)))]
-          [_ item]))
-      (set! all-items (cons new-item all-items))))
+      (set! all-items
+            (cons (rewrite-one item local-labels parent-local-labels im path (set))
+                  all-items))))
 
   (reverse all-items))
 
+;; 递归重写单个 item（含 env-let-reg 穿透）
+(define (rewrite-one item local-labels parent-labels im module-path reg-names)
+  (match item
+    [(asm-label name)
+     (asm-label (if (null? module-path) name (append module-path (list name))))]
+    [(asm-insn mnemonic args)
+     (asm-insn mnemonic
+       (for/list ([arg (in-list args)])
+         (resolve-symbol arg local-labels parent-labels im module-path reg-names)))]
+    [(env-let-reg bindings body)
+     (define inner-names
+       (for/fold ([s reg-names]) ([b (in-list bindings)])
+         (set-add s (car b))))
+     (env-let-reg bindings
+       (for/list ([sub (in-list body)])
+         (rewrite-one sub local-labels parent-labels im module-path inner-names)))]
+    [(? asm-space?) item]
+    [_ (error 'module "unknown item type in rewrite: ~a" item)]))
+
 ;; 解析指令参数中的符号引用
-(define (resolve-symbol arg local-labels parent-labels im module-path)
+(define (resolve-symbol arg local-labels parent-labels im module-path [reg-names (set)])
   (cond
     [(exact-integer? arg) arg]
     [(reg-num arg) => (λ (n) arg)]
+    [(set-member? reg-names arg) arg]           ;; 虚拟寄存器名 → 放行，env 层处理
     [(set-member? local-labels arg)
      (if (null? module-path) arg (append module-path (list arg)))]
     [(hash-ref im arg #f)]
@@ -310,8 +352,11 @@
   ;; 5. 重写 + 展平
   (define flat-items (rewrite-and-flatten registry import-maps module-order))
 
-  ;; 6. 喂给现有汇编引擎
-  (assemble flat-items word-size exts))
+  ;; 6. 展开 env（虚拟寄存器 → 物理寄存器）
+  (define resolved-items (resolve-env flat-items))
+
+  ;; 7. 喂给现有汇编引擎
+  (assemble resolved-items word-size exts))
 
 ;; 深度优先遍历，按声明顺序排列模块
 (define (compute-module-order root-mods)
