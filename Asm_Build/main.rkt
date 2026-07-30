@@ -16,19 +16,13 @@
      (validate-isa! word-size exts)
      (assemble-modules (parse-top-level-items body '()) word-size exts)]
 
-    ;; ---- 独立模块文件： (module 名 body ...) ----
-    [`(module ,name ,body ...)
-     (define m (parse-module-from-sexp 'module name body '()))
-     ;; 匿名 ISA：从模块内容无法推断，用默认 rv64 (rv_i)
-     (assemble-modules (list m) 'rv64 '(rv_i))]
-
     ;; ---- 多文件链接 ----
     [`(link ,word-size ,exts ,file-or-mod ...)
      (validate-isa! word-size exts)
      (define root-mods (link-items->modules file-or-mod))
      (assemble-modules root-mods word-size exts)]
 
-    [_ (error 'asm "expected (asm rv32|rv64 (ext...) ...) or (module name ...) or (link ...)")]))
+    [_ (error 'asm "expected (asm rv32|rv64 (ext...) ...) or (link ...)")]))
 
 ;; ============================================================
 ;; 辅助

@@ -73,10 +73,11 @@
       [`(provide ,(? symbol? syms) ...)
        (set! provides (append provides syms))]
       ;; (require mod-path) 或 (require mod-path sym ...)
+      ;; 路径始终是绝对路径，与 parse-top-level-items 一致
       [`(require ,mod-ref ,more ...)
        (match-define (cons req-path syms)
          (parse-require-spec mod-ref more))
-       (set! requires (cons (require-spec (append parent-path req-path) syms) requires))]
+       (set! requires (cons (require-spec req-path syms) requires))]
       ;; 嵌套 module
       [`(module ,sub-name ,sub-body ...)
        (set! children
@@ -97,10 +98,7 @@
             (reverse children)))
 
 ;; 解析 require 的目标路径和符号列表
-;; mod-ref: symbol | (symbol ...) — 被 require 的模块路径（相对当前模块的父路径）
-;; more:   (listof symbol) — 要导入的符号名
-;; 返回: (cons target-path symbol-list)
-;;   target-path 是相对路径（后续由调用者加上 parent-path）
+;; 返回: (cons target-path symbol-list)，target-path 是绝对路径
 (define (parse-require-spec mod-ref more)
   (define req-path (parse-mod-path mod-ref))
   ;; 检查 more 全是符号
@@ -169,43 +167,6 @@
       (hash-set! registry path m)
       (loop (mod-info-children m))))
   registry)
-
-;; 为目标模块构建其可见的符号集合
-;; 返回: (setof symbol) — 模块内可直接使用的裸名集合
-;; module+: 额外包含祖先模块的所有可见符号
-(define (visible-symbols m registry)
-  (define local-labels
-    (for/set ([item (in-list (mod-info-body m))]
-              #:when (asm-label? item))
-      (asm-label-name item)))
-  (define imported
-    (for/set ([req (in-list (mod-info-requires m))]
-              #:when (null? (require-spec-symbols req)))
-      ;; 全量导入 → 先不展开，由 import map 构建时处理
-      ;; 这里只需要从 export-table 取
-      #f))
-  ;; TODO: 处理全量导入的符号名收集
-  ;; 暂时忽略 imported 展开（在 build-import-maps 中处理）
-  (define own-syms local-labels)
-
-  (if (eq? (mod-info-kind m) 'module+)
-      ;; module+: 合并祖先的可见符号
-      (let merge-ancestors ([path (mod-info-name m)])
-        (cond
-          [(null? path) own-syms]
-          [(null? (cdr path))
-           ;; path = (root)，没有祖先了
-           own-syms]
-          [else
-           (define parent-path (drop-right path 1))
-           (define parent (hash-ref registry parent-path #f))
-           (if parent
-               (set-union own-syms
-                          (for/set ([item (in-list (mod-info-body parent))]
-                                    #:when (asm-label? item))
-                            (asm-label-name item)))
-               own-syms)]))
-      own-syms))
 
 ;; 为每个模块构建 import map
 ;; 返回: (hash/c (listof symbol) (hash/c symbol (listof symbol)))
@@ -281,13 +242,6 @@
   (for ([path (in-list module-order)])
     (define m (hash-ref registry path))
     (define im (hash-ref import-maps path))
-    (define parent-im
-      (if (eq? (mod-info-kind m) 'module+)
-          (let ([pp (drop-right path 1)])
-            (if (and (pair? pp) (hash-has-key? registry pp))
-                (hash-ref import-maps pp (hash))
-                (hash)))
-          (hash)))
 
     ;; 收集模块内定义的本地 label 名
     (define local-labels
@@ -295,7 +249,7 @@
                 #:when (asm-label? item))
         (asm-label-name item)))
 
-    ;; module+ 额外可见的父模块符号
+    ;; module+ 额外可见的父模块符号（父模块自身的 label，不含父的 import）
     (define parent-local-labels
       (if (eq? (mod-info-kind m) 'module+)
           (let ([pp (drop-right path 1)])
@@ -309,37 +263,28 @@
     (for ([item (in-list (mod-info-body m))])
       (define new-item
         (match item
-          ;; 重命名 label：路径为空则保留裸名
           [(asm-label name)
            (asm-label (if (null? path) name (append path (list name))))]
-          ;; 重写指令中的符号引用
           [(asm-insn mnemonic args)
            (asm-insn mnemonic
              (for/list ([arg (in-list args)])
-               (resolve-symbol arg local-labels parent-local-labels im parent-im path)))]
-          ;; space 不变
+               (resolve-symbol arg local-labels parent-local-labels im path)))]
           [_ item]))
       (set! all-items (cons new-item all-items))))
 
   (reverse all-items))
 
 ;; 解析指令参数中的符号引用
-;; local-labels: 本地定义的 label 名
-;; parent-labels: 父模块的 label（仅 module+ 有效）
-;; im: 当前模块的 import map
-;; parent-im: 父模块的 import map（仅 module+ 有效）
-;; module-path: 当前模块路径
-(define (resolve-symbol arg local-labels parent-labels im parent-im module-path)
+(define (resolve-symbol arg local-labels parent-labels im module-path)
   (cond
     [(exact-integer? arg) arg]
-    [(reg-num arg) => (λ (n) arg)]     ;; 寄存器 → 保持原样
+    [(reg-num arg) => (λ (n) arg)]
     [(set-member? local-labels arg)
-     (if (null? module-path) arg (append module-path (list arg)))]  ;; 空路径→裸名
-    [(hash-ref im arg #f)]             ;; 显式 import → 目标限定名
+     (if (null? module-path) arg (append module-path (list arg)))]
+    [(hash-ref im arg #f)]
     [(set-member? parent-labels arg)
      (let ([pp (drop-right module-path 1)])
-       (if (null? pp) arg (append pp (list arg))))]  ;; 空路径→裸名
-    [(hash-ref parent-im arg #f)]      ;; 父模块 import → 父的映射
+       (if (null? pp) arg (append pp (list arg))))]
     [else (error 'module "unresolved symbol ~a in module ~a" arg module-path)]))
 
 ;; ============================================================
@@ -361,7 +306,7 @@
   (define import-maps (build-import-maps registry export-tables))
 
   ;; 4. 确定展平顺序：深度优先，按声明顺序
-  (define module-order (compute-module-order root-mods registry))
+  (define module-order (compute-module-order root-mods))
 
   ;; 5. 重写 + 展平
   (define flat-items (rewrite-and-flatten registry import-maps module-order))
@@ -370,7 +315,7 @@
   (assemble flat-items word-size exts))
 
 ;; 深度优先遍历，按声明顺序排列模块
-(define (compute-module-order root-mods registry)
+(define (compute-module-order root-mods)
   (define order '())
   (let dfs ([mods root-mods])
     (for ([m (in-list mods)])
