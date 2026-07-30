@@ -14,7 +14,8 @@
 ;; ============================================================
 
 (struct env-let-reg (bindings body) #:transparent)
-;; bindings: (listof (cons/c symbol 'get-reg))
+;; bindings: (listof (cons/c symbol (or/c 'get-reg symbol?)))
+;;   spec='get-reg → 自动分配; spec=寄存器名 → 显式绑定
 ;; body:     (listof asm-item) — 可嵌套 env-let-reg
 
 ;; ============================================================
@@ -82,10 +83,10 @@
 (define (lookup-reg sym frames)
   (cond
     [(exact-integer? sym) sym]
-    [(reg-num sym) => (λ (n) sym)]    ;; 已经是物理寄存器符号 → 保持
+    [(reg-num sym) sym]               ;; 已经是寄存器 → 保持
     [else
      (let loop ([fs frames])
        (cond
-         [(null? fs) sym]              ;; 不在任何帧中 → label 引用，保持原样
+         [(null? fs) sym]              ;; 不在任何帧中 → label 引用
          [(hash-ref (car fs) sym #f)]
          [else (loop (cdr fs))]))]))

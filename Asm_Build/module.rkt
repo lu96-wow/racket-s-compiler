@@ -91,7 +91,9 @@
                    children))]
       ;; let-reg 寄存器绑定
       [`(let-reg ,_ ...)
-       (set! body (cons (parse-let-reg-sexp item) body))]
+       (let-values ([(reg mods) (parse-let-reg-sexp item path)])
+         (set! body (cons reg body))
+         (set! children (append mods children)))]
       ;; 普通指令/标签/space
       [_ (set! body (cons (item-sexp->ast item) body))]))
 
@@ -111,9 +113,9 @@
       (error 'module "invalid require symbol: ~a" s)))
   (cons req-path more))
 
-;; 解析 (let-reg ([name spec] ...) body ...)
-;; spec: (get-reg) 自动分配 | xN 显式物理寄存器
-(define (parse-let-reg-sexp item)
+;; 解析 (let-reg ([name spec] ...) body ...)，返回 (values env-let-reg child-modules)
+;; child-modules: body 中发现的嵌套 module/module+，向上传递由父级收归
+(define (parse-let-reg-sexp item parent-path)
   (match item
     [`(let-reg ([,names ,specs] ...) ,body ...)
      (define bindings
@@ -127,13 +129,25 @@
                       (error 'let-reg "cannot bind to x0"))
                     s]
                    [_ (error 'let-reg "invalid binding spec: ~a" s)]))))
-     (define parsed-body
-       (for/list ([sub (in-list body)])
-         (cond
-           [(and (pair? sub) (eq? (car sub) 'let-reg))
-            (parse-let-reg-sexp sub)]
-           [else (item-sexp->ast sub)])))
-     (env-let-reg bindings parsed-body)]
+     (define parsed-body '())
+     (define child-mods '())
+     (for ([sub (in-list body)])
+       (match sub
+         [`(module ,sub-name ,sub-body ...)
+          (set! child-mods
+                (cons (parse-module-from-sexp 'module sub-name sub-body parent-path)
+                      child-mods))]
+         [`(module+ ,sub-name ,sub-body ...)
+          (set! child-mods
+                (cons (parse-module-from-sexp 'module+ sub-name sub-body parent-path)
+                      child-mods))]
+         [`(let-reg ,_ ...)
+          (let-values ([(reg mods) (parse-let-reg-sexp sub parent-path)])
+            (set! parsed-body (cons reg parsed-body))
+            (set! child-mods (append mods child-mods)))]
+         [_ (set! parsed-body (cons (item-sexp->ast sub) parsed-body))]))
+     (values (env-let-reg bindings (reverse parsed-body))
+             (reverse child-mods))]
     [_ (error 'let-reg "invalid let-reg form: ~a" item)]))
 
 ;; ============================================================
@@ -167,7 +181,11 @@
        (match-define (cons req-path syms) (parse-require-spec mod-ref more))
        (set! anon-requires (cons (require-spec req-path syms) anon-requires))]
       [`(let-reg ,_ ...)
-       (set! anon-body (cons (parse-let-reg-sexp item) anon-body))]
+       (let-values ([(reg mods) (parse-let-reg-sexp item '())])
+         (set! anon-body (cons reg anon-body))
+         (when (pair? mods)
+           (set! has-explicit? #t)
+           (set! modules (append mods modules))))]
       [_ (set! anon-body (cons (item-sexp->ast item) anon-body))]))
 
   ;; 始终返回模块列表：至少包含匿名模块
