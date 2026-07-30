@@ -11,16 +11,10 @@
 (define (assemble-sexp sexp)
   (match sexp
 
-    ;; ---- 单文件汇编（向后兼容）----
+    ;; ---- 单文件汇编（统一走模块层）----
     [`(asm ,word-size ,exts ,body ...)
      (validate-isa! word-size exts)
-     (define result (parse-top-level-items body '()))
-     (if result
-         ;; body 中包含 module 声明 → 走模块路径
-         (assemble-modules result word-size exts)
-         ;; 纯指令 → 匿名模块，全部本地
-         (let ([items (for/list ([i (in-list body)]) (item-sexp->ast i))])
-           (assemble items word-size exts)))]
+     (assemble-modules (parse-top-level-items body '()) word-size exts)]
 
     ;; ---- 独立模块文件： (module 名 body ...) ----
     [`(module ,name ,body ...)
@@ -74,13 +68,7 @@
          (list (parse-module-from-sexp 'module+ name body '()))]
         [`(asm ,word-size ,exts ,body ...)
          (validate-isa! word-size exts)
-         (define result (parse-top-level-items body
-                         (list (string->symbol (path-stem p)))))
-         (or result
-             ;; 纯指令文件在 link 上下文中也包装为匿名模块
-             (let* ([anon-name (list (string->symbol (path-stem p)))]
-                    [items (for/list ([i (in-list body)]) (item-sexp->ast i))])
-               (list (mod-info anon-name 'module '() '() items '()))))]
+         (parse-top-level-items body (list (string->symbol (path-stem p))))]
         [_ (error 'link "file ~a must contain (module ...) or (asm ...), got: ~a" path s)]))))
 
 ;; 路径辅助 — 统一接受 string 或 path

@@ -142,25 +142,16 @@
        (set! anon-requires (cons (require-spec req-path syms) anon-requires))]
       [_ (set! anon-body (cons (item-sexp->ast item) anon-body))]))
 
-  (cond
-    ;; 有显式模块：匿名部分也包装成模块
-    [seen-module?
-     (define anon-mod
-       (mod-info anonymous-name 'module
-                 (reverse anon-provides)
-                 (reverse anon-requires)
-                 (reverse anon-body)
-                 '()))
-     (cons anon-mod (reverse modules))]
-    ;; 无显式模块但有 require/provide：包装为匿名模块
-    [(or (pair? anon-requires) (pair? anon-provides))
-     (list (mod-info anonymous-name 'module
-                     (reverse anon-provides)
-                     (reverse anon-requires)
-                     (reverse anon-body)
-                     '()))]
-    ;; 全是普通指令，没有 require/provide → 返回 #f，走旧版平铺路径
-    [else #f]))
+  ;; 始终返回模块列表：至少包含匿名模块
+  (define anon-mod
+    (mod-info anonymous-name 'module
+              (reverse anon-provides)
+              (reverse anon-requires)
+              (reverse anon-body)
+              '()))
+  (if seen-module?
+      (cons anon-mod (reverse modules))
+      (list anon-mod)))
 
 ;; ============================================================
 ;; 展平
@@ -318,9 +309,9 @@
     (for ([item (in-list (mod-info-body m))])
       (define new-item
         (match item
-          ;; 重命名 label：module 路径 + 本地名
+          ;; 重命名 label：路径为空则保留裸名
           [(asm-label name)
-           (asm-label (append path (list name)))]
+           (asm-label (if (null? path) name (append path (list name))))]
           ;; 重写指令中的符号引用
           [(asm-insn mnemonic args)
            (asm-insn mnemonic
@@ -343,11 +334,11 @@
     [(exact-integer? arg) arg]
     [(reg-num arg) => (λ (n) arg)]     ;; 寄存器 → 保持原样
     [(set-member? local-labels arg)
-     (append module-path (list arg))]  ;; 本地 label → 限定名
+     (if (null? module-path) arg (append module-path (list arg)))]  ;; 空路径→裸名
     [(hash-ref im arg #f)]             ;; 显式 import → 目标限定名
     [(set-member? parent-labels arg)
      (let ([pp (drop-right module-path 1)])
-       (append pp (list arg)))]        ;; 父模块 label → 父路径限定名
+       (if (null? pp) arg (append pp (list arg))))]  ;; 空路径→裸名
     [(hash-ref parent-im arg #f)]      ;; 父模块 import → 父的映射
     [else (error 'module "unresolved symbol ~a in module ~a" arg module-path)]))
 
