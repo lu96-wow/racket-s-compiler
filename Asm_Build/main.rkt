@@ -62,7 +62,7 @@
          (list (parse-module-from-sexp 'module+ name body '()))]
         [`(asm ,word-size ,exts ,body ...)
          (validate-isa! word-size exts)
-         (parse-top-level-items body (list (string->symbol (path-stem p))))]
+         (parse-top-level-items body (path-to-mod-path p))]
         [_ (error 'link "file ~a must contain (module ...) or (asm ...), got: ~a" path s)]))))
 
 ;; 路径辅助 — 统一接受 string 或 path
@@ -71,8 +71,8 @@
 (define (path-remove-ext p)
   (regexp-replace #rx"\\.[^.]*$" (->string p) ""))
 
-(define (path-stem p)
-  (path-remove-ext (last (string-split (->string p) "/"))))
+(define (path-to-mod-path p)
+  (map string->symbol (string-split (path-remove-ext (->string p)) "/")))
 
 ;; ============================================================
 ;; assemble-file：读取一个文件，自动检测类型
