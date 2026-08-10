@@ -16,7 +16,6 @@ Binary_Build/      二进制指令编码构建
     instruction_info/ [生成] 元数据文件
 
 Lang_Build/        汇编语言层
-Design/            设计实验
 Help-Tool/         辅助工具
 ```
 

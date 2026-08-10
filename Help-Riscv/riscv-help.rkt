@@ -38,12 +38,26 @@
     [else        `((lui ,rd ,hi) (addi ,rd ,rd ,lo))]))
 
 ;; RV64 完整64位常量序列（slli + or 包装）
+;; build-u64-pair: 高/低 32 位切片组合
+;;   upper 切片只需低 32 位正确 (slli 后低位移出) → ≥ 0xFFFFF800 用 addi 负值
+;;   lower 切片需零扩展 (or 会污染高位) → ≥ 0x7FFFF800 时补 slli/srli
 (define (build-u64-pair rd use-reg upper-val lower-val)
-  (define-values (u-hi u-lo) (split-hi-lo upper-val))
-  (define-values (l-hi l-lo) (split-hi-lo lower-val))
-  `(,@(emit-hi-lo rd u-hi u-lo)
+  (define (load-upper r v)
+    (if (>= v #xFFFFF800)
+        `((addi ,r x0 ,(- v #x100000000)))   ; 符号扩展负值, 低 32 位 = v
+        (let-values ([(hi lo) (split-hi-lo v)])
+          (emit-hi-lo r hi lo))))
+  (define (load-lower r v)
+    (define s (if (>= v #xFFFFF800)
+                  `((addi ,r x0 ,(- v #x100000000)))
+                  (let-values ([(hi lo) (split-hi-lo v)])
+                    (emit-hi-lo r hi lo))))
+    (if (>= v #x7FFFF800)
+        (append s `((slli ,r ,r 32) (srli ,r ,r 32)))
+        s))
+  `(,@(load-upper rd upper-val)
     (slli ,rd ,rd 32)
-    ,@(emit-hi-lo use-reg l-hi l-lo)
+    ,@(load-lower use-reg lower-val)
     (or ,rd ,rd ,use-reg)))
 
 ;; JAL 指令的偏移范围：21位有符号 (±1MB)
@@ -72,26 +86,40 @@
         (emit-hi-lo rd hi lo))))
 
 ;; ── RV64 立即数构造 ──
+;;
+;; RV64 lui 的 imm20 符号扩展到 64 位 (lui 0x80000 = -2^31), 所以 lui+addi
+;; 只能正确表示: 12 位有符号值 / 负的 32 位符号扩展 / 正 32 位 ≤ 0x7FFFF7FF。
+;; 其余 (正 32 位 ≥ 0x7FFFF800、任意 64 位) 用"切片 + 零扩展 + or"组合:
+;;   切片 ≥ 0xFFFFF800 → addi 负值 (低 32 位相同)
+;;   需要零扩展的切片 (or 会污染高位) → 补 slli/srli
 
 (define (gen-64-load rd imm use-reg)
   (cond
     ;; Case 1: 12位有符号 — 单条 addi（必须优先，否则负数进入 Case 2 会生成假的 lui）
     [(fits-signed-12? imm)
      `((addi ,rd x0 ,imm))]
-    ;; Case 2: 来自32位符号扩展 — lui + addi(addiw同效)
+    ;; Case 2: 来自32位符号扩展 — lui + addi
+    ;;   正 32 位值且 lui bit31=1 (imm ∈ 0x7FFFF800..0x7FFFFFFF) → lui 负扩展,
+    ;;   补 slli/srli 零扩展
     [(fits-in-32-bit? imm)
      (let ([raw (bitwise-and imm #xFFFFFFFF)])
        (let-values ([(hi lo) (split-hi-lo raw)])
-         (emit-hi-lo rd hi lo)))]
+         (if (and (>= imm 0) (>= hi #x80000000))
+             (append (emit-hi-lo rd hi lo)
+                     `((slli ,rd ,rd 32) (srli ,rd ,rd 32)))
+             (emit-hi-lo rd hi lo))))]
     ;; Case 3: 低32位全0 — build upper32 + slli 32
+    ;;   upper 无符号化 (imm 为负时算术右移得 -1/-2^31 等, split-hi-lo 会崩或错)
     [(= (bitwise-and imm #xFFFFFFFF) 0)
-     (let ([upper (arithmetic-shift imm -32)])
-       (let-values ([(hi lo) (split-hi-lo upper)])
-         (append (emit-hi-lo rd hi lo)
-                 `((slli ,rd ,rd 32)))))]
+     (let ([upper (bitwise-and (arithmetic-shift imm -32) #xFFFFFFFF)])
+       (append (if (>= upper #xFFFFF800)
+                   `((addi ,rd x0 ,(- upper #x100000000)))
+                   (let-values ([(hi lo) (split-hi-lo upper)])
+                     (emit-hi-lo rd hi lo)))
+               `((slli ,rd ,rd 32))))]
     ;; Case 4: 完整64位 — 高/低32位分构建后OR
     [else
-     (let ([hi32 (arithmetic-shift imm -32)]
+     (let ([hi32 (bitwise-and (arithmetic-shift imm -32) #xFFFFFFFF)]
            [lo32 (bitwise-and imm #xFFFFFFFF)])
        (build-u64-pair rd use-reg hi32 lo32))]))
 
