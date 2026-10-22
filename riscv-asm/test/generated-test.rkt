@@ -5,21 +5,21 @@
          racket/path
          racket/runtime-path
          racket/string
-         (prefix-in raw-c: "../../../generated/riscv/instruction/raw/rv_c.rkt")
-         (prefix-in rebuilt-c: "../../../generated/riscv/instruction/rebuilt/rv_c.rkt")
-         (prefix-in raw-v: "../../../generated/riscv/instruction/raw/rv_v.rkt")
-         (prefix-in rebuilt-v: "../../../generated/riscv/instruction/rebuilt/rv_v.rkt")
-         (prefix-in raw-zvbb: "../../../generated/riscv/instruction/raw/rv_zvbb.rkt")
-         (prefix-in rebuilt-zvbb: "../../../generated/riscv/instruction/rebuilt/rv_zvbb.rkt")
-         (prefix-in raw-mop: "../../../generated/riscv/instruction/raw/rv_zimop.rkt")
-         (prefix-in rebuilt-mop: "../../../generated/riscv/instruction/rebuilt/rv_zimop.rkt")
-         (prefix-in raw-d: "../../../generated/riscv/instruction/raw/rv_d.rkt")
-         (prefix-in rebuilt-d: "../../../generated/riscv/instruction/rebuilt/rv_d.rkt")
-         (prefix-in raw-i: "../../../generated/riscv/instruction/raw/rv_i.rkt")
-         (prefix-in rebuilt-i: "../../../generated/riscv/instruction/rebuilt/rv_i.rkt")
-         (prefix-in raw-zbc: "../../../generated/riscv/instruction/raw/rv_zbc.rkt")
-         (prefix-in raw-zbkc: "../../../generated/riscv/instruction/raw/rv_zbkc.rkt")
-         (prefix-in paths: "../../../generated/instruction_paths.rkt"))
+         (prefix-in raw-c: "../generated/riscv/instruction/raw/rv_c.rkt")
+         (prefix-in rebuilt-c: "../generated/riscv/instruction/rebuilt/rv_c.rkt")
+         (prefix-in raw-v: "../generated/riscv/instruction/raw/rv_v.rkt")
+         (prefix-in rebuilt-v: "../generated/riscv/instruction/rebuilt/rv_v.rkt")
+         (prefix-in raw-zvbb: "../generated/riscv/instruction/raw/rv_zvbb.rkt")
+         (prefix-in rebuilt-zvbb: "../generated/riscv/instruction/rebuilt/rv_zvbb.rkt")
+         (prefix-in raw-mop: "../generated/riscv/instruction/raw/rv_zimop.rkt")
+         (prefix-in rebuilt-mop: "../generated/riscv/instruction/rebuilt/rv_zimop.rkt")
+         (prefix-in raw-d: "../generated/riscv/instruction/raw/rv_d.rkt")
+         (prefix-in rebuilt-d: "../generated/riscv/instruction/rebuilt/rv_d.rkt")
+         (prefix-in raw-i: "../generated/riscv/instruction/raw/rv_i.rkt")
+         (prefix-in rebuilt-i: "../generated/riscv/instruction/rebuilt/rv_i.rkt")
+         (prefix-in raw-zbc: "../generated/riscv/instruction/raw/rv_zbc.rkt")
+         (prefix-in raw-zbkc: "../generated/riscv/instruction/raw/rv_zbkc.rkt")
+         (prefix-in paths: "../generated/instruction_paths.rkt"))
 
 ;; 所有生成模块都必须能加载
 (define (load-all dir)
@@ -29,7 +29,7 @@
                (not (directory-exists? p)))
       (dynamic-require p #f))))
 
-(define-runtime-path generated-dir "../../../generated/riscv")
+(define-runtime-path generated-dir "../generated/riscv")
 (define raw-dir (build-path generated-dir "instruction" "raw"))
 (define rebuilt-dir (build-path generated-dir "instruction" "rebuilt"))
 

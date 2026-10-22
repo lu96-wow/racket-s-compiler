@@ -1,11 +1,11 @@
 #lang racket/base
 
 (require rackunit
-         "../../base.rkt"
-         (prefix-in raw: "../raw/scalar.rkt")
-         (prefix-in rebuilt: "../rebuilt/scalar.rkt")
-         (prefix-in core: "../../../reference/range/core.rkt")
-         (prefix-in core-field: "../../../reference/range/base.rkt"))
+         "../binary-build/base.rkt"
+         (prefix-in raw: "../binary-build/riscv/raw/scalar.rkt")
+         (prefix-in rebuilt: "../binary-build/riscv/rebuilt/scalar.rkt")
+         (prefix-in core: "../reference/range/core.rkt")
+         (prefix-in core-field: "../reference/range/base.rkt"))
 
 ;; ------------------------------------------------------------
 ;; bit / bit-range / fixed

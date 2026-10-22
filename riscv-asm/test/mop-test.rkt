@@ -1,8 +1,8 @@
 #lang racket/base
 
 (require rackunit
-         (prefix-in raw: "../raw/mop.rkt")
-         (prefix-in rebuilt: "../rebuilt/mop.rkt"))
+         (prefix-in raw: "../binary-build/riscv/raw/mop.rkt")
+         (prefix-in rebuilt: "../binary-build/riscv/rebuilt/mop.rkt"))
 
 (check-equal? (raw:mop_r_t_30 #b10000) #x40000000)
 (check-equal? (raw:mop_r_t_27_26 #b1100) #xC000000)

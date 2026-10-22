@@ -2,14 +2,14 @@
 
 (require rackunit
          racket/list
-         "../../../generated/riscv/instruction_info/struct.rkt"
-         "../../../generated/riscv/instruction_info/query.rkt"
-         "../../../generated/riscv/instruction_info/all.rkt"
-         (prefix-in rv-i: "../../../generated/riscv/instruction_info/rv_i.rkt")
-         (prefix-in rv-c: "../../../generated/riscv/instruction_info/rv_c.rkt")
-         (prefix-in rv-d: "../../../generated/riscv/instruction_info/rv_d.rkt")
-         (prefix-in rv-zbkc: "../../../generated/riscv/instruction_info/rv_zbkc.rkt")
-         (prefix-in ext: "../../../generated/riscv/instruction_info/instruction_extensions.rkt"))
+         "../generated/riscv/instruction_info/struct.rkt"
+         "../generated/riscv/instruction_info/query.rkt"
+         "../generated/riscv/instruction_info/all.rkt"
+         (prefix-in rv-i: "../generated/riscv/instruction_info/rv_i.rkt")
+         (prefix-in rv-c: "../generated/riscv/instruction_info/rv_c.rkt")
+         (prefix-in rv-d: "../generated/riscv/instruction_info/rv_d.rkt")
+         (prefix-in rv-zbkc: "../generated/riscv/instruction_info/rv_zbkc.rkt")
+         (prefix-in ext: "../generated/riscv/instruction_info/instruction_extensions.rkt"))
 
 (define addi
   (find-instruction-info rv-i:rv_i-instructions "addi"))

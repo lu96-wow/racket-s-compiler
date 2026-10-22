@@ -1,8 +1,8 @@
 #lang racket/base
 
 (require rackunit
-         (prefix-in raw: "../raw/vector.rkt")
-         (prefix-in rebuilt: "../rebuilt/vector.rkt"))
+         (prefix-in raw: "../binary-build/riscv/raw/vector.rkt")
+         (prefix-in rebuilt: "../binary-build/riscv/rebuilt/vector.rkt"))
 
 (check-equal? (raw:vd 31) #xF80)
 (check-equal? (raw:vs1 31) #xF8000)

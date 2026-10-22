@@ -3,8 +3,8 @@
 (require rackunit
          racket/list
          racket/string
-         "../../paths.rkt"
-         "../parse/main.rkt")
+         "../binary-build/paths.rkt"
+         "../binary-build/riscv/parse/main.rkt")
 
 (define (ff->list ff)
   (list (fixed-field-lo ff)

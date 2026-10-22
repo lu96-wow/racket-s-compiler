@@ -1,8 +1,8 @@
 #lang racket/base
 
 (require rackunit
-         (prefix-in raw: "../raw/compressed.rkt")
-         (prefix-in rebuilt: "../rebuilt/compressed.rkt"))
+         (prefix-in raw: "../binary-build/riscv/raw/compressed.rkt")
+         (prefix-in rebuilt: "../binary-build/riscv/rebuilt/compressed.rkt"))
 
 ;; ------------------------------------------------------------
 ;; 压缩寄存器

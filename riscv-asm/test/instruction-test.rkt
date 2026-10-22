@@ -1,8 +1,8 @@
 #lang racket/base
 
 (require rackunit
-         (prefix-in raw: "../../../generated/riscv/instruction/raw/rv_i.rkt")
-         (prefix-in rebuilt: "../../../generated/riscv/instruction/rebuilt/rv_i.rkt"))
+         (prefix-in raw: "../generated/riscv/instruction/raw/rv_i.rkt")
+         (prefix-in rebuilt: "../generated/riscv/instruction/rebuilt/rv_i.rkt"))
 
 ;; addi x1, x2, 3
 (check-equal? (raw:addi 1 2 3) #x00310093)
