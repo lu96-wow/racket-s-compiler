@@ -1,1 +1,0 @@
-("9.2" ta6le ("f25f14aba4179f1b2c0ce005cd3f01d3cd16b72b" . "b8e01d46b0432459abbbeec6b9eeda133d272765") #"/home/debian/\346\241\214\351\235\242/system/racket-s-compiler/Binary_Build/riscv/range/../../base.rkt" (collects #"racket" #"main.rkt") (collects #"racket" #"runtime-config.rkt"))
