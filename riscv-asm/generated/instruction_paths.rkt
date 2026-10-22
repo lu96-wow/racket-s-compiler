@@ -14,22 +14,22 @@
 (define-runtime-path self-path "instruction_paths.rkt")
 (define package-root (path-only self-path))
 
-(define (extension-file extension)
+(define (extension-module-filename extension)
   (unless (symbol? extension)
-    (raise-argument-error 'extension-file "symbol?" extension))
+    (raise-argument-error 'extension-module-filename "symbol?" extension))
   (string-append (symbol->string extension) ".rkt"))
 
 (define (raw-instruction-path extension)
   (path->string
    (build-path package-root
                "riscv" "instruction" "raw"
-               (extension-file extension))))
+               (extension-module-filename extension))))
 
 (define (rebuilt-instruction-path extension)
   (path->string
    (build-path package-root
                "riscv" "instruction" "rebuilt"
-               (extension-file extension))))
+               (extension-module-filename extension))))
 
 (provide raw-instruction-path
          rebuilt-instruction-path)

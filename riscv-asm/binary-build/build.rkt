@@ -22,8 +22,8 @@
   (for ([kind (in-list '("raw" "rebuilt"))])
     (define dest-dir (generated-field-dir kind))
     (make-directory* dest-dir)
-    (for ([file (in-list field-module-files)])
-      (copy-file (build-path source-field-dir kind file)
+    (for ([file (in-list field-module-filenames)])
+      (copy-file (build-path source-riscv-dir kind file)
                  (build-path dest-dir file)
                  #t)))
 
@@ -43,7 +43,7 @@
   (copy-dependencies!)
   (make-output-dirs!)
 
-  (define files (extension-files))
+  (define files (extension-source-files))
   (define parsed-files
     (for/list ([path (in-list files)])
       (parse-extension-file path)))
@@ -84,12 +84,12 @@
               (+ imports (length (extension-file-imports parsed)))
               (+ emitted (length defs)))))
 
-  (define all-info-path (all-info-output-path))
+  (define all-info-path (all-instruction-info-output-path))
   (display-to-file (gen-all-info-content ext->defs all-info-path)
                    all-info-path
                    #:exists 'replace)
   (display-to-file (gen-extension-map-content ext->defs)
-                   (extension-map-output-path)
+                   (instruction-extensions-output-path)
                    #:exists 'replace)
 
   (printf "Generated ~a extensions\n" (length files))
@@ -106,6 +106,6 @@
     [(= (vector-length args) 1) (vector-ref args 0)]
     [else
      (error 'build
-            "usage: racket Binary_Build/build.rkt [output-root]")]))
+            "usage: racket binary-build/build.rkt [output-root]")]))
 
 (build-all #:output-root output-root)

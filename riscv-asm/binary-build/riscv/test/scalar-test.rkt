@@ -4,8 +4,8 @@
          "../../base.rkt"
          (prefix-in raw: "../raw/scalar.rkt")
          (prefix-in rebuilt: "../rebuilt/scalar.rkt")
-         (prefix-in core: "../../../range/core.rkt")
-         (prefix-in core-field: "../../../range/base.rkt"))
+         (prefix-in core: "../../../reference/range/core.rkt")
+         (prefix-in core-field: "../../../reference/range/base.rkt"))
 
 ;; ------------------------------------------------------------
 ;; bit / bit-range / fixed

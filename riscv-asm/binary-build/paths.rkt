@@ -19,17 +19,17 @@
 ;; -------- 源码根目录 --------
 (define-runtime-path self-path "paths.rkt")
 (define binary-build-dir (path-only self-path))
-(define rebuild-root (simplify-path (build-path binary-build-dir "..")))
+(define project-root (simplify-path (build-path binary-build-dir "..")))
 
 (define source-dir
-  (build-path rebuild-root "riscv-opcodes" "extensions"))
+  (build-path project-root "riscv-opcodes" "extensions"))
 
 (define source-base-path
   (build-path binary-build-dir "base.rkt"))
 (define source-bit-path
   (build-path binary-build-dir "bit.rkt"))
 
-(define source-field-dir
+(define source-riscv-dir
   (build-path binary-build-dir "riscv"))
 
 (define source-info-dir
@@ -44,7 +44,7 @@
 
 ;; -------- 动态生成根目录 --------
 (define default-generated-root
-  (build-path rebuild-root "generated"))
+  (build-path project-root "generated"))
 
 (define generated-root
   (make-parameter default-generated-root))
@@ -78,14 +78,14 @@
 (define (extension-module-file extension)
   (string-append extension ".rkt"))
 
-(define field-module-files
+(define field-module-filenames
   '("scalar.rkt"
     "compressed.rkt"
     "vector.rkt"
     "mop.rkt"))
 
 ;; -------- 输入扩展发现 --------
-(define (extension-files)
+(define (extension-source-files)
   (sort
    (for/list ([name (in-list (directory-list source-dir))]
               #:when (let ([p (build-path source-dir name)])
@@ -112,10 +112,10 @@
   (build-path (generated-info-dir)
               (extension-module-file extension)))
 
-(define (all-info-output-path)
+(define (all-instruction-info-output-path)
   (build-path (generated-info-dir) "all.rkt"))
 
-(define (extension-map-output-path)
+(define (instruction-extensions-output-path)
   (build-path (generated-info-dir) "instruction_extensions.rkt"))
 
 ;; -------- require 相对路径 --------
@@ -137,17 +137,17 @@
 (define (raw-require-specs output-path)
   (append
    (list (require-spec output-path (generated-base-path)))
-   (for/list ([file (in-list field-module-files)])
+   (for/list ([file (in-list field-module-filenames)])
      (require-spec output-path
                    (build-path (generated-field-dir "raw") file)))))
 
 (define (rebuilt-require-specs output-path)
   (append
    (list (require-spec output-path (generated-base-path)))
-   (for/list ([file (in-list field-module-files)])
+   (for/list ([file (in-list field-module-filenames)])
      (prefix-require-spec "raw:" output-path
                           (build-path (generated-field-dir "raw") file)))
-   (for/list ([file (in-list field-module-files)])
+   (for/list ([file (in-list field-module-filenames)])
      (prefix-require-spec "rebuilt:" output-path
                           (build-path (generated-field-dir "rebuilt") file)))))
 
@@ -159,10 +159,10 @@
 
 (provide source-dir
          binary-build-dir
-         rebuild-root
+         project-root
          source-base-path
          source-bit-path
-         source-field-dir
+         source-riscv-dir
          source-info-dir
          source-info-struct-path
          source-info-query-path
@@ -178,14 +178,14 @@
          generated-info-struct-path
          generated-info-query-path
          generated-instruction-paths-path
-         field-module-files
-         extension-files
+         field-module-filenames
+         extension-source-files
          extension-stem
          raw-output-path
          rebuilt-output-path
          info-output-path
-         all-info-output-path
-         extension-map-output-path
+         all-instruction-info-output-path
+         instruction-extensions-output-path
          relative-module-path
          require-spec
          prefix-require-spec

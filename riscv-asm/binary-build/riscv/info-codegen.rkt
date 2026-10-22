@@ -40,11 +40,11 @@
           aliases
           (asm-format name rebuilt-operands)))
 
-(define (info-var extension)
+(define (info-variable-name extension)
   (format "~a-instructions" extension))
 
 (define (gen-info-file-content extension defs output-path)
-  (define var (info-var extension))
+  (define var (info-variable-name extension))
   (define body
     (if (null? defs)
         "(list)"
@@ -68,7 +68,7 @@
       (info-module-require-spec output-path ext)))
   (define vars
     (for/list ([ext (in-list extensions)])
-      (info-var ext)))
+      (info-variable-name ext)))
   (define definition
     (if (null? vars)
         "(define all-instruction-info '())"
