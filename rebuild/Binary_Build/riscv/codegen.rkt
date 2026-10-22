@@ -221,16 +221,16 @@
   (for/list ([idef (in-list defs)])
     (instruction-def-name idef)))
 
-(define (gen-raw-file-content defs)
+(define (gen-raw-file-content defs output-path)
   (render-module
-   raw-require-specs
+   (raw-require-specs output-path)
    (for/list ([idef (in-list defs)])
      (gen-raw-instruction-code idef))
    (instruction-names defs)))
 
-(define (gen-rebuilt-file-content defs)
+(define (gen-rebuilt-file-content defs output-path)
   (render-module
-   rebuilt-require-specs
+   (rebuilt-require-specs output-path)
    (for/list ([idef (in-list defs)])
      (gen-rebuilt-instruction-code idef))
    (instruction-names defs)))

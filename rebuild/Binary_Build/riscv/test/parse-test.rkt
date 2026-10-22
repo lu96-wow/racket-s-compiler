@@ -3,7 +3,7 @@
 (require rackunit
          racket/list
          racket/string
-         racket/runtime-path
+         "../../paths.rkt"
          "../parse/main.rkt")
 
 (define (ff->list ff)
@@ -103,15 +103,13 @@
 ;; 解析全部顶层扩展文件
 ;; ------------------------------------------------------------
 
-(define-runtime-path extension-dir "../../../riscv-opcodes/extensions")
-
 (define extension-paths
   (sort
-   (for/list ([name (in-list (directory-list extension-dir))]
-              #:when (let ([p (build-path extension-dir name)])
+   (for/list ([name (in-list (directory-list source-dir))]
+              #:when (let ([p (build-path source-dir name)])
                        (and (file-exists? p)
                             (string-prefix? (path->string name) "rv"))))
-     (build-path extension-dir name))
+     (build-path source-dir name))
    (lambda (a b)
      (string<? (path->string a) (path->string b)))))
 

@@ -1049,6 +1049,9 @@
       ("zext.w" . ("rv64_zba"))
       ("zip" . ("rv32_zbkb" "rv32_zk" "rv32_zkn" "rv32_zks"))
     )))
+(define (get-extensions name)
+  (hash-ref instruction->extensions name '()))
 
 (provide
- instruction->extensions)
+ instruction->extensions
+ get-extensions)

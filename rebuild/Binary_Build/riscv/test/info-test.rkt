@@ -2,13 +2,14 @@
 
 (require rackunit
          racket/list
-         "../instruction_info/struct.rkt"
-         "../instruction_info/query.rkt"
-         "../instruction_info/all.rkt"
-         (prefix-in rv-i: "../instruction_info/rv_i.rkt")
-         (prefix-in rv-c: "../instruction_info/rv_c.rkt")
-         (prefix-in rv-d: "../instruction_info/rv_d.rkt")
-         (prefix-in rv-zbkc: "../instruction_info/rv_zbkc.rkt"))
+         "../../../generated/riscv/instruction_info/struct.rkt"
+         "../../../generated/riscv/instruction_info/query.rkt"
+         "../../../generated/riscv/instruction_info/all.rkt"
+         (prefix-in rv-i: "../../../generated/riscv/instruction_info/rv_i.rkt")
+         (prefix-in rv-c: "../../../generated/riscv/instruction_info/rv_c.rkt")
+         (prefix-in rv-d: "../../../generated/riscv/instruction_info/rv_d.rkt")
+         (prefix-in rv-zbkc: "../../../generated/riscv/instruction_info/rv_zbkc.rkt")
+         (prefix-in ext: "../../../generated/riscv/instruction_info/instruction_extensions.rkt"))
 
 (define addi
   (find-instruction-info rv-i:rv_i-instructions "addi"))
@@ -41,8 +42,8 @@
       #t))
 
 ;; 全局扩展映射
-(check-not-false (member "rv_i" (get-extensions "addi")))
-(check-not-false (member "rv_zbkc" (get-extensions "clmul")))
+(check-not-false (member "rv_i" (ext:get-extensions "addi")))
+(check-not-false (member "rv_zbkc" (ext:get-extensions "clmul")))
 
 ;; 所有扩展的元数据总数
 (check-equal? (length all-instruction-info) 1232)

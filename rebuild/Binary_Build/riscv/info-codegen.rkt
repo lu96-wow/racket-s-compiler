@@ -43,7 +43,7 @@
 (define (info-var extension)
   (format "~a-instructions" extension))
 
-(define (gen-info-file-content extension defs)
+(define (gen-info-file-content extension defs output-path)
   (define var (info-var extension))
   (define body
     (if (null? defs)
@@ -54,18 +54,18 @@
                    (gen-info-code extension idef))
                  "\n   "))))
   (render-module
-   info-require-specs
+   (info-require-specs output-path)
    (list (format "(define ~a\n  ~a)" var body))
    (list var)))
 
 (define (sorted-extensions ext->defs)
   (sort (hash-keys ext->defs) string<?))
 
-(define (gen-all-info-content ext->defs)
+(define (gen-all-info-content ext->defs output-path)
   (define extensions (sorted-extensions ext->defs))
   (define require-specs
     (for/list ([ext (in-list extensions)])
-      (info-module-require-spec ext)))
+      (info-module-require-spec output-path ext)))
   (define vars
     (for/list ([ext (in-list extensions)])
       (info-var ext)))
@@ -94,7 +94,7 @@
               (sort (remove-duplicates
                      (hash-ref name->exts name))
                     string<?))))
-  (define body
+  (define map-definition
     (string-join
      (append
       (list "(define instruction->extensions"
@@ -103,9 +103,12 @@
       entries
       (list "    )))"))
      "\n"))
+  (define getter-definition
+    "(define (get-extensions name)\n  (hash-ref instruction->extensions name '()))")
   (render-module '()
-                 (list body)
-                 (list "instruction->extensions")))
+                 (list map-definition getter-definition)
+                 (list "instruction->extensions"
+                       "get-extensions")))
 
 (provide gen-info-code
          gen-info-file-content

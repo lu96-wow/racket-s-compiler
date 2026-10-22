@@ -6,10 +6,42 @@
          "riscv/codegen.rkt"
          "riscv/info-codegen.rkt")
 
-(define (build-all)
-  (make-directory* raw-out-dir)
-  (make-directory* rebuilt-out-dir)
-  (make-directory* info-out-dir)
+;; ============================================================
+;; 把依赖模块和生成产物打包到 generated-root
+;; ============================================================
+
+(define (copy-dependencies!)
+  (make-directory* (generated-root))
+
+  (copy-file source-base-path (generated-base-path) #t)
+  (copy-file source-bit-path (generated-bit-path) #t)
+  (copy-file source-instruction-paths-path
+             (generated-instruction-paths-path)
+             #t)
+
+  (for ([kind (in-list '("raw" "rebuilt"))])
+    (define dest-dir (generated-field-dir kind))
+    (make-directory* dest-dir)
+    (for ([file (in-list field-module-files)])
+      (copy-file (build-path source-field-dir kind file)
+                 (build-path dest-dir file)
+                 #t)))
+
+  (make-directory* (generated-info-dir))
+  (copy-file source-info-struct-path (generated-info-struct-path) #t)
+  (copy-file source-info-query-path (generated-info-query-path) #t))
+
+(define (make-output-dirs!)
+  (make-directory* (generated-instruction-dir "raw"))
+  (make-directory* (generated-instruction-dir "rebuilt"))
+  (make-directory* (generated-info-dir)))
+
+(define (build-all #:output-root [output-root #f])
+  (when output-root
+    (generated-root output-root))
+
+  (copy-dependencies!)
+  (make-output-dirs!)
 
   (define files (extension-files))
   (define parsed-files
@@ -33,14 +65,18 @@
       (define ext (extension-stem (extension-file-path parsed)))
       (hash-set! ext->defs ext defs)
 
-      (display-to-file (gen-raw-file-content defs)
-                       (raw-output-path ext)
+      (define raw-path (raw-output-path ext))
+      (define rebuilt-path (rebuilt-output-path ext))
+      (define info-path (info-output-path ext))
+
+      (display-to-file (gen-raw-file-content defs raw-path)
+                       raw-path
                        #:exists 'replace)
-      (display-to-file (gen-rebuilt-file-content defs)
-                       (rebuilt-output-path ext)
+      (display-to-file (gen-rebuilt-file-content defs rebuilt-path)
+                       rebuilt-path
                        #:exists 'replace)
-      (display-to-file (gen-info-file-content ext defs)
-                       (info-output-path ext)
+      (display-to-file (gen-info-file-content ext defs info-path)
+                       info-path
                        #:exists 'replace)
 
       (values (+ standard (length (extension-file-standard parsed)))
@@ -48,8 +84,9 @@
               (+ imports (length (extension-file-imports parsed)))
               (+ emitted (length defs)))))
 
-  (display-to-file (gen-all-info-content ext->defs)
-                   (all-info-output-path)
+  (define all-info-path (all-info-output-path))
+  (display-to-file (gen-all-info-content ext->defs all-info-path)
+                   all-info-path
                    #:exists 'replace)
   (display-to-file (gen-extension-map-content ext->defs)
                    (extension-map-output-path)
@@ -60,8 +97,15 @@
   (printf "  pseudo definitions:    ~a\n" pseudo)
   (printf "  import definitions:    ~a\n" imports)
   (printf "  emitted per extension: ~a\n" emitted)
-  (printf "  raw output:            ~a\n" raw-out-dir)
-  (printf "  rebuilt output:        ~a\n" rebuilt-out-dir)
-  (printf "  info output:           ~a\n" info-out-dir))
+  (printf "  package root:          ~a\n" (generated-root)))
 
-(build-all)
+(define args (current-command-line-arguments))
+(define output-root
+  (cond
+    [(zero? (vector-length args)) #f]
+    [(= (vector-length args) 1) (vector-ref args 0)]
+    [else
+     (error 'build
+            "usage: racket Binary_Build/build.rkt [output-root]")]))
+
+(build-all #:output-root output-root)

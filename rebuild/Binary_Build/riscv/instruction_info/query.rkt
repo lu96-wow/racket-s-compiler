@@ -1,7 +1,6 @@
 #lang racket/base
 
-(require "struct.rkt"
-         "instruction_extensions.rkt")
+(require "struct.rkt")
 
 ;; ============================================================
 ;; 元数据查询
@@ -36,9 +35,6 @@
 (define (info-aliases info)
   (instruction-info-aliases info))
 
-(define (get-extensions name)
-  (hash-ref instruction->extensions name '()))
-
 (provide find-instruction-info
          info-param-count
          info-raw-param-count
@@ -47,5 +43,4 @@
          info-asm-format
          info-width
          info-fixed-fields
-         info-aliases
-         get-extensions)
+         info-aliases)
