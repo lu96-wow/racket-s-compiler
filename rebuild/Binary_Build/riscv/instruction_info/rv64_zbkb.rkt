@@ -11,4 +11,5 @@
    (instruction-info "rori" "rv64_zbkb" 32 '("rd" "rs1" "shamtd") '("rd" "rs1" "shamtd") '((26 31 24) (12 14 5) (2 6 4) (0 1 3)) '() "rori rd, rs1, shamtd")
    (instruction-info "rev8" "rv64_zbkb" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 1720) (12 14 5) (0 6 19)) '() "rev8 rd, rs1")))
 
-(provide rv64_zbkb-instructions)
+(provide
+ rv64_zbkb-instructions)

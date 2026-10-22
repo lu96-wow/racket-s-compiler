@@ -9,4 +9,5 @@
    (instruction-info "binvi.rv32" "rv32_zbs" 32 '("rd" "rs1" "shamtw") '("rd" "rs1" "shamtw") '((25 31 52) (12 14 1) (2 6 4) (0 1 3)) '() "binvi.rv32 rd, rs1, shamtw")
    (instruction-info "bseti.rv32" "rv32_zbs" 32 '("rd" "rs1" "shamtw") '("rd" "rs1" "shamtw") '((25 31 20) (12 14 1) (2 6 4) (0 1 3)) '() "bseti.rv32 rd, rs1, shamtw")))
 
-(provide rv32_zbs-instructions)
+(provide
+ rv32_zbs-instructions)

@@ -30,4 +30,5 @@
    (instruction-info "fabs.h" "rv_zfh" 32 '("rd" "rs1") '("rd" "rs1") '((27 31 4) (12 14 2) (25 26 2) (2 6 20) (0 1 3)) '(("rs2" "rs1")) "fabs.h rd, rs1")
    (instruction-info "fneg.h" "rv_zfh" 32 '("rd" "rs1") '("rd" "rs1") '((27 31 4) (12 14 1) (25 26 2) (2 6 20) (0 1 3)) '(("rs2" "rs1")) "fneg.h rd, rs1")))
 
-(provide rv_zfh-instructions)
+(provide
+ rv_zfh-instructions)

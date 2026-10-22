@@ -9,4 +9,5 @@
    (instruction-info "c.ntl.s1" "rv_c_zihintntl" 16 '() '() '((0 1 2) (2 6 4) (7 11 0) (13 15 4) (12 12 1)) '() "c.ntl.s1")
    (instruction-info "c.ntl.all" "rv_c_zihintntl" 16 '() '() '((0 1 2) (2 6 5) (7 11 0) (13 15 4) (12 12 1)) '() "c.ntl.all")))
 
-(provide rv_c_zihintntl-instructions)
+(provide
+ rv_c_zihintntl-instructions)

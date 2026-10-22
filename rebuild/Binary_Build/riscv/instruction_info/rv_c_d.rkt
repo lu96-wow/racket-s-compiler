@@ -9,4 +9,5 @@
    (instruction-info "c.fldsp" "rv_c_d" 16 '("rd" "c_uimm9sp") '("rd" "c_uimm9sphi" "c_uimm9splo") '((0 1 2) (13 15 1)) '() "c.fldsp rd, c_uimm9sp")
    (instruction-info "c.fsdsp" "rv_c_d" 16 '("c_rs2" "c_uimm9sp_s") '("c_rs2" "c_uimm9sp_s") '((0 1 2) (13 15 5)) '() "c.fsdsp c_rs2, c_uimm9sp_s")))
 
-(provide rv_c_d-instructions)
+(provide
+ rv_c_d-instructions)

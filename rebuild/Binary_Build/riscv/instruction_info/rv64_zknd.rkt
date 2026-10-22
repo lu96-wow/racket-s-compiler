@@ -10,4 +10,5 @@
    (instruction-info "aes64im" "rv64_zknd" 32 '("rd" "rs1") '("rd" "rs1") '((30 31 0) (25 29 24) (20 24 0) (12 14 1) (0 6 19)) '() "aes64im rd, rs1")
    (instruction-info "aes64ks2" "rv64_zknd" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((30 31 1) (25 29 31) (12 14 0) (0 6 51)) '() "aes64ks2 rd, rs1, rs2")))
 
-(provide rv64_zknd-instructions)
+(provide
+ rv64_zknd-instructions)

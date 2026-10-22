@@ -7,4 +7,5 @@
    (instruction-info "vfwmaccbf16.vv" "rv_zvfbfwma" 32 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 59) (12 14 1) (0 6 87)) '() "vfwmaccbf16.vv vm, vs2, vs1, vd")
    (instruction-info "vfwmaccbf16.vf" "rv_zvfbfwma" 32 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 59) (12 14 5) (0 6 87)) '() "vfwmaccbf16.vf vm, vs2, rs1, vd")))
 
-(provide rv_zvfbfwma-instructions)
+(provide
+ rv_zvfbfwma-instructions)

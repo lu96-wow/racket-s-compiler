@@ -22,4 +22,5 @@
    (instruction-info "sha512sig1" "rv64_zk" 32 '("rd" "rs1") '("rd" "rs1") '((30 31 0) (25 29 8) (20 24 7) (12 14 1) (0 6 19)) '() "sha512sig1 rd, rs1")
    (instruction-info "rev8" "rv64_zk" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 1720) (12 14 5) (0 6 19)) '() "rev8 rd, rs1")))
 
-(provide rv64_zk-instructions)
+(provide
+ rv64_zk-instructions)

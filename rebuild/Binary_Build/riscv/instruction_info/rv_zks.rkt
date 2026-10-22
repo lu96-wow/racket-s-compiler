@@ -21,4 +21,5 @@
    (instruction-info "sm3p1" "rv_zks" 32 '("rd" "rs1") '("rd" "rs1") '((30 31 0) (25 29 8) (20 24 9) (12 14 1) (0 6 19)) '() "sm3p1 rd, rs1")
    (instruction-info "brev8" "rv_zks" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 1671) (12 14 5) (2 6 4) (0 1 3)) '() "brev8 rd, rs1")))
 
-(provide rv_zks-instructions)
+(provide
+ rv_zks-instructions)

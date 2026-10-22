@@ -20,4 +20,5 @@
    (instruction-info "ror" "rv_zbb" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 48) (12 14 5) (2 6 12) (0 1 3)) '() "ror rd, rs1, rs2")
    (instruction-info "orc.b" "rv_zbb" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 647) (12 14 5) (0 6 19)) '() "orc.b rd, rs1")))
 
-(provide rv_zbb-instructions)
+(provide
+ rv_zbb-instructions)

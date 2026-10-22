@@ -12,4 +12,5 @@
    (instruction-info "prefetch.r" "rv_zicbo" 32 '("rs1" "imm12hi") '("rs1" "imm12hi") '((20 24 1) (12 14 6) (7 11 0) (2 6 4) (0 1 3)) '() "prefetch.r rs1, imm12hi")
    (instruction-info "prefetch.w" "rv_zicbo" 32 '("rs1" "imm12hi") '("rs1" "imm12hi") '((20 24 3) (12 14 6) (7 11 0) (2 6 4) (0 1 3)) '() "prefetch.w rs1, imm12hi")))
 
-(provide rv_zicbo-instructions)
+(provide
+ rv_zicbo-instructions)

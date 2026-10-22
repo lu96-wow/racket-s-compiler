@@ -11,4 +11,5 @@
    (instruction-info "fmv.x.h" "rv_zfhmin" 32 '("rd" "rs1") '("rd" "rs1") '((20 24 0) (27 31 28) (12 14 0) (25 26 2) (2 6 20) (0 1 3)) '() "fmv.x.h rd, rs1")
    (instruction-info "fmv.h.x" "rv_zfhmin" 32 '("rd" "rs1") '("rd" "rs1") '((20 24 0) (27 31 30) (12 14 0) (25 26 2) (2 6 20) (0 1 3)) '() "fmv.h.x rd, rs1")))
 
-(provide rv_zfhmin-instructions)
+(provide
+ rv_zfhmin-instructions)

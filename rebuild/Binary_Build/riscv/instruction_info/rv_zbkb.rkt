@@ -13,4 +13,5 @@
    (instruction-info "orn" "rv_zbkb" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 32) (12 14 6) (2 6 12) (0 1 3)) '() "orn rd, rs1, rs2")
    (instruction-info "xnor" "rv_zbkb" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 32) (12 14 4) (2 6 12) (0 1 3)) '() "xnor rd, rs1, rs2")))
 
-(provide rv_zbkb-instructions)
+(provide
+ rv_zbkb-instructions)

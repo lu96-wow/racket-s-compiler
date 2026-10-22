@@ -380,4 +380,5 @@
    (instruction-info "vwmaccus.vx" "rv_v" 32 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 62) (12 14 6) (0 6 87)) '() "vwmaccus.vx vm, vs2, rs1, vd")
    (instruction-info "vwmaccsu.vx" "rv_v" 32 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 63) (12 14 6) (0 6 87)) '() "vwmaccsu.vx vm, vs2, rs1, vd")))
 
-(provide rv_v-instructions)
+(provide
+ rv_v-instructions)

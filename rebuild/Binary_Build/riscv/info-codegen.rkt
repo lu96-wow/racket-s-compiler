@@ -3,37 +3,15 @@
 (require racket/string
          racket/list
          "parse/main.rkt"
-         "codegen.rkt")
+         "codegen.rkt"
+         "render.rkt"
+         "../paths.rkt")
 
 ;; ============================================================
 ;; instruction_info 生成
 ;;
 ;; 元数据直接从同一份 instruction-def 计算，不再重复解析源文件。
 ;; ============================================================
-
-(define (fixed-bit-value fixed-fields bit)
-  (for/first ([ff (in-list fixed-fields)]
-              #:when (<= (fixed-field-lo ff) bit (fixed-field-hi ff)))
-    (bitwise-and
-     (arithmetic-shift (fixed-field-value ff)
-                       (- (- bit (fixed-field-lo ff))))
-     1)))
-
-(define (instruction-width idef)
-  (define fixed-fields (instruction-def-fixed-fields idef))
-  (define b0 (fixed-bit-value fixed-fields 0))
-  (define b1 (fixed-bit-value fixed-fields 1))
-  (cond
-    [(and b0 b1)
-     (if (and (= b0 1) (= b1 1)) 32 16)]
-    [else 32]))
-
-(define (instruction-aliases idef)
-  (for/list ([token (in-list (instruction-def-operands idef))]
-             #:when (alias-token? token))
-    (define a (parse-alias token))
-    (list (alias-binding-target a)
-          (alias-binding-source a))))
 
 (define (asm-format name operands)
   (if (null? operands)
@@ -75,42 +53,30 @@
                  (for/list ([idef (in-list defs)])
                    (gen-info-code extension idef))
                  "\n   "))))
-  (string-join
-   (list "#lang racket/base"
-         ""
-         "(require \"struct.rkt\")"
-         ""
-         (format "(define ~a\n  ~a)" var body)
-         ""
-         (format "(provide ~a)" var)
-         "")
-   "\n"))
+  (render-module
+   info-require-specs
+   (list (format "(define ~a\n  ~a)" var body))
+   (list var)))
 
 (define (sorted-extensions ext->defs)
   (sort (hash-keys ext->defs) string<?))
 
 (define (gen-all-info-content ext->defs)
   (define extensions (sorted-extensions ext->defs))
-  (define require-lines
+  (define require-specs
     (for/list ([ext (in-list extensions)])
-      (format "\"~a.rkt\"" ext)))
+      (info-module-require-spec ext)))
   (define vars
     (for/list ([ext (in-list extensions)])
       (info-var ext)))
-  (string-join
-   (list "#lang racket/base"
-         ""
-         (format "(require ~a)"
-                 (string-join require-lines "\n         "))
-         ""
-         (if (null? vars)
-             "(define all-instruction-info '())"
-             (format "(define all-instruction-info\n  (append ~a))"
-                     (string-join vars " ")))
-         ""
-         "(provide all-instruction-info)"
-         "")
-   "\n"))
+  (define definition
+    (if (null? vars)
+        "(define all-instruction-info '())"
+        (format "(define all-instruction-info\n  (append ~a))"
+                (string-join vars " "))))
+  (render-module require-specs
+                 (list definition)
+                 (list "all-instruction-info")))
 
 (define (gen-extension-map-content ext->defs)
   (define name->exts (make-hash))
@@ -128,22 +94,20 @@
               (sort (remove-duplicates
                      (hash-ref name->exts name))
                     string<?))))
-  (string-join
-   (append
-    (list "#lang racket/base"
-          ""
-          "(define instruction->extensions"
-          "  (make-immutable-hash"
-          "    '(")
-    entries
-    (list "    )))"
-          ""
-          "(provide instruction->extensions)"
-          ""))
-   "\n"))
+  (define body
+    (string-join
+     (append
+      (list "(define instruction->extensions"
+            "  (make-immutable-hash"
+            "    '(")
+      entries
+      (list "    )))"))
+     "\n"))
+  (render-module '()
+                 (list body)
+                 (list "instruction->extensions")))
 
 (provide gen-info-code
          gen-info-file-content
          gen-all-info-content
-         gen-extension-map-content
-         instruction-width)
+         gen-extension-map-content)

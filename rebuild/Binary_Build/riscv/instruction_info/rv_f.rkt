@@ -44,4 +44,5 @@
    (instruction-info "fscsr" "rv_f" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 3) (12 14 1) (2 6 28) (0 1 3)) '() "fscsr rd, rs1")
    (instruction-info "frcsr" "rv_f" 32 '("rd") '("rd") '((15 19 0) (20 31 3) (12 14 2) (2 6 28) (0 1 3)) '() "frcsr rd")))
 
-(provide rv_f-instructions)
+(provide
+ rv_f-instructions)

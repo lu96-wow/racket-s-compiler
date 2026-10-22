@@ -11,4 +11,5 @@
    (instruction-info "slli.uw" "rv64_zba" 32 '("rd" "rs1" "shamtd") '("rd" "rs1" "shamtd") '((26 31 2) (12 14 1) (2 6 6) (0 1 3)) '() "slli.uw rd, rs1, shamtd")
    (instruction-info "zext.w" "rv64_zba" 32 '("rd" "rs1") '("rd" "rs1") '((25 31 4) (20 24 0) (12 14 0) (2 6 14) (0 1 3)) '() "zext.w rd, rs1")))
 
-(provide rv64_zba-instructions)
+(provide
+ rv64_zba-instructions)

@@ -47,4 +47,5 @@
    (instruction-info "mop.rr.6" "rv_zimop" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((30 30 1) (27 27 1) (26 26 0) (31 31 1) (28 29 0) (25 25 1) (12 14 4) (2 6 28) (0 1 3)) '() "mop.rr.6 rd, rs1, rs2")
    (instruction-info "mop.rr.7" "rv_zimop" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((30 30 1) (27 27 1) (26 26 1) (31 31 1) (28 29 0) (25 25 1) (12 14 4) (2 6 28) (0 1 3)) '() "mop.rr.7 rd, rs1, rs2")))
 
-(provide rv_zimop-instructions)
+(provide
+ rv_zimop-instructions)

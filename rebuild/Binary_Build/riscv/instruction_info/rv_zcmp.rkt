@@ -11,4 +11,5 @@
    (instruction-info "cm.mvsa01" "rv_zcmp" 16 '("c_sreg1" "c_sreg2") '("c_sreg1" "c_sreg2") '((0 1 2) (13 15 5) (10 12 3) (5 6 1)) '() "cm.mvsa01 c_sreg1, c_sreg2")
    (instruction-info "cm.mva01s" "rv_zcmp" 16 '("c_sreg1" "c_sreg2") '("c_sreg1" "c_sreg2") '((0 1 2) (13 15 5) (10 12 3) (5 6 3)) '() "cm.mva01s c_sreg1, c_sreg2")))
 
-(provide rv_zcmp-instructions)
+(provide
+ rv_zcmp-instructions)

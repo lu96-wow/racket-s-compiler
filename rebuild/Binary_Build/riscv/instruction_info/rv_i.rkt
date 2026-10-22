@@ -67,4 +67,5 @@
    (instruction-info "jr" "rv_i" 32 '("rs1") '("rs1") '((20 31 0) (12 14 0) (7 11 0) (2 6 25) (0 1 3)) '() "jr rs1")
    (instruction-info "j" "rv_i" 32 '("jimm20") '("jimm20") '((7 11 0) (2 6 27) (0 1 3)) '() "j jimm20")))
 
-(provide rv_i-instructions)
+(provide
+ rv_i-instructions)

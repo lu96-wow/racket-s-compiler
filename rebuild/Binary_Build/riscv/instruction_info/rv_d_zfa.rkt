@@ -13,4 +13,5 @@
    (instruction-info "fleq.d" "rv_d_zfa" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((27 31 20) (12 14 4) (25 26 1) (2 6 20) (0 1 3)) '() "fleq.d rd, rs1, rs2")
    (instruction-info "fltq.d" "rv_d_zfa" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((27 31 20) (12 14 5) (25 26 1) (2 6 20) (0 1 3)) '() "fltq.d rd, rs1, rs2")))
 
-(provide rv_d_zfa-instructions)
+(provide
+ rv_d_zfa-instructions)

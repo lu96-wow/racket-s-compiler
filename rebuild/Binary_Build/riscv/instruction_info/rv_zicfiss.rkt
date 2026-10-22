@@ -12,4 +12,5 @@
    (instruction-info "sspush.x1" "rv_zicfiss" 32 '() '() '((30 30 1) (27 27 1) (26 26 1) (31 31 1) (28 29 0) (25 25 1) (20 24 1) (15 19 0) (12 14 4) (7 11 0) (2 6 28) (0 1 3)) '() "sspush.x1")
    (instruction-info "sspush.x5" "rv_zicfiss" 32 '() '() '((30 30 1) (27 27 1) (26 26 1) (31 31 1) (28 29 0) (25 25 1) (20 24 5) (15 19 0) (12 14 4) (7 11 0) (2 6 28) (0 1 3)) '() "sspush.x5")))
 
-(provide rv_zicfiss-instructions)
+(provide
+ rv_zicfiss-instructions)

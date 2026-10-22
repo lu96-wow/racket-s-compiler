@@ -15,4 +15,5 @@
    (instruction-info "c.ldsp" "rv64_c" 16 '("rd_n0" "c_uimm9sp") '("rd_n0" "c_uimm9sphi" "c_uimm9splo") '((0 1 2) (13 15 3)) '() "c.ldsp rd_n0, c_uimm9sp")
    (instruction-info "c.sdsp" "rv64_c" 16 '("c_rs2" "c_uimm9sp_s") '("c_rs2" "c_uimm9sp_s") '((0 1 2) (13 15 7)) '() "c.sdsp c_rs2, c_uimm9sp_s")))
 
-(provide rv64_c-instructions)
+(provide
+ rv64_c-instructions)

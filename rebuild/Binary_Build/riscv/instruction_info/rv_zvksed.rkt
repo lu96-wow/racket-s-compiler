@@ -8,4 +8,5 @@
    (instruction-info "vsm4r.vv" "rv_zvksed" 32 '("vs2" "vd") '("vs2" "vd") '((26 31 40) (25 25 1) (15 19 16) (12 14 2) (0 6 119)) '() "vsm4r.vv vs2, vd")
    (instruction-info "vsm4r.vs" "rv_zvksed" 32 '("vs2" "vd") '("vs2" "vd") '((26 31 41) (25 25 1) (15 19 16) (12 14 2) (0 6 119)) '() "vsm4r.vs vs2, vd")))
 
-(provide rv_zvksed-instructions)
+(provide
+ rv_zvksed-instructions)

@@ -36,4 +36,5 @@
    (instruction-info "fabs.q" "rv_q" 32 '("rd" "rs1") '("rd" "rs1") '((27 31 4) (12 14 2) (25 26 3) (2 6 20) (0 1 3)) '(("rs2" "rs1")) "fabs.q rd, rs1")
    (instruction-info "fneg.q" "rv_q" 32 '("rd" "rs1") '("rd" "rs1") '((27 31 4) (12 14 1) (25 26 3) (2 6 20) (0 1 3)) '(("rs2" "rs1")) "fneg.q rd, rs1")))
 
-(provide rv_q-instructions)
+(provide
+ rv_q-instructions)

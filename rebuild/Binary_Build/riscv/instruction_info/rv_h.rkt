@@ -17,4 +17,5 @@
    (instruction-info "hsv.h" "rv_h" 32 '("rs1" "rs2") '("rs1" "rs2") '((7 11 0) (25 31 51) (12 14 4) (2 6 28) (0 1 3)) '() "hsv.h rs1, rs2")
    (instruction-info "hsv.w" "rv_h" 32 '("rs1" "rs2") '("rs1" "rs2") '((7 11 0) (25 31 53) (12 14 4) (2 6 28) (0 1 3)) '() "hsv.w rs1, rs2")))
 
-(provide rv_h-instructions)
+(provide
+ rv_h-instructions)

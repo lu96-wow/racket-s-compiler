@@ -28,4 +28,5 @@
    (instruction-info "c.add" "rv_c" 16 '("rd_rs1_n0" "c_rs2_n0") '("rd_rs1_n0" "c_rs2_n0") '((0 1 2) (13 15 4) (12 12 1)) '() "c.add rd_rs1_n0, c_rs2_n0")
    (instruction-info "c.swsp" "rv_c" 16 '("c_rs2" "c_uimm8sp_s") '("c_rs2" "c_uimm8sp_s") '((0 1 2) (13 15 6)) '() "c.swsp c_rs2, c_uimm8sp_s")))
 
-(provide rv_c-instructions)
+(provide
+ rv_c-instructions)

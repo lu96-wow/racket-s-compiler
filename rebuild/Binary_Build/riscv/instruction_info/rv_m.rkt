@@ -13,4 +13,5 @@
    (instruction-info "rem" "rv_m" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 1) (12 14 6) (2 6 12) (0 1 3)) '() "rem rd, rs1, rs2")
    (instruction-info "remu" "rv_m" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 1) (12 14 7) (2 6 12) (0 1 3)) '() "remu rd, rs1, rs2")))
 
-(provide rv_m-instructions)
+(provide
+ rv_m-instructions)

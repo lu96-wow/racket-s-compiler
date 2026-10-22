@@ -21,4 +21,5 @@
    (instruction-info "vwsll.vx" "rv_zvbb" 32 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 53) (12 14 4) (0 6 87)) '() "vwsll.vx vm, vs2, rs1, vd")
    (instruction-info "vwsll.vi" "rv_zvbb" 32 '("vm" "vs2" "zimm5" "vd") '("vm" "vs2" "zimm5" "vd") '((26 31 53) (12 14 3) (0 6 87)) '() "vwsll.vi vm, vs2, zimm5, vd")))
 
-(provide rv_zvbb-instructions)
+(provide
+ rv_zvbb-instructions)

@@ -12,4 +12,5 @@
    (instruction-info "c.srai_rv32" "rv32_c" 16 '("rd_rs1_p" "c_nzuimm5") '("rd_rs1_p" "c_nzuimm5") '((0 1 1) (13 15 4) (10 12 1)) '() "c.srai_rv32 rd_rs1_p, c_nzuimm5")
    (instruction-info "c.slli_rv32" "rv32_c" 16 '("rd_rs1_n0" "c_nzuimm6lo") '("rd_rs1_n0" "c_nzuimm6lo") '((0 1 2) (12 15 0)) '() "c.slli_rv32 rd_rs1_n0, c_nzuimm6lo")))
 
-(provide rv32_c-instructions)
+(provide
+ rv32_c-instructions)

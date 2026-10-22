@@ -16,4 +16,5 @@
    (instruction-info "c.not" "rv_zcb" 16 '("rd_rs1_p") '("rd_rs1_p") '((0 1 1) (13 15 4) (10 12 7) (5 6 3) (2 4 5)) '() "c.not rd_rs1_p")
    (instruction-info "c.mul" "rv_zcb" 16 '("rd_rs1_p" "rs2_p") '("rd_rs1_p" "rs2_p") '((0 1 1) (13 15 4) (10 12 7) (5 6 2)) '() "c.mul rd_rs1_p, rs2_p")))
 
-(provide rv_zcb-instructions)
+(provide
+ rv_zcb-instructions)

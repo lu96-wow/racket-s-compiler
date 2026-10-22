@@ -16,4 +16,5 @@
    (instruction-info "vmornot.mm" "rv_v_aliases" 32 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 28) (12 14 2) (0 6 87)) '() "vmornot.mm vm, vs2, vs1, vd")
    (instruction-info "vmandnot.mm" "rv_v_aliases" 32 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 24) (12 14 2) (0 6 87)) '() "vmandnot.mm vm, vs2, vs1, vd")))
 
-(provide rv_v_aliases-instructions)
+(provide
+ rv_v_aliases-instructions)

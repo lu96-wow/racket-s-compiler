@@ -9,4 +9,5 @@
    (instruction-info "binvi" "rv64_zbs" 32 '("rd" "rs1" "shamtd") '("rd" "rs1" "shamtd") '((26 31 26) (12 14 1) (2 6 4) (0 1 3)) '() "binvi rd, rs1, shamtd")
    (instruction-info "bseti" "rv64_zbs" 32 '("rd" "rs1" "shamtd") '("rd" "rs1" "shamtd") '((26 31 10) (12 14 1) (2 6 4) (0 1 3)) '() "bseti rd, rs1, shamtd")))
 
-(provide rv64_zbs-instructions)
+(provide
+ rv64_zbs-instructions)

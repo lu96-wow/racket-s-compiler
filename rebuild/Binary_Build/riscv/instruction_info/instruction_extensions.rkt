@@ -1050,4 +1050,5 @@
       ("zip" . ("rv32_zbkb" "rv32_zk" "rv32_zkn" "rv32_zks"))
     )))
 
-(provide instruction->extensions)
+(provide
+ instruction->extensions)

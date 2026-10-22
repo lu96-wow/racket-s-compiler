@@ -16,4 +16,5 @@
    (instruction-info "vaeskf1.vi" "rv_zvkned" 32 '("vs2" "zimm5" "vd") '("vs2" "zimm5" "vd") '((26 31 34) (25 25 1) (12 14 2) (0 6 119)) '() "vaeskf1.vi vs2, zimm5, vd")
    (instruction-info "vaeskf2.vi" "rv_zvkned" 32 '("vs2" "zimm5" "vd") '("vs2" "zimm5" "vd") '((26 31 42) (25 25 1) (12 14 2) (0 6 119)) '() "vaeskf2.vi vs2, zimm5, vd")))
 
-(provide rv_zvkned-instructions)
+(provide
+ rv_zvkned-instructions)

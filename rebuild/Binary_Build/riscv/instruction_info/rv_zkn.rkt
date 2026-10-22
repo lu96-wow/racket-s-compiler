@@ -21,4 +21,5 @@
    (instruction-info "sha256sig1" "rv_zkn" 32 '("rd" "rs1") '("rd" "rs1") '((30 31 0) (25 29 8) (20 24 3) (12 14 1) (0 6 19)) '() "sha256sig1 rd, rs1")
    (instruction-info "brev8" "rv_zkn" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 1671) (12 14 5) (2 6 4) (0 1 3)) '() "brev8 rd, rs1")))
 
-(provide rv_zkn-instructions)
+(provide
+ rv_zkn-instructions)

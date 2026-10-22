@@ -14,4 +14,5 @@
    (instruction-info "c.mop.13" "rv_zcmop" 16 '() '() '((0 1 1) (2 6 0) (7 11 13) (12 12 0) (13 15 3)) '() "c.mop.13")
    (instruction-info "c.mop.15" "rv_zcmop" 16 '() '() '((0 1 1) (2 6 0) (7 11 15) (12 12 0) (13 15 3)) '() "c.mop.15")))
 
-(provide rv_zcmop-instructions)
+(provide
+ rv_zcmop-instructions)

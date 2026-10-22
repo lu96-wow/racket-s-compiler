@@ -21,4 +21,5 @@
    (instruction-info "sraw" "rv64_i" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 32) (12 14 5) (2 6 14) (0 1 3)) '() "sraw rd, rs1, rs2")
    (instruction-info "sext.w" "rv64_i" 32 '("rd" "rs1") '("rd" "rs1") '((20 31 0) (12 14 0) (2 6 6) (0 1 3)) '() "sext.w rd, rs1")))
 
-(provide rv64_i-instructions)
+(provide
+ rv64_i-instructions)

@@ -12,4 +12,5 @@
    (instruction-info "fleq.h" "rv_zfh_zfa" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((27 31 20) (12 14 4) (25 26 2) (2 6 20) (0 1 3)) '() "fleq.h rd, rs1, rs2")
    (instruction-info "fltq.h" "rv_zfh_zfa" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((27 31 20) (12 14 5) (25 26 2) (2 6 20) (0 1 3)) '() "fltq.h rd, rs1, rs2")))
 
-(provide rv_zfh_zfa-instructions)
+(provide
+ rv_zfh_zfa-instructions)

@@ -18,4 +18,5 @@
    (instruction-info "csrsi" "rv_zicsr" 32 '("csr" "zimm5") '("csr" "zimm5") '((12 14 6) (7 11 0) (2 6 28) (0 1 3)) '() "csrsi csr, zimm5")
    (instruction-info "csrci" "rv_zicsr" 32 '("csr" "zimm5") '("csr" "zimm5") '((12 14 7) (7 11 0) (2 6 28) (0 1 3)) '() "csrci csr, zimm5")))
 
-(provide rv_zicsr-instructions)
+(provide
+ rv_zicsr-instructions)

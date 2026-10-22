@@ -16,4 +16,5 @@
    (instruction-info "amominu.d" "rv64_a" 32 '("rd" "rs1" "rs2" "aq" "rl") '("rd" "rs1" "rs2" "aq" "rl") '((29 31 6) (27 28 0) (12 14 3) (2 6 11) (0 1 3)) '() "amominu.d rd, rs1, rs2, aq, rl")
    (instruction-info "amomaxu.d" "rv64_a" 32 '("rd" "rs1" "rs2" "aq" "rl") '("rd" "rs1" "rs2" "aq" "rl") '((29 31 7) (27 28 0) (12 14 3) (2 6 11) (0 1 3)) '() "amomaxu.d rd, rs1, rs2, aq, rl")))
 
-(provide rv64_a-instructions)
+(provide
+ rv64_a-instructions)

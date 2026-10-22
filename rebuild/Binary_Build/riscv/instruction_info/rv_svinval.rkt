@@ -8,4 +8,5 @@
    (instruction-info "sfence.w.inval" "rv_svinval" 32 '() '() '((7 11 0) (15 19 0) (20 24 0) (25 31 12) (12 14 0) (2 6 28) (0 1 3)) '() "sfence.w.inval")
    (instruction-info "sfence.inval.ir" "rv_svinval" 32 '() '() '((7 11 0) (15 19 0) (20 24 1) (25 31 12) (12 14 0) (2 6 28) (0 1 3)) '() "sfence.inval.ir")))
 
-(provide rv_svinval-instructions)
+(provide
+ rv_svinval-instructions)

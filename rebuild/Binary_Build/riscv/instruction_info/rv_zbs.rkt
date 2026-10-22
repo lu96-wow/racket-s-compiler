@@ -9,4 +9,5 @@
    (instruction-info "binv" "rv_zbs" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 52) (12 14 1) (2 6 12) (0 1 3)) '() "binv rd, rs1, rs2")
    (instruction-info "bset" "rv_zbs" 32 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((25 31 20) (12 14 1) (2 6 12) (0 1 3)) '() "bset rd, rs1, rs2")))
 
-(provide rv_zbs-instructions)
+(provide
+ rv_zbs-instructions)

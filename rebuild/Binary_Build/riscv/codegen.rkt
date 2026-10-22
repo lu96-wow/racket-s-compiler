@@ -2,8 +2,9 @@
 
 (require racket/string
          racket/list
-         racket/path
-         "parse/main.rkt")
+         "parse/main.rkt"
+         "render.rkt"
+         "../paths.rkt")
 
 ;; ============================================================
 ;; codegen：解析结果 → raw / rebuilt 两个表示层
@@ -49,26 +50,6 @@
    (for*/list ([g (in-list operand-groups)]
                [token (in-list (operand-group-raw-tokens g))])
      (cons token g))))
-
-;; ------------------------------------------------------------
-;; operand token / alias
-;; ------------------------------------------------------------
-
-(struct alias-binding (target source)
-  #:transparent)
-
-(define (alias-token? token)
-  (string-contains? token "="))
-
-(define (parse-alias token)
-  (define parts (string-split token "="))
-  (unless (= (length parts) 2)
-    (error 'parse-alias "invalid alias operand: ~a" token))
-  (alias-binding (list-ref parts 0) (list-ref parts 1)))
-
-(define (normal-operands idef)
-  (filter (lambda (token) (not (alias-token? token)))
-          (instruction-def-operands idef)))
 
 ;; ------------------------------------------------------------
 ;; rebuilt 分组
@@ -125,7 +106,7 @@
 
 (define (rebuilt-operand-plan idef)
   (define tokens (instruction-def-operands idef))
-  (define operands (normal-operands idef))
+  (define operands (normal-operand-tokens (instruction-def-operands idef)))
   (define token->arg (make-hash))
 
   ;; 先为普通 token 建立“它对应的逻辑参数名”。
@@ -233,139 +214,35 @@
   (gen-instruction-code idef (rebuilt-operand-plan idef)))
 
 ;; ------------------------------------------------------------
-;; import / pseudo 展开
-;; ------------------------------------------------------------
-
-(define (extension-stem path)
-  (path->string (path-replace-suffix (file-name-from-path path) "")))
-
-(define (find-instruction defs name)
-  (for/first ([idef (in-list defs)]
-              #:when (equal? (instruction-def-name idef) name))
-    idef))
-
-(define (resolve-imports extension-file extension-map)
-  (for/list ([im (in-list (extension-file-imports extension-file))])
-    (define source-extension (import-def-source-extension im))
-    (define instruction-name (import-def-instruction-name im))
-    (define source-file (hash-ref extension-map source-extension #f))
-    (unless source-file
-      (error 'resolve-imports
-             "cannot resolve import ~a::~a"
-             source-extension instruction-name))
-    (define idef
-      (find-instruction (extension-file-standard source-file)
-                        instruction-name))
-    (unless idef
-      (error 'resolve-imports
-             "instruction ~a::~a not found in ~a"
-             source-extension
-             instruction-name
-             (extension-file-path source-file)))
-    idef))
-
-(define (add-unique defs seen idef)
-  (define name (instruction-def-name idef))
-  (cond
-    [(hash-has-key? seen name) (values defs seen)]
-    [else
-     (hash-set! seen name #t)
-     (values (cons idef defs) seen)]))
-
-(define (prepare-extension-defs extension-file extension-map)
-  (define seen (make-hash))
-  (define-values (with-standard seen*)
-    (for/fold ([defs '()] [seen seen])
-              ([idef (in-list (extension-file-standard extension-file))])
-      (add-unique defs seen idef)))
-  (define-values (with-imports seen**)
-    (for/fold ([defs with-standard] [seen seen*])
-              ([idef (in-list (resolve-imports extension-file extension-map))])
-      (add-unique defs seen idef)))
-  (define-values (all _seen)
-    (for/fold ([defs with-imports] [seen seen**])
-              ([pseudo (in-list (extension-file-pseudo extension-file))])
-      (add-unique defs seen (pseudo-def-instruction pseudo))))
-  (reverse all))
-
-;; ------------------------------------------------------------
 ;; 文件内容
 ;; ------------------------------------------------------------
 
-(define raw-requires
-  (string-join
-   '("\"../../../base.rkt\""
-     "\"../../raw/scalar.rkt\""
-     "\"../../raw/compressed.rkt\""
-     "\"../../raw/vector.rkt\""
-     "\"../../raw/mop.rkt\"")
-   "\n         "))
-
-(define rebuilt-requires
-  (string-join
-   '("\"../../../base.rkt\""
-     "(prefix-in raw: \"../../raw/scalar.rkt\")"
-     "(prefix-in raw: \"../../raw/compressed.rkt\")"
-     "(prefix-in raw: \"../../raw/vector.rkt\")"
-     "(prefix-in raw: \"../../raw/mop.rkt\")"
-     "(prefix-in rebuilt: \"../../rebuilt/scalar.rkt\")"
-     "(prefix-in rebuilt: \"../../rebuilt/compressed.rkt\")"
-     "(prefix-in rebuilt: \"../../rebuilt/vector.rkt\")"
-     "(prefix-in rebuilt: \"../../rebuilt/mop.rkt\")")
-   "\n         "))
-
-(define (render-provide defs)
-  (if (null? defs)
-      "(provide)"
-      (format "(provide\n ~a)"
-              (string-join
-               (for/list ([idef (in-list defs)])
-                 (instruction-def-name idef))
-               "\n "))))
+(define (instruction-names defs)
+  (for/list ([idef (in-list defs)])
+    (instruction-def-name idef)))
 
 (define (gen-raw-file-content defs)
-  (string-join
-   (append
-    (list "#lang racket/base"
-          ""
-          (format "(require ~a)" raw-requires)
-          "")
-    (for/list ([idef (in-list defs)])
-      (gen-raw-instruction-code idef))
-    (list ""
-          (render-provide defs)
-          ""))
-   "\n"))
+  (render-module
+   raw-require-specs
+   (for/list ([idef (in-list defs)])
+     (gen-raw-instruction-code idef))
+   (instruction-names defs)))
 
 (define (gen-rebuilt-file-content defs)
-  (string-join
-   (append
-    (list "#lang racket/base"
-          ""
-          (format "(require ~a)" rebuilt-requires)
-          "")
-    (for/list ([idef (in-list defs)])
-      (gen-rebuilt-instruction-code idef))
-    (list ""
-          (render-provide defs)
-          ""))
-   "\n"))
+  (render-module
+   rebuilt-require-specs
+   (for/list ([idef (in-list defs)])
+     (gen-rebuilt-instruction-code idef))
+   (instruction-names defs)))
 
 (provide gen-raw-instruction-code
          gen-rebuilt-instruction-code
          gen-raw-file-content
          gen-rebuilt-file-content
-         prepare-extension-defs
          operand-plan
          operand-plan?
          operand-plan-fields
          operand-plan-args
          operand-plan-exprs
          raw-operand-plan
-         rebuilt-operand-plan
-         alias-binding
-         alias-binding?
-         alias-binding-target
-         alias-binding-source
-         alias-token?
-         parse-alias)
+         rebuilt-operand-plan)
