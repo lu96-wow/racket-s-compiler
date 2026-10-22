@@ -58,12 +58,6 @@
 (struct extension-file (path standard pseudo imports)
   #:transparent)
 
-(struct extension-source (path type-sym)
-  #:transparent)
-
-(struct extension-defs (source defs)
-  #:transparent)
-
 (provide fixed-field
          fixed-field?
          fixed-field-lo
@@ -89,12 +83,4 @@
          extension-file-path
          extension-file-standard
          extension-file-pseudo
-         extension-file-imports
-         extension-source
-         extension-source?
-         extension-source-path
-         extension-source-type-sym
-         extension-defs
-         extension-defs?
-         extension-defs-source
-         extension-defs-defs)
+         extension-file-imports)

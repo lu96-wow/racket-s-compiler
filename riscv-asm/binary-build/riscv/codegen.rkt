@@ -55,12 +55,6 @@
 ;; rebuilt 分组
 ;; ------------------------------------------------------------
 
-(define (group-names)
-  (map operand-group-name operand-groups))
-
-(define (rebuilt-group-name? name)
-  (and (member name (group-names)) #t))
-
 (define (complete-group? g operands)
   (for/and ([token (in-list (operand-group-raw-tokens g))])
     (and (member token operands) #t)))
@@ -80,6 +74,7 @@
              expr
              (operand-plan-args plan)))))
 
+;; raw 参数顺序严格等于源 token 顺序。
 (define (raw-operand-plan idef)
   (define tokens (instruction-def-operands idef))
   (define args '())
@@ -104,6 +99,8 @@
   (validate-alias-sources! plan)
   plan)
 
+;; rebuilt 参数顺序 = 每个逻辑操作数在源 token 中第一次出现的位置。
+;; 只有 raw token 全部出现时才使用 rebuilt 组合字段。
 (define (rebuilt-operand-plan idef)
   (define tokens (instruction-def-operands idef))
   (define operands (normal-operand-tokens (instruction-def-operands idef)))

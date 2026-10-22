@@ -27,11 +27,11 @@
 ;; 校验
 ;; ------------------------------------------------------------
 
-(define (check-source-index who what n)
+(define (check-source-index who n)
   (unless (exact-nonnegative-integer? n)
     (raise-argument-error who "exact-nonnegative-integer?" n)))
 
-(define (check-target-index who what n)
+(define (check-target-index who n)
   (unless (exact-nonnegative-integer? n)
     (raise-argument-error who "exact-nonnegative-integer?" n))
   (when (> n 31)
@@ -54,8 +54,8 @@
 
 ;; (bit src dst) — 取逻辑值的第 src 位，放到指令字第 dst 位
 (define (bit src dst)
-  (check-source-index 'bit 'src src)
-  (check-target-index 'bit 'dst dst)
+  (check-source-index 'bit src)
+  (check-target-index 'bit dst)
   (lambda (value)
     (check-value 'bit value)
     (arithmetic-shift
@@ -65,9 +65,9 @@
 ;; (bit-range src-lo src-hi dst-lo)
 ;; 取逻辑值的 [src-lo, src-hi]（闭区间），放到指令字 dst-lo 开始的连续位。
 (define (bit-range src-lo src-hi dst-lo)
-  (check-source-index 'bit-range 'src-lo src-lo)
-  (check-source-index 'bit-range 'src-hi src-hi)
-  (check-target-index 'bit-range 'dst-lo dst-lo)
+  (check-source-index 'bit-range src-lo)
+  (check-source-index 'bit-range src-hi)
+  (check-target-index 'bit-range dst-lo)
   (unless (<= src-lo src-hi)
     (error 'bit-range "src-lo (~a) must be <= src-hi (~a)" src-lo src-hi))
 
@@ -92,8 +92,8 @@
 
 ;; (bit-range-fixed lo hi value) — 常量字段，不消费调用参数
 (define (bit-range-fixed lo hi value)
-  (check-target-index 'bit-range-fixed 'lo lo)
-  (check-target-index 'bit-range-fixed 'hi hi)
+  (check-target-index 'bit-range-fixed lo)
+  (check-target-index 'bit-range-fixed hi)
   (unless (<= lo hi)
     (error 'bit-range-fixed "lo (~a) must be <= hi (~a)" lo hi))
   (check-value 'bit-range-fixed value)

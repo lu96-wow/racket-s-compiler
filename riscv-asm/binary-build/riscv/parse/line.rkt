@@ -14,11 +14,6 @@
   (or (string=? s "")
       (string-prefix? s "#")))
 
-(define (skip-line? line)
-  (define s (string-trim line))
-  (or (comment-or-blank? line)
-      (string-prefix? s "$")))
-
 (define (check-fixed-overlap! name fixed-fields line-number)
   (define seen (make-hash))
   (for ([ff (in-list fixed-fields)])
@@ -93,7 +88,6 @@
   (import-def source-extension instruction-name))
 
 (provide comment-or-blank?
-         skip-line?
          parse-line
          parse-pseudo-line
          parse-import-line)

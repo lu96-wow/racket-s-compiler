@@ -1,6 +1,8 @@
 #lang racket/base
 
 (require racket/file
+         racket/list
+         racket/path
          "paths.rkt"
          "riscv/parse/main.rkt"
          "riscv/codegen.rkt"
@@ -9,6 +11,22 @@
 ;; ============================================================
 ;; 把依赖模块和生成产物打包到 generated-root
 ;; ============================================================
+
+(define (clean-generated-output!)
+  (define root (simplify-path (path->complete-path (generated-root))))
+  (define protected-roots
+    (list (simplify-path project-root)
+          (simplify-path binary-build-dir)))
+  (when (member root protected-roots equal?)
+    (error 'build-all
+           "generated root overlaps source tree: ~a"
+           root))
+  (for ([path (in-list (list (generated-path "riscv")
+                             (generated-base-path)
+                             (generated-bit-path)
+                             (generated-instruction-paths-path)))])
+    (when (file-exists? path)
+      (delete-directory/files path))))
 
 (define (copy-dependencies!)
   (make-directory* (generated-root))
@@ -40,10 +58,11 @@
   (when output-root
     (generated-root output-root))
 
+  (clean-generated-output!)
   (copy-dependencies!)
   (make-output-dirs!)
 
-  (define files (extension-source-files))
+  (define files (ratified-extension-source-files))
   (define parsed-files
     (for/list ([path (in-list files)])
       (parse-extension-file path)))
@@ -55,13 +74,15 @@
 
   (define ext->defs (make-hash))
 
-  (define-values (standard pseudo imports emitted)
+  (define-values (standard pseudo imports emitted skipped-definitions)
     (for/fold ([standard 0]
                [pseudo 0]
                [imports 0]
-               [emitted 0])
+               [emitted 0]
+               [skipped-definitions '()])
               ([parsed (in-list parsed-files)])
-      (define defs (prepare-extension-defs parsed extension-map))
+      (define-values (defs skipped)
+        (prepare-extension-defs parsed extension-map))
       (define ext (extension-stem (extension-file-path parsed)))
       (hash-set! ext->defs ext defs)
 
@@ -82,7 +103,8 @@
       (values (+ standard (length (extension-file-standard parsed)))
               (+ pseudo (length (extension-file-pseudo parsed)))
               (+ imports (length (extension-file-imports parsed)))
-              (+ emitted (length defs)))))
+              (+ emitted (length defs))
+              (append skipped skipped-definitions))))
 
   (define all-info-path (all-instruction-info-output-path))
   (display-to-file (gen-all-info-content ext->defs all-info-path)
@@ -92,11 +114,20 @@
                    (instruction-extensions-output-path)
                    #:exists 'replace)
 
-  (printf "Generated ~a extensions\n" (length files))
+  (printf "Generated ~a ratified extensions\n" (length files))
   (printf "  standard definitions:  ~a\n" standard)
   (printf "  pseudo definitions:    ~a\n" pseudo)
   (printf "  import definitions:    ~a\n" imports)
   (printf "  emitted per extension: ~a\n" emitted)
+  (define skipped-unique
+    (sort (remove-duplicates skipped-definitions)
+          string<?
+          #:key skipped-definition-name))
+  (printf "  skipped duplicates:    ~a\n" (length skipped-unique))
+  (for ([skipped (in-list skipped-unique)])
+    (printf "    ~a: ~a\n"
+            (skipped-definition-name skipped)
+            (skipped-definition-reason skipped)))
   (printf "  package root:          ~a\n" (generated-root)))
 
 (define args (current-command-line-arguments))

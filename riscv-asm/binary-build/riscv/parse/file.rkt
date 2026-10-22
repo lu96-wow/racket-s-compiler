@@ -1,7 +1,6 @@
 #lang racket/base
 
-(require racket/path
-         racket/string
+(require racket/string
          "struct.rkt"
          "line.rkt")
 
@@ -47,11 +46,5 @@
 (define (parse-file path)
   (extension-file-standard (parse-extension-file path)))
 
-(define (make-extension-source path)
-  (define stem (path-replace-suffix (file-name-from-path path) ""))
-  (define type-sym (string->symbol (path->string stem)))
-  (extension-source path type-sym))
-
 (provide parse-extension-file
-         parse-file
-         make-extension-source)
+         parse-file)

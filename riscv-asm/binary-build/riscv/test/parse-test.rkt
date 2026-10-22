@@ -117,6 +117,38 @@
   (for/list ([path (in-list extension-paths)])
     (parse-extension-file path)))
 
+
+;; ------------------------------------------------------------
+;; 同名定义优先级：standard 必须胜过 pseudo
+;; ------------------------------------------------------------
+
+(define extension-map
+  (make-immutable-hash
+   (for/list ([parsed (in-list parsed-files)])
+     (cons (extension-stem (extension-file-path parsed)) parsed))))
+
+(define-values (rv-i-defs rv-i-skipped)
+  (prepare-extension-defs (hash-ref extension-map "rv_i") extension-map))
+
+(check-not-false (find-instruction rv-i-defs "jal"))
+(check-equal? (map skipped-definition-name rv-i-skipped)
+              '("jal" "jalr"))
+(check-equal? (map skipped-definition-reason rv-i-skipped)
+              '("overridden-by-standard-definition"
+                "overridden-by-standard-definition"))
+
+(define-values (zilsd-defs zilsd-skipped)
+  (prepare-extension-defs (hash-ref extension-map "rv32_zilsd") extension-map))
+
+;; 两个 pseudo ld 中，保留与 rv64_i::ld fixed fields 兼容的 load 形式
+(define zilsd-ld (find-instruction zilsd-defs "ld"))
+(check-equal? (instruction-def-operands zilsd-ld)
+              '("rd_e" "rs1" "imm12"))
+(check-equal? (map skipped-definition-name zilsd-skipped)
+              '("ld"))
+(check-equal? (map skipped-definition-reason zilsd-skipped)
+              '("not-a-standard-form"))
+
 (define total-standard
   (for/sum ([parsed (in-list parsed-files)])
     (length (extension-file-standard parsed))))

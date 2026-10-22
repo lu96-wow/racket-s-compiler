@@ -14,6 +14,9 @@
 (define-runtime-path self-path "instruction_paths.rkt")
 (define package-root (path-only self-path))
 
+;; 这里的目录布局必须与 binary-build/paths.rkt 的 generated-* 布局一致。
+;; generated-test 会检查这些路径对应的文件存在。
+
 (define (extension-module-filename extension)
   (unless (symbol? extension)
     (raise-argument-error 'extension-module-filename "symbol?" extension))

@@ -57,10 +57,16 @@
 (define (generated-bit-path)
   (generated-path "bit.rkt"))
 
+(define (check-field-kind who kind)
+  (unless (member kind '("raw" "rebuilt"))
+    (error who "expected field kind \"raw\" or \"rebuilt\", got ~a" kind)))
+
 (define (generated-field-dir kind)
+  (check-field-kind 'generated-field-dir kind)
   (generated-path "riscv" kind))
 
 (define (generated-instruction-dir kind)
+  (check-field-kind 'generated-instruction-dir kind)
   (generated-path "riscv" "instruction" kind))
 
 (define (generated-info-dir)
@@ -85,7 +91,8 @@
     "mop.rkt"))
 
 ;; -------- 输入扩展发现 --------
-(define (extension-source-files)
+;; 当前只扫描 extensions/ 顶层的 ratified 扩展；unratified/ 不在生成范围内。
+(define (ratified-extension-source-files)
   (sort
    (for/list ([name (in-list (directory-list source-dir))]
               #:when (let ([p (build-path source-dir name)])
@@ -179,7 +186,7 @@
          generated-info-query-path
          generated-instruction-paths-path
          field-module-filenames
-         extension-source-files
+         ratified-extension-source-files
          extension-stem
          raw-output-path
          rebuilt-output-path
