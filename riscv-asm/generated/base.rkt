@@ -18,6 +18,7 @@
          combine
          bit-map
          make-instruction
+         checked-field
          define-field)
 
 ;; ------------------------------------------------------------
@@ -46,6 +47,10 @@
 ;; (make-instruction operands fixed)
 (define-syntax-rule (make-instruction operands fixed)
   (impl:make-instruction operands fixed))
+
+;; (checked-field name field min max [align])
+(define (checked-field name field min max [align 1])
+  (impl:checked-field name field min max align))
 
 ;; ------------------------------------------------------------
 ;; 字段定义

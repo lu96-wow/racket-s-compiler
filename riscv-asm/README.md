@@ -55,7 +55,13 @@ riscv-asm/
       instruction_paths.rkt    生成包内的路径辅助模块
 
   test/                         测试与测试数据
-    *.rkt
+    field-ranges.rkt            操作数范围测试数据
+    instruction-range-test.rkt  每条指令逐操作数范围测试
+    encoding-oracle-test.rkt    fixed-bit oracle
+    llvm-encoding-test.rkt      带操作数 LLVM encoding oracle
+    parse-test.rkt              解析层测试
+    generated-test.rkt          生成模块测试
+    info-test.rkt               metadata 测试
     generate-oracle.sh
     extract-llvm-oracle.py
     oracle/
@@ -185,28 +191,33 @@ raco test test/*.rkt
 最近一次结果：
 
 ```text
-10212 tests passed
+21255 tests passed
 ```
 
 ### 测试分层
 
-#### 1. 字段位生成测试
+#### 1. 每条指令的逐操作数范围测试
 
 ```text
-scalar-test.rkt
-compressed-test.rkt
-vector-test.rkt
-mop-test.rkt
-instruction-test.rkt
+field-ranges.rkt
+instruction-range-test.rkt
 ```
 
-覆盖：
+生产代码中的 `checked-field` 负责范围/对齐校验。测试覆盖全部 emitted 指令：
 
-- `bit` / `bit-range` / `bit-map`
-- C 扩展非连续立即数
-- `simm12` / `bimm12` / `zimm6` 等组合字段
-- 压缩寄存器 bias
-- raw / rebuilt 的典型指令一致性
+- 每条指令
+- 每个操作数
+- 合法值：`0`、`+1`、`-1`、`min`、`max`（只要在范围内）
+- 非法值：`min-1`、`max+1`、未对齐值
+
+当前结果：
+
+```text
+instructions: 1232
+checked values: 18175
+```
+
+合法值必须成功编码，非法值必须抛错。
 
 #### 2. 解析测试
 
@@ -331,9 +342,16 @@ llvm-encoding-test.rkt
 当前结果：
 
 ```text
-matched:   480
-mismatched:  0
-skipped:   2235
+matched vectors:      480
+matched instructions: 289
+mismatched:             0
+skipped vectors:     2235
+```
+
+列出当前通过 operand-level 精确匹配的指令：
+
+```bash
+RISCV_ASM_LIST_VERIFIED=1 raco test test/llvm-encoding-test.rkt | grep '^verified:'
 ```
 
 跳过的主要形式：
@@ -398,7 +416,8 @@ test/generate-oracle.sh
 
 - 当前只生成 ratified 顶层扩展；`extensions/unratified` 不在生成范围内。
 - `instruction-width` 必须能由 fixed bits 的 bit0/bit1 确定；否则报错。
-- raw 字段函数接收完整逻辑值；raw 指令里 hi/lo 分片可能接收同一个完整立即数。
+- raw 字段函数接收完整逻辑值，并通过 `checked-field` 检查范围/对齐。
+- raw 指令里 hi/lo 分片可能接收同一个完整立即数，因此分片共享完整逻辑范围。
 - rebuilt 参数顺序等于逻辑操作数在源 token 中第一次出现的位置。
 - LLVM 测试数据是装配文本级数据；当前只解析稳定支持的标量/压缩子集。
 - 生成包依赖通过镜像 `binary-build` 的目录布局来保持相对 `require` 有效。

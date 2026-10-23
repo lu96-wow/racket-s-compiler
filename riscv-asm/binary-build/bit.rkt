@@ -21,7 +21,8 @@
          bit-range-fixed
          combine
          bit-map
-         make-instruction)
+         make-instruction
+         checked-field)
 
 ;; ------------------------------------------------------------
 ;; 校验
@@ -85,6 +86,37 @@
     (arithmetic-shift
      (bitwise-and (arithmetic-shift value (- src-lo)) mask)
      dst-lo)))
+
+;; ------------------------------------------------------------
+;; 范围检查包装
+;; ------------------------------------------------------------
+
+;; (checked-field name field min max [align])
+;; 在编码前检查完整逻辑值。align 必须是正整数。
+(define (checked-field name field min max [align 1])
+  (unless (symbol? name)
+    (raise-argument-error 'checked-field "symbol?" name))
+  (unless (procedure? field)
+    (raise-argument-error 'checked-field "procedure?" field))
+  (unless (exact-integer? min)
+    (raise-argument-error 'checked-field "exact-integer?" min))
+  (unless (exact-integer? max)
+    (raise-argument-error 'checked-field "exact-integer?" max))
+  (unless (<= min max)
+    (error 'checked-field "min (~a) must be <= max (~a)" min max))
+  (unless (exact-positive-integer? align)
+    (raise-argument-error 'checked-field "positive integer?" align))
+  (lambda (value)
+    (check-value name value)
+    (unless (<= min value max)
+      (error name
+             "value ~a out of range [~a, ~a]"
+             value min max))
+    (unless (zero? (modulo value align))
+      (error name
+             "value ~a is not aligned to ~a"
+             value align))
+    (field value)))
 
 ;; ------------------------------------------------------------
 ;; 固定字段

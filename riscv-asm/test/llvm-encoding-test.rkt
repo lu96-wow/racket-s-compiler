@@ -265,6 +265,7 @@
   '("c.lui" "zext.h" "rev8" "c.lbu" "c.lhu" "c.lh"))
 
 (define matched 0)
+(define matched-instructions (make-hash))
 (define mismatched 0)
 (define parsed-count 0)
 (define skipped 0)
@@ -299,29 +300,43 @@
      (set! skipped (add1 skipped))]
     [else
      (set! parsed-count (add1 parsed-count))
-     (define success?
+     (define matched-info
        (for/or ([pair (in-list parseable)])
          (define info (car pair))
          (define values (cdr pair))
          (define args
            (for/list ([name (in-list (instruction-info-operands info))])
              (hash-ref values name)))
-         (with-handlers ([exn:fail? (lambda (e) #f)])
-           (= (apply (rebuilt-proc info) args) expected))))
-     (if success?
-         (set! matched (add1 matched))
+         (and (with-handlers ([exn:fail? (lambda (e) #f)])
+                (= (apply (rebuilt-proc info) args) expected))
+              info)))
+     (if matched-info
+         (begin
+           (set! matched (add1 matched))
+           (hash-set! matched-instructions
+                      (cons (instruction-info-extension matched-info)
+                            (instruction-info-name matched-info))
+                      #t))
          (begin
            (set! mismatched (add1 mismatched))
            (hash-update! mismatch-counts mnemonic add1 0)
            (when (< (length failures) 20)
              (set! failures (cons asm failures)))))] ))
 
-(printf "llvm encoding test:\n  matched:   ~a\n  parsed but mismatched: ~a\n  skipped:   ~a\n"
-        matched mismatched skipped)
+(printf "llvm encoding test:\n  matched vectors:      ~a\n  matched instructions: ~a\n  parsed but mismatched: ~a\n  skipped vectors:      ~a\n"
+        matched (hash-count matched-instructions) mismatched skipped)
 (for ([f (in-list (reverse failures))])
   (printf "  mismatch: ~a\n" f))
 (for ([(mn n) (in-hash mismatch-counts)])
   (printf "  mismatch mnemonic: ~a (~a)\n" mn n))
+
+(when (getenv "RISCV_ASM_LIST_VERIFIED")
+  (for ([key (in-list
+              (sort (hash-keys matched-instructions)
+                    (lambda (a b)
+                      (string<? (format "~a::~a" (car a) (cdr a))
+                                (format "~a::~a" (car b) (cdr b))))))])
+    (printf "verified: ~a::~a\n" (car key) (cdr key))))
 
 (check-true (> matched 300))
 (check-equal? mismatched 0)

@@ -59,9 +59,10 @@
     "rd_p_e" "rs2_p_e"))
 
 (define (sample-raw-value operand)
-  (if (member operand compressed-register-operands)
-      8
-      0))
+  (cond
+    [(member operand compressed-register-operands) 8]
+    [(equal? operand "c_nzuimm10") 4]
+    [else 0]))
 
 (define compared 0)
 (define checked-names '())
