@@ -65,6 +65,27 @@
      (list (list 'lui rd hi)
            (list 'addi rd rd lo))]))
 
+;; RV64 专用：LUI + ADDIW
+;;
+;; ADDIW 会把 32 位加法结果重新符号扩展，因此可以精确得到
+;; 那些 LUI+ADDI 会被 LUI 符号扩展破坏的 signed-32 值。
+(define (li-lui-addiw rd value #:word-size [word-size 'rv64])
+  (unless (eq? word-size 'rv64)
+    (error 'li-lui-addiw "ADDIW is only available on RV64"))
+  (unless (fits-lui-addiw? value word-size)
+    (error 'li-lui-addiw
+           "value ~a is not a LUI+ADDIW-representable value for ~a"
+           value word-size))
+  (define-values (hi lo) (split-hi-lo value))
+  (cond
+    [(zero? hi)
+     (list (list 'addiw rd 'x0 lo))]
+    [(zero? lo)
+     (list (list 'lui rd hi))]
+    [else
+     (list (list 'lui rd hi)
+           (list 'addiw rd rd lo))]))
+
 ;; RV64：正的 32 位值，但不在 LUI+ADDI 窗口内。
 ;; 先按 32 位加载，再零扩展。
 (define (li-zext32 rd value)
@@ -84,52 +105,51 @@
   (append (li-32-bits rd high32)
           (list (list 'slli rd rd 32))))
 
-;; 任意 64 位值
-;; 有 scratch 时用 high32/low32 拼接；
-;; 没有 scratch 时用 6 个 12 位块。
+;; 任意 64 位值。
+;;
+;; 采用 GAS load_const 的基本思路：
+;;   1. 先拆出有符号低 12 位 lower；
+;;   2. 从 bit12 开始找到 upper 的最低有效位，确定 shift；
+;;   3. 递归加载 upper >> shift；
+;;   4. 恢复 shift，再加回 lower。
+;;
+;; 这样最坏只需要 8 条左右的指令，而不是固定按 6 个 12 位块展开。
+;; #:scratch 暂时保留给未来优化；当前算法不需要临时寄存器。
 (define (li-general64 rd value #:scratch [scratch #f])
   (unless (fits-64? value)
     (error 'li-general64 "value ~a does not fit in 64 bits" value))
   (when (zero-register? scratch)
     (error 'li-general64 "scratch cannot be zero"))
 
-  (define raw (bitwise-and value #xFFFFFFFFFFFFFFFF))
-  (define low32 (bitwise-and raw #xFFFFFFFF))
-  (define high32 (arithmetic-shift raw -32))
+  (define raw
+    (sign-extend 64 (bitwise-and value #xFFFFFFFFFFFFFFFF)))
 
-  (if (and scratch (not (same-register? scratch rd)))
-      (append
-       (li-32-bits rd high32)
-       (list (list 'slli rd rd 32))
-       (li-32-bits scratch low32)
-       ;; OR 要求 scratch 是零扩展的 64 位值
-       (if (>= low32 #x80000000)
-           (list (list 'slli scratch scratch 32)
-                 (list 'srli scratch scratch 32))
-           '())
-       (list (list 'or rd rd scratch)))
-      (let* ([chunks (12-bit-chunks raw)]
-             [top (car chunks)])
+  (cond
+    ;; 直接调用叶子函数时也保持可用：signed-32 交给正常分派。
+    [(fits-signed? 32 raw)
+     (expand-li rd raw #:word-size 'rv64 #:scratch scratch)]
+    [else
+     (define lower (sign-extend 12 raw))
+     (define upper (- raw lower))
+     (cond
+       [(zero? upper)
+        (li-s12 rd lower)]
+       [else
+        (define shift
+          (for/first ([s (in-range 12 64)]
+                      #:when (odd? (arithmetic-shift upper (- s))))
+            s))
+        (unless shift
+          (error 'li-general64
+                 "could not find a shift amount for value ~a"
+                 value))
+        (define shifted (arithmetic-shift upper (- shift)))
         (append
-         (list (list 'addi rd 'x0 top))
-         (append-map
-          (lambda (chunk)
-            (list (list 'slli rd rd 12)
-                  (list 'addi rd rd chunk)))
-          (cdr chunks))))))
-
-;; 将 64 位模式拆成 6 个有符号 12 位块（返回 high -> low）。
-(define (12-bit-chunks value)
-  (define digits
-    (for/list ([i (in-range 6)])
-      (bitwise-and (arithmetic-shift value (- (* 12 i))) #xFFF)))
-  (define-values (chunks _carry)
-    (for/fold ([acc '()] [carry 0]) ([d (in-list digits)])
-      (define total (+ d carry))
-      (define s (if (>= total #x800) (- total #x1000) total))
-      (define next-carry (if (>= total #x800) 1 0))
-      (values (cons s acc) next-carry)))
-  chunks)
+         (expand-li rd shifted #:word-size 'rv64 #:scratch scratch)
+         (list (list 'slli rd rd shift))
+         (if (zero? lower)
+             '()
+             (list (list 'addi rd rd lower))))])]))
 
 ;; ------------------------------------------------------------
 ;; 组合
@@ -151,6 +171,7 @@
 (define (expand-li rd value
                    #:word-size [word-size 'rv64]
                    #:scratch [scratch #f])
+  ;; #:scratch 目前只对某些展开策略有意义；li 本身的 GAS 风格算法不需要。
   (define v (normalize-word value word-size))
   (case word-size
     [(rv32)
@@ -169,6 +190,9 @@
         (if (fits-lui? v 'rv64)
             (li-lui rd v #:word-size 'rv64)
             (li-lui-addi rd v #:word-size 'rv64))]
+       ;; signed-32 但 LUI+ADDI 不精确：用 ADDIW 修正符号扩展。
+       [(fits-signed? 32 v)
+        (li-lui-addiw rd v #:word-size 'rv64)]
        [(fits-zext32? v)
         (li-zext32 rd v)]
        [(fits-low32-zero? v)
@@ -179,6 +203,7 @@
 (provide li-s12
          li-lui
          li-lui-addi
+         li-lui-addiw
          li-zext32
          li-low32-zero
          li-general64

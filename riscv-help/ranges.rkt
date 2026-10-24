@@ -104,6 +104,15 @@
   (and (fits-lui-addi? value word-size)
        (zero? (bitwise-and value #xFFF))))
 
+;; RV64 的 LUI + ADDIW 可以精确表示所有 signed-32 值。
+;; RV32 没有 ADDIW。
+(define (fits-lui-addiw? value word-size)
+  (case word-size
+    [(rv32) #f]
+    [(rv64) (fits-signed? 32 value)]
+    [else
+     (error 'fits-lui-addiw? "unknown word size: ~a" word-size)]))
+
 ;; RV64：正的 32 位值，但不在 LUI+ADDI 窗口内。
 ;; 需要先按 32 位加载，再零扩展。
 (define (fits-zext32? value)
@@ -149,6 +158,7 @@
          split-hi-lo
          fits-lui-addi?
          fits-lui?
+         fits-lui-addiw?
          fits-zext32?
          fits-low32-zero?
          fits-pcrel-hi-lo?

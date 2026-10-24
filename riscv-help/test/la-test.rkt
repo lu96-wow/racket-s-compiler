@@ -1,0 +1,62 @@
+#lang racket/base
+
+;; ============================================================
+;; la：基础展开
+;; ============================================================
+
+(require rackunit
+         "../compose.rkt")
+
+;; ------------------------------------------------------------
+;; 已知 PC-relative delta
+;; ------------------------------------------------------------
+
+(check-equal? (la-pcrel 'a0 #:delta 8)
+              '((auipc a0 0) (addi a0 a0 8)))
+(check-equal? (la-pcrel 'a0 #:delta 4096)
+              '((auipc a0 1) (addi a0 a0 0)))
+(check-equal? (la-pcrel 'a0 #:delta -8)
+              '((auipc a0 0) (addi a0 a0 -8)))
+
+(check-exn exn:fail?
+           (lambda () (la-pcrel 'a0 #:delta #x100000000 #:word-size 'rv32)))
+(check-exn exn:fail?
+           (lambda () (la-pcrel 'a0 #:delta #x100000000 #:word-size 'rv64)))
+(check-exn exn:fail?
+           (lambda () (la-pcrel 'a0 #:delta 8 #:word-size 'bad)))
+
+;; 未提供 delta 时仍然是原来的占位形式。
+(check-equal? (la-pcrel 'a0)
+              '((auipc a0 0) (addi a0 a0 0)))
+
+;; ------------------------------------------------------------
+;; 绝对地址 / gp / frame
+;; ------------------------------------------------------------
+
+(check-equal? (la-abs 'a0 5)
+              '((addi a0 x0 5)))
+(check-equal? (la-gp 'a0 16)
+              '((addi a0 gp 16)))
+(check-equal? (la-frame 'a0 'sp 16)
+              '((addi a0 sp 16)))
+
+(check-exn exn:fail?
+           (lambda () (la-gp 'a0 4096)))
+
+;; ------------------------------------------------------------
+;; expand-la
+;; ------------------------------------------------------------
+
+(check-equal? (expand-la 'a0 8 #:mode 'pcrel)
+              '((auipc a0 0) (addi a0 a0 8)))
+(check-equal? (expand-la 'a0 5 #:mode 'abs)
+              '((addi a0 x0 5)))
+(check-equal? (expand-la 'a0 16 #:mode 'gp)
+              '((addi a0 gp 16)))
+(check-equal? (expand-la 'a0 16 #:mode 'frame #:base 'sp)
+              '((addi a0 sp 16)))
+
+(check-exn exn:fail?
+           (lambda () (expand-la 'a0 16 #:mode 'frame)))
+(check-exn exn:fail?
+           (lambda () (expand-la 'a0 16 #:mode 'unknown)))
