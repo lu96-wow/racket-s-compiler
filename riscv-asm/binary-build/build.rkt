@@ -21,15 +21,25 @@
     (error 'build-all
            "generated root overlaps source tree: ~a"
            root))
-  (for ([path (in-list (list (generated-path "riscv")
-                             (generated-base-path)
-                             (generated-bit-path)
-                             (generated-instruction-paths-path)))])
-    (when (file-exists? path)
-      (delete-directory/files path))))
+  ;; lib/ 和 gen/ 是生成包的全部所有权范围，直接整个删掉重建。
+  ;; 后面四项是旧布局（单目录）的遗留，用于迁移时清理，可以以后删。
+  (for ([path (in-list (list (generated-lib-dir)
+                             (generated-gen-dir)
+                             (generated-path "riscv")
+                             (generated-path "base.rkt")
+                             (generated-path "bit.rkt")
+                             (generated-path "instruction_paths.rkt")))])
+    (delete-file-or-directory path)))
+
+(define (delete-file-or-directory path)
+  ;; 注意 file-exists? 对目录返回 #f，这里必须区分文件/目录。
+  (case (file-or-directory-type path #f)
+    [(file directory link) (delete-directory/files path)]
+    [else (void)]))
 
 (define (copy-dependencies!)
   (make-directory* (generated-root))
+  (make-directory* (generated-lib-dir))
 
   (copy-file source-base-path (generated-base-path) #t)
   (copy-file source-bit-path (generated-bit-path) #t)
@@ -45,9 +55,10 @@
                  (build-path dest-dir file)
                  #t)))
 
-  (make-directory* (generated-info-dir))
+  (make-directory* (generated-info-lib-dir))
   (copy-file source-info-struct-path (generated-info-struct-path) #t)
-  (copy-file source-info-query-path (generated-info-query-path) #t))
+  (copy-file source-info-query-path (generated-info-query-path) #t)
+  (copy-file source-info-lookup-path (generated-info-lookup-path) #t))
 
 (define (make-output-dirs!)
   (make-directory* (generated-instruction-dir "raw"))
@@ -106,9 +117,8 @@
               (+ emitted (length defs))
               (append skipped skipped-definitions))))
 
-  (define all-info-path (all-instruction-info-output-path))
-  (display-to-file (gen-all-info-content ext->defs all-info-path)
-                   all-info-path
+  (display-to-file (gen-extension-list-content ext->defs)
+                   (extensions-output-path)
                    #:exists 'replace)
   (display-to-file (gen-extension-map-content ext->defs)
                    (instruction-extensions-output-path)

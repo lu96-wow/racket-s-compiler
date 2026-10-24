@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require "struct.rkt")
+(require "struct.rkt"
+         "../parcel.rkt")
 
 ;; ============================================================
 ;; 固定位段查询
@@ -14,17 +15,13 @@
                        (- (- bit (fixed-field-lo ff))))
      1)))
 
-;; RISC-V 编码 bit1..0：11 表示 32 位，其余表示 16 位压缩指令。
-;; 如果源定义没有固定这两位，直接报错，不做默认猜测。
+;; 指令宽度完全交给 parcel 规则（parcel.rkt）；
+;; 这里只负责从 fixed fields 里取位。位没固定时由规则报错，不做猜测。
 (define (instruction-width idef)
-  (define fixed-fields (instruction-def-fixed-fields idef))
-  (define b0 (fixed-bit-value fixed-fields 0))
-  (define b1 (fixed-bit-value fixed-fields 1))
-  (unless (and b0 b1)
-    (error 'instruction-width
-           "instruction ~a does not fix opcode bits 0 and 1"
-           (instruction-def-name idef)))
-  (if (and (= b0 1) (= b1 1)) 32 16))
+  (parcel-length
+   (lambda (bit)
+     (fixed-bit-value (instruction-def-fixed-fields idef) bit))
+   (instruction-def-name idef)))
 
 (provide fixed-bit-value
          instruction-width)

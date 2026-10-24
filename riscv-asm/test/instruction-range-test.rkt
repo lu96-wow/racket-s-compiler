@@ -3,10 +3,10 @@
 (require rackunit
          racket/list
          racket/set
-         "../generated/riscv/instruction_info/all.rkt"
-         "../generated/riscv/instruction_info/struct.rkt"
-         "../generated/riscv/instruction_info/query.rkt"
-         "../generated/instruction_paths.rkt"
+         "../generated/lib/riscv/instruction_info/struct.rkt"
+         "../generated/lib/riscv/instruction_info/query.rkt"
+         "../generated/lib/riscv/instruction_info/lookup.rkt"
+         "../generated/lib/instruction_paths.rkt"
          "field-ranges.rkt")
 
 ;; ============================================================
@@ -46,9 +46,8 @@
 (define (rebuilt-proc info)
   (dynamic-require
    (list 'file
-         (rebuilt-instruction-path
-          (string->symbol (instruction-info-extension info))))
-   (string->symbol (instruction-info-name info))))
+         (rebuilt-instruction-path (instruction-info-extension info)))
+   (instruction-info-name info)))
 
 (define checked-values 0)
 (define checked-instructions 0)
@@ -100,8 +99,10 @@
                  name v))
         (set! checked-values (add1 checked-values))))))
 
-(for ([info (in-list all-instruction-info)])
-  (check-instruction info))
+;; 不遍历总表：逐个扩展查它自己的表
+(for ([ext (in-list (instruction-info-extensions))])
+  (for ([info (in-list (extension-instruction-info ext))])
+    (check-instruction info)))
 
 (printf "instruction range test:\n  instructions: ~a\n  checked values: ~a\n"
         checked-instructions checked-values)

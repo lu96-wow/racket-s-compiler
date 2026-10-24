@@ -6,9 +6,12 @@
 ;; 元数据查询
 ;; ============================================================
 
+;; name 与 instruction-info-name 一致，是符号，例如 'add。
 (define (find-instruction-info infos name)
+  (unless (symbol? name)
+    (raise-argument-error 'find-instruction-info "symbol?" name))
   (for/first ([info (in-list infos)]
-              #:when (equal? (instruction-info-name info) name))
+              #:when (eq? (instruction-info-name info) name))
     info))
 
 (define (info-param-count info)
@@ -29,6 +32,9 @@
 (define (info-width info)
   (instruction-info-width info))
 
+(define (info-size info)
+  (instruction-info-size info))
+
 (define (info-fixed-fields info)
   (instruction-info-fixed-fields info))
 
@@ -42,5 +48,6 @@
          info-raw-operands
          info-asm-format
          info-width
+         info-size
          info-fixed-fields
          info-aliases)

@@ -38,6 +38,8 @@
   (build-path source-info-dir "struct.rkt"))
 (define source-info-query-path
   (build-path source-info-dir "query.rkt"))
+(define source-info-lookup-path
+  (build-path source-info-dir "lookup.rkt"))
 
 (define source-instruction-paths-path
   (build-path binary-build-dir "riscv" "instruction_paths.rkt"))
@@ -52,33 +54,48 @@
 (define (generated-path . parts)
   (apply build-path (generated-root) parts))
 
+;; 生成包分两个顶层目录，避免“复制的文件”和“生成的文件”混在一起：
+;;   lib/  从 binary-build 原样复制的手写模块（运行期实现）
+;;   gen/  build 生成的模块（指令、metadata）
+(define (generated-lib-dir)
+  (generated-path "lib"))
+(define (generated-gen-dir)
+  (generated-path "gen"))
+
 (define (generated-base-path)
-  (generated-path "base.rkt"))
+  (build-path (generated-lib-dir) "base.rkt"))
 (define (generated-bit-path)
-  (generated-path "bit.rkt"))
+  (build-path (generated-lib-dir) "bit.rkt"))
 
 (define (check-field-kind who kind)
   (unless (member kind '("raw" "rebuilt"))
     (error who "expected field kind \"raw\" or \"rebuilt\", got ~a" kind)))
 
+;; 字段函数属于复制区：lib/riscv/<kind>/
 (define (generated-field-dir kind)
   (check-field-kind 'generated-field-dir kind)
-  (generated-path "riscv" kind))
+  (build-path (generated-lib-dir) "riscv" kind))
 
+;; 指令模块 / metadata 属于生成区：gen/riscv/...
 (define (generated-instruction-dir kind)
   (check-field-kind 'generated-instruction-dir kind)
-  (generated-path "riscv" "instruction" kind))
+  (build-path (generated-gen-dir) "riscv" "instruction" kind))
 
 (define (generated-info-dir)
-  (generated-path "riscv" "instruction_info"))
+  (build-path (generated-gen-dir) "riscv" "instruction_info"))
 
+;; metadata 的结构/查询/查表也是手写模块，放在复制区
+(define (generated-info-lib-dir)
+  (build-path (generated-lib-dir) "riscv" "instruction_info"))
 (define (generated-info-struct-path)
-  (generated-path "riscv" "instruction_info" "struct.rkt"))
+  (build-path (generated-info-lib-dir) "struct.rkt"))
 (define (generated-info-query-path)
-  (generated-path "riscv" "instruction_info" "query.rkt"))
+  (build-path (generated-info-lib-dir) "query.rkt"))
+(define (generated-info-lookup-path)
+  (build-path (generated-info-lib-dir) "lookup.rkt"))
 
 (define (generated-instruction-paths-path)
-  (generated-path "instruction_paths.rkt"))
+  (build-path (generated-lib-dir) "instruction_paths.rkt"))
 
 ;; -------- 文件名 --------
 (define (extension-module-file extension)
@@ -119,8 +136,8 @@
   (build-path (generated-info-dir)
               (extension-module-file extension)))
 
-(define (all-instruction-info-output-path)
-  (build-path (generated-info-dir) "all.rkt"))
+(define (extensions-output-path)
+  (build-path (generated-info-dir) "extensions.rkt"))
 
 (define (instruction-extensions-output-path)
   (build-path (generated-info-dir) "instruction_extensions.rkt"))
@@ -161,9 +178,6 @@
 (define (info-require-specs output-path)
   (list (require-spec output-path (generated-info-struct-path))))
 
-(define (info-module-require-spec all-info-path extension)
-  (require-spec all-info-path (info-output-path extension)))
-
 (provide source-dir
          binary-build-dir
          project-root
@@ -173,17 +187,22 @@
          source-info-dir
          source-info-struct-path
          source-info-query-path
+         source-info-lookup-path
          source-instruction-paths-path
          default-generated-root
          generated-root
          generated-path
+         generated-lib-dir
+         generated-gen-dir
          generated-base-path
          generated-bit-path
          generated-field-dir
          generated-instruction-dir
          generated-info-dir
+         generated-info-lib-dir
          generated-info-struct-path
          generated-info-query-path
+         generated-info-lookup-path
          generated-instruction-paths-path
          field-module-filenames
          ratified-extension-source-files
@@ -191,12 +210,11 @@
          raw-output-path
          rebuilt-output-path
          info-output-path
-         all-instruction-info-output-path
+         extensions-output-path
          instruction-extensions-output-path
          relative-module-path
          require-spec
          prefix-require-spec
          raw-require-specs
          rebuilt-require-specs
-         info-require-specs
-         info-module-require-spec)
+         info-require-specs)
