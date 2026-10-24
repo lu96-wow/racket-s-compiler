@@ -40,7 +40,7 @@
 (define (branch-c mnemonic rs1 offset)
   (unless (memq mnemonic '(c.beqz c.bnez))
     (error 'branch-c "expected c.beqz or c.bnez, got ~a" mnemonic))
-  (unless (compressed-register? rs1)
+  (unless (compressed-branch-register? rs1)
     (error 'branch-c
            "compressed branch requires rs1 in x8..x15, got ~a"
            rs1))

@@ -53,9 +53,14 @@
       [(and na nb) (= na nb)]
       [else (eq? a b)])))
 
-(define (compressed-register? reg)
+;; RISC-V 的 rd'/rs1'/rs2' 压缩字段只能编码 x8..x15。
+(define (compressed-prime-register? reg)
   (define n (register-number reg))
   (and n (<= 8 n 15)))
+
+;; C.BEQZ / C.BNEZ 使用 rs1'，因此也限制在 x8..x15。
+(define (compressed-branch-register? reg)
+  (compressed-prime-register? reg))
 
 (define (nonzero-register? reg)
   (define n (register-number reg))
@@ -65,5 +70,6 @@
          register?
          zero-register?
          same-register?
-         compressed-register?
+         compressed-prime-register?
+         compressed-branch-register?
          nonzero-register?)
