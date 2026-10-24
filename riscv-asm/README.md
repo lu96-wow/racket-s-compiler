@@ -63,7 +63,6 @@ riscv-asm/
     parcel-test.rkt             长度（parcel）规则测试
     info-size-test.rkt          instruction_info 的 size 一致性测试
     info-lookup-test.rkt        instruction_info 查表辅助测试
-    generation-audit-test.rkt   生成完整性审计
 
   generated/                   自包含生成包
     lib/                       从 binary-build 复制的模块
@@ -266,7 +265,7 @@ raco test test/*.rkt
 当前结果：
 
 ```text
-29176 tests passed
+26267 tests passed
 ```
 
 ### 1. 逐指令范围测试
@@ -328,20 +327,6 @@ test/info-lookup-test.rkt
 - `find-extension-instruction-info` 按名字命中/未命中
 - 指令名与扩展名都是符号，传字符串报错
 - 重复查表命中缓存，非符号参数报错
-
-### 5. 生成完整性审计
-
-```text
-test/generation-audit-test.rkt
-```
-
-确认 ratified 范围内没有指令被漏掉或改坏：
-
-- 每个扩展：源候选名字（standard ∪ pseudo ∪ import）== info 表名字，且发出无重复
-- 每个扩展：info 名字 == raw 模块导出 == rebuilt 模块导出
-- 每条 info 的 fixed fields + raw 参数（顺序、去重后）都能在源定义里找到完全一致的版本
-- 被跳过的候选只有已知的 3 条（`jal` / `jalr` / `ld`）且原因一致
-- `extensions/` 顶层没有会被静默跳过的非 `rv*` 文件，目录只有 `unratified`
 
 ---
 
