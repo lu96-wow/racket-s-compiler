@@ -5,9 +5,11 @@
 ;;
 ;; 每种范围一个叶子函数，最后由 expand-li 按精确范围组合。
 ;; 叶子函数严格检查边界；expand-li 是范围分派，不是失败回退。
+;; 对外入口是 li / li-size。
 ;; ============================================================
 
 (require racket/list
+         racket/string
          "ranges.rkt"
          "registers.rkt")
 
@@ -200,6 +202,29 @@
        [else
         (li-general64 rd v #:scratch scratch)])]))
 
+;; ------------------------------------------------------------
+;; 对外的自动入口
+;; ------------------------------------------------------------
+
+;; 通用常量/绝对地址加载。自动选择具体叶子形式。
+(define (li rd value #:word-size [word-size 'rv64])
+  (expand-li rd value #:word-size word-size))
+
+(define (generated-instruction-size instruction)
+  (define mnemonic (car instruction))
+  (if (string-prefix? (symbol->string mnemonic) "c.")
+      2
+      4))
+
+(define (generated-instructions-size instructions)
+  (for/sum ([instruction (in-list instructions)])
+    (generated-instruction-size instruction)))
+
+;; 返回 li 展开后的字节数。
+(define (li-size value #:word-size [word-size 'rv64])
+  (generated-instructions-size
+   (expand-li 'a0 value #:word-size word-size)))
+
 (provide li-s12
          li-lui
          li-lui-addi
@@ -207,4 +232,6 @@
          li-zext32
          li-low32-zero
          li-general64
-         expand-li)
+         expand-li
+         li
+         li-size)

@@ -60,3 +60,42 @@
            (lambda () (expand-la 'a0 16 #:mode 'frame)))
 (check-exn exn:fail?
            (lambda () (expand-la 'a0 16 #:mode 'unknown)))
+
+;; ------------------------------------------------------------
+;; 自动 PC-relative 加载 load-pcrel / load-pcrel-size
+;; ------------------------------------------------------------
+
+;; 范围内：AUIPC + ADDI
+(check-equal? (load-pcrel 'a0 8)
+              '((auipc a0 0) (addi a0 a0 8)))
+(check-equal? (load-pcrel-size 8) 8)
+
+;; RV64 超范围：li + auipc + add
+(define far-delta #x7fffffff)
+(define far-li (li 't0 far-delta #:word-size 'rv64))
+(check-equal? (load-pcrel 'a0 far-delta #:word-size 'rv64 #:scratch 't0)
+              (append '((auipc a0 0))
+                      far-li
+                      '((add a0 a0 t0))))
+(check-equal? (load-pcrel-size far-delta #:word-size 'rv64 #:scratch 't0)
+              (+ (li-size far-delta #:word-size 'rv64) 8))
+
+;; scratch 不能是 x0，也不能和 rd 相同。
+(check-exn exn:fail?
+           (lambda ()
+             (load-pcrel 'a0 far-delta #:word-size 'rv64 #:scratch 'x0)))
+(check-exn exn:fail?
+           (lambda ()
+             (load-pcrel 'a0 far-delta #:word-size 'rv64 #:scratch 'a0)))
+
+;; 超范围且没有 scratch。
+(check-exn exn:fail?
+           (lambda () (load-pcrel 'a0 far-delta #:word-size 'rv64)))
+(check-exn exn:fail?
+           (lambda () (load-pcrel-size far-delta #:word-size 'rv64)))
+
+;; RV32 没有 far 形式。
+(check-exn exn:fail?
+           (lambda () (load-pcrel 'a0 #x100000000 #:word-size 'rv32)))
+(check-exn exn:fail?
+           (lambda () (load-pcrel-size #x100000000 #:word-size 'rv32)))

@@ -139,3 +139,27 @@
            (lambda () (expand-li 'a0 #x10000000000000000 #:word-size 'rv64)))
 (check-exn exn:fail?
            (lambda () (li-lui-addiw 'a0 5 #:word-size 'rv32)))
+
+;; ------------------------------------------------------------
+;; 自动入口 li / li-size
+;; ------------------------------------------------------------
+
+(for ([value (in-list (list 5
+                           #x800
+                           #x7fffffff
+                           #x123456789abcdef))])
+  (check-equal? (li 'a0 value #:word-size 'rv64)
+                (expand-li 'a0 value #:word-size 'rv64)))
+
+(check-equal? (li-size 5 #:word-size 'rv32) 4)
+(check-equal? (li-size 5 #:word-size 'rv64) 4)
+(check-equal? (li-size 4096 #:word-size 'rv64) 4)
+(check-equal? (li-size 2048 #:word-size 'rv64) 8)
+(check-equal? (li-size #x7fffffff #:word-size 'rv64) 8)
+(check-equal? (li-size #x80000000 #:word-size 'rv64) 12)
+(check-equal? (li-size #x123456789abcdef #:word-size 'rv64) 32)
+
+(check-exn exn:fail?
+           (lambda () (li 'a0 #x100000000 #:word-size 'rv32)))
+(check-exn exn:fail?
+           (lambda () (li-size #x100000000 #:word-size 'rv32)))

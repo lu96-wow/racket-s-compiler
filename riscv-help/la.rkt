@@ -3,9 +3,11 @@
 ;; ============================================================
 ;; la：加载地址
 ;;
-;; PC-relative 的情况由一个函数处理：
+;; 基础形式：
 ;;   delta 已知 -> auipc + addi
 ;;   delta 未知 -> 占位 auipc/addi，留 relocation
+;;
+;; load-pcrel / load-pcrel-size 在已知 delta 时自动选择近/远形式。
 ;;
 ;; 绝对地址直接复用 expand-li。
 ;; GOT / gp / frame 分别提供独立入口。
@@ -41,6 +43,59 @@
      ;; R_RISCV_PCREL_HI20 / R_RISCV_PCREL_LO12_I 由 object 层生成。
      (list (list 'auipc rd 0)
            (list 'addi rd rd 0))]))
+
+;; ------------------------------------------------------------
+;; 自动 PC-relative 加载
+;; ------------------------------------------------------------
+
+(define (take-load-pcrel-scratch who scratch)
+  (define temp (car (take-scratch! who (scratch-list scratch) 1)))
+  (check-not-zero! who temp)
+  temp)
+
+;; delta = target - address(AUIPC)
+;; AUIPC 始终是展开结果的第一条指令，因此 delta 相对于展开起点。
+;;
+;; 已知 delta 时自动选择：
+;;   AUIPC + ADDI
+;;   或 RV64 的
+;;     auipc rd, 0
+;;     li    temp, delta
+;;     add   rd, rd, temp
+(define (load-pcrel rd delta
+                    #:word-size [word-size 'rv64]
+                    #:scratch [scratch #f])
+  (cond
+    [(fits-auipc-pair? delta word-size)
+     (la-pcrel rd #:delta delta #:word-size word-size)]
+    [(eq? word-size 'rv64)
+     (define temp (take-load-pcrel-scratch 'load-pcrel scratch))
+     (when (same-register? temp rd)
+       (error 'load-pcrel
+              "scratch register ~a must differ from rd"
+              temp))
+     (append (list (list 'auipc rd 0))
+             (li temp delta #:word-size 'rv64)
+             (list (list 'add rd rd temp)))]
+    [else
+     (error 'load-pcrel
+            "PC-relative delta ~a cannot be encoded for ~a"
+            delta word-size)]))
+
+;; 和 load-pcrel 使用同一套选择规则，但只返回字节数。
+(define (load-pcrel-size delta
+                         #:word-size [word-size 'rv64]
+                         #:scratch [scratch #f])
+  (cond
+    [(fits-auipc-pair? delta word-size)
+     8]
+    [(eq? word-size 'rv64)
+     (take-load-pcrel-scratch 'load-pcrel-size scratch)
+     (+ (li-size delta #:word-size 'rv64) 8)]
+    [else
+     (error 'load-pcrel-size
+            "PC-relative delta ~a cannot be encoded for ~a"
+            delta word-size)]))
 
 ;; ------------------------------------------------------------
 ;; 绝对地址
@@ -136,6 +191,8 @@
      (error 'expand-la "unknown la mode: ~a" mode)]))
 
 (provide la-pcrel
+         load-pcrel
+         load-pcrel-size
          la-abs
          la-got
          la-gp
