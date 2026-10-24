@@ -1,220 +1,187 @@
 #lang racket/base
 
 ;; ============================================================
-;; 路径与资源布局的唯一配置点
+;; Path and output-layout policy
 ;;
-;; 这里统一管理：
-;;   1. 源文件/源模块路径
-;;   2. 生成包根目录与目录布局
-;;   3. 生成文件内部的 require 相对路径计算
-;;
-;; 生成器不再写死 "../../raw/scalar.rkt" 这类字符串。
+;; All generated layout knowledge lives here. Emitters ask this module
+;; for output paths and for the require specs placed in generated files.
 ;; ============================================================
 
 (require racket/file
+         racket/list
          racket/path
          racket/string
          racket/runtime-path)
 
-;; -------- 源码根目录 --------
 (define-runtime-path self-path "paths.rkt")
 (define binary-build-dir (path-only self-path))
 (define project-root (simplify-path (build-path binary-build-dir "..")))
 
-(define source-dir
+(define default-opcodes-dir
   (build-path project-root "riscv-opcodes" "extensions"))
-
-(define source-base-path
-  (build-path binary-build-dir "base.rkt"))
-(define source-bit-path
-  (build-path binary-build-dir "bit.rkt"))
-
-(define source-riscv-dir
-  (build-path binary-build-dir "riscv"))
-
-(define source-info-dir
-  (build-path binary-build-dir "riscv" "instruction_info"))
-(define source-info-struct-path
-  (build-path source-info-dir "struct.rkt"))
-(define source-info-query-path
-  (build-path source-info-dir "query.rkt"))
-(define source-info-lookup-path
-  (build-path source-info-dir "lookup.rkt"))
-
-(define source-instruction-paths-path
-  (build-path binary-build-dir "riscv" "instruction_paths.rkt"))
-
-;; -------- 动态生成根目录 --------
-(define default-generated-root
+(define default-output-dir
   (build-path project-root "generated"))
 
-(define generated-root
-  (make-parameter default-generated-root))
+(define runtime-lib-source-dir
+  (build-path binary-build-dir "runtime" "lib"))
 
-(define (generated-path . parts)
-  (apply build-path (generated-root) parts))
+(define field-module-names
+  '("scalar.rkt" "compressed.rkt" "vector.rkt" "mop.rkt"))
 
-;; 生成包分两个顶层目录，避免“复制的文件”和“生成的文件”混在一起：
-;;   lib/  从 binary-build 原样复制的手写模块（运行期实现）
-;;   gen/  build 生成的模块（指令、metadata）
-(define (generated-lib-dir)
-  (generated-path "lib"))
-(define (generated-gen-dir)
-  (generated-path "gen"))
+;; ------------------------------------------------------------
+;; output layout
+;; ------------------------------------------------------------
 
-(define (generated-base-path)
-  (build-path (generated-lib-dir) "base.rkt"))
-(define (generated-bit-path)
-  (build-path (generated-lib-dir) "bit.rkt"))
+(define (generated-lib-dir root)
+  (build-path root "lib"))
 
-(define (check-field-kind who kind)
-  (unless (member kind '("raw" "rebuilt"))
-    (error who "expected field kind \"raw\" or \"rebuilt\", got ~a" kind)))
+(define (generated-gen-dir root)
+  (build-path root "gen"))
 
-;; 字段函数属于复制区：lib/riscv/<kind>/
-(define (generated-field-dir kind)
-  (check-field-kind 'generated-field-dir kind)
-  (build-path (generated-lib-dir) "riscv" kind))
+(define (generated-base-path root)
+  (build-path (generated-lib-dir root) "base.rkt"))
 
-;; 指令模块 / metadata 属于生成区：gen/riscv/...
-(define (generated-instruction-dir kind)
-  (check-field-kind 'generated-instruction-dir kind)
-  (build-path (generated-gen-dir) "riscv" "instruction" kind))
+(define (generated-bit-path root)
+  (build-path (generated-lib-dir root) "bit.rkt"))
 
-(define (generated-info-dir)
-  (build-path (generated-gen-dir) "riscv" "instruction_info"))
+(define (generated-instruction-paths-path root)
+  (build-path (generated-lib-dir root) "instruction_paths.rkt"))
 
-;; metadata 的结构/查询/查表也是手写模块，放在复制区
-(define (generated-info-lib-dir)
-  (build-path (generated-lib-dir) "riscv" "instruction_info"))
-(define (generated-info-struct-path)
-  (build-path (generated-info-lib-dir) "struct.rkt"))
-(define (generated-info-query-path)
-  (build-path (generated-info-lib-dir) "query.rkt"))
-(define (generated-info-lookup-path)
-  (build-path (generated-info-lib-dir) "lookup.rkt"))
+(define (raw-field-dir root)
+  (build-path (generated-lib-dir root) "riscv" "raw"))
 
-(define (generated-instruction-paths-path)
-  (build-path (generated-lib-dir) "instruction_paths.rkt"))
+(define (rebuilt-field-dir root)
+  (build-path (generated-gen-dir root) "riscv" "field" "rebuilt"))
 
-;; -------- 文件名 --------
-(define (extension-module-file extension)
-  (string-append extension ".rkt"))
+(define (raw-instruction-dir root)
+  (build-path (generated-gen-dir root) "riscv" "instruction" "raw"))
 
-(define field-module-filenames
-  '("scalar.rkt"
-    "compressed.rkt"
-    "vector.rkt"
-    "mop.rkt"))
+(define (rebuilt-instruction-dir root)
+  (build-path (generated-gen-dir root) "riscv" "instruction" "rebuilt"))
 
-;; -------- 输入扩展发现 --------
-;; 当前只扫描 extensions/ 顶层的 ratified 扩展；unratified/ 不在生成范围内。
-(define (ratified-extension-source-files)
-  (sort
-   (for/list ([name (in-list (directory-list source-dir))]
-              #:when (let ([p (build-path source-dir name)])
-                       (and (file-exists? p)
-                            (not (directory-exists? p))
-                            (string-prefix? (path->string name) "rv"))))
-     (build-path source-dir name))
-   (lambda (a b)
-     (string<? (path->string a) (path->string b)))))
+(define (info-dir root)
+  (build-path (generated-gen-dir root) "riscv" "info"))
+
+(define (info-lib-dir root)
+  (build-path (generated-lib-dir root) "info"))
+
+(define (raw-field-path root module)
+  (build-path (raw-field-dir root)
+              (if (string-suffix? module ".rkt") module (string-append module ".rkt"))))
+
+(define (rebuilt-field-path root module)
+  (build-path (rebuilt-field-dir root)
+              (if (string-suffix? module ".rkt") module (string-append module ".rkt"))))
+
+(define (raw-output-path root extension)
+  (build-path (raw-instruction-dir root) (string-append extension ".rkt")))
+
+(define (rebuilt-output-path root extension)
+  (build-path (rebuilt-instruction-dir root) (string-append extension ".rkt")))
+
+(define (info-output-path root extension)
+  (build-path (info-dir root) (string-append extension ".rkt")))
+
+(define (extensions-output-path root)
+  (build-path (info-dir root) "extensions.rkt"))
+
+(define (instruction-extensions-output-path root)
+  (build-path (info-dir root) "instruction_extensions.rkt"))
+
+;; ------------------------------------------------------------
+;; input discovery
+;; ------------------------------------------------------------
 
 (define (extension-stem path)
   (path->string (path-replace-suffix (file-name-from-path path) "")))
 
-;; -------- 输出路径 --------
-(define (raw-output-path extension)
-  (build-path (generated-instruction-dir "raw")
-              (extension-module-file extension)))
+(define (ratified-extension-source-files opcodes-dir)
+  (define dir (path->complete-path opcodes-dir))
+  (unless (directory-exists? dir)
+    (error 'ratified-extension-source-files
+           "opcodes extension directory does not exist: ~a" dir))
+  (sort
+   (for/list ([name (in-list (directory-list dir))]
+              #:when (let ([p (build-path dir name)])
+                       (and (file-exists? p)
+                            (not (directory-exists? p))
+                            (string-prefix? (path->string name) "rv"))))
+     (build-path dir name))
+   (lambda (a b) (string<? (path->string a) (path->string b)))))
 
-(define (rebuilt-output-path extension)
-  (build-path (generated-instruction-dir "rebuilt")
-              (extension-module-file extension)))
+;; ------------------------------------------------------------
+;; require-spec construction
+;; ------------------------------------------------------------
 
-(define (info-output-path extension)
-  (build-path (generated-info-dir)
-              (extension-module-file extension)))
-
-(define (extensions-output-path)
-  (build-path (generated-info-dir) "extensions.rkt"))
-
-(define (instruction-extensions-output-path)
-  (build-path (generated-info-dir) "instruction_extensions.rkt"))
-
-;; -------- require 相对路径 --------
 (define (relative-module-path from-file to-file)
   (find-relative-path
    (path-only (path->complete-path from-file))
    (path->complete-path to-file)))
 
 (define (require-spec from-file to-file)
-  (format "~s" (path->string
-                (relative-module-path from-file to-file))))
+  (format "~s" (path->string (relative-module-path from-file to-file))))
 
 (define (prefix-require-spec prefix from-file to-file)
   (format "(prefix-in ~a ~s)"
           prefix
-          (path->string
-           (relative-module-path from-file to-file))))
+          (path->string (relative-module-path from-file to-file))))
 
-(define (raw-require-specs output-path)
+(define (raw-require-specs output-path root)
   (append
-   (list (require-spec output-path (generated-base-path)))
-   (for/list ([file (in-list field-module-filenames)])
-     (require-spec output-path
-                   (build-path (generated-field-dir "raw") file)))))
+   (list (require-spec output-path (generated-base-path root)))
+   (for/list ([module (in-list field-module-names)])
+     (require-spec output-path (raw-field-path root module)))))
 
-(define (rebuilt-require-specs output-path)
+(define (rebuilt-require-specs output-path root)
   (append
-   (list (require-spec output-path (generated-base-path)))
-   (for/list ([file (in-list field-module-filenames)])
-     (prefix-require-spec "raw:" output-path
-                          (build-path (generated-field-dir "raw") file)))
-   (for/list ([file (in-list field-module-filenames)])
+   (list (require-spec output-path (generated-base-path root)))
+   (for/list ([module (in-list field-module-names)])
+     (prefix-require-spec "raw:" output-path (raw-field-path root module)))
+   (for/list ([module (in-list field-module-names)])
      (prefix-require-spec "rebuilt:" output-path
-                          (build-path (generated-field-dir "rebuilt") file)))))
+                          (rebuilt-field-path root module)))))
 
-(define (info-require-specs output-path)
-  (list (require-spec output-path (generated-info-struct-path))))
+(define (rebuilt-field-require-specs output-path root module)
+  (list
+   (require-spec output-path (generated-base-path root))
+   (prefix-require-spec "raw:" output-path (raw-field-path root module))))
 
-(provide source-dir
+(define (info-require-specs output-path root)
+  (list (require-spec output-path
+                      (build-path (info-lib-dir root) "struct.rkt"))))
+
+(provide project-root
          binary-build-dir
-         project-root
-         source-base-path
-         source-bit-path
-         source-riscv-dir
-         source-info-dir
-         source-info-struct-path
-         source-info-query-path
-         source-info-lookup-path
-         source-instruction-paths-path
-         default-generated-root
-         generated-root
-         generated-path
+         runtime-lib-source-dir
+         default-opcodes-dir
+         default-output-dir
+         field-module-names
+
          generated-lib-dir
          generated-gen-dir
          generated-base-path
          generated-bit-path
-         generated-field-dir
-         generated-instruction-dir
-         generated-info-dir
-         generated-info-lib-dir
-         generated-info-struct-path
-         generated-info-query-path
-         generated-info-lookup-path
          generated-instruction-paths-path
-         field-module-filenames
-         ratified-extension-source-files
-         extension-stem
+         raw-field-dir
+         rebuilt-field-dir
+         raw-instruction-dir
+         rebuilt-instruction-dir
+         info-dir
+         info-lib-dir
+         raw-field-path
+         rebuilt-field-path
          raw-output-path
          rebuilt-output-path
          info-output-path
          extensions-output-path
          instruction-extensions-output-path
+
+         extension-stem
+         ratified-extension-source-files
          relative-module-path
          require-spec
          prefix-require-spec
          raw-require-specs
          rebuilt-require-specs
+         rebuilt-field-require-specs
          info-require-specs)

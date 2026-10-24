@@ -3,20 +3,11 @@
 (require rackunit
          racket/list
          racket/set
-         "../generated/lib/riscv/instruction_info/struct.rkt"
-         "../generated/lib/riscv/instruction_info/query.rkt"
-         "../generated/lib/riscv/instruction_info/lookup.rkt"
+         "../generated/lib/info/struct.rkt"
+         "../generated/lib/info/query.rkt"
+         "../generated/lib/info/lookup.rkt"
          "../generated/lib/instruction_paths.rkt"
          "field-ranges.rkt")
-
-;; ============================================================
-;; 每条 generated instruction 的逐操作数范围测试
-;;
-;; 对每条指令、每个操作数：
-;;   - 合法值：0 / +1 / -1 / min / max（在范围内）
-;;   - 非法值：min-1 / max+1 / 未对齐值
-;; 合法值必须成功，非法值必须抛错。
-;; ============================================================
 
 (define (range-for name)
   (hash-ref field-ranges (string->symbol name) #f))
@@ -67,7 +58,6 @@
       (for/list ([r (in-list ranges)])
         (safe-value (first r) (second r) (third r))))
 
-    ;; 全 safe 参数至少成功一次
     (check-not-exn (lambda () (apply proc base)))
     (set! checked-instructions (add1 checked-instructions))
 
@@ -99,7 +89,6 @@
                  name v))
         (set! checked-values (add1 checked-values))))))
 
-;; 不遍历总表：逐个扩展查它自己的表
 (for ([ext (in-list (instruction-info-extensions))])
   (for ([info (in-list (extension-instruction-info ext))])
     (check-instruction info)))
@@ -107,7 +96,8 @@
 (printf "instruction range test:\n  instructions: ~a\n  checked values: ~a\n"
         checked-instructions checked-values)
 (when (positive? (set-count missing-ranges))
-  (printf "  missing ranges: ~a\n" (sort (map symbol->string (set->list missing-ranges)) string<?)))
+  (printf "  missing ranges: ~a\n"
+          (sort (map symbol->string (set->list missing-ranges)) string<?)))
 
 (check-true (> checked-instructions 800))
 (check-true (zero? (set-count missing-ranges)))

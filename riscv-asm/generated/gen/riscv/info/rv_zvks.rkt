@@ -1,0 +1,23 @@
+#lang racket/base
+
+(require "../../../lib/info/struct.rkt")
+
+(define rv_zvks-instructions
+  (list
+   (instruction-info 'vandn.vv 'rv_zvks 32 4 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 1) (12 14 0) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vandn.vv) '(("vm" "vm") ("vs2" "vs2") ("vs1" "vs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:vs1" "vs1") ("raw:vd" "vd")) "vandn.vv vm, vs2, vs1, vd")
+   (instruction-info 'vandn.vx 'rv_zvks 32 4 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 1) (12 14 4) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vandn.vx) '(("vm" "vm") ("vs2" "vs2") ("rs1" "rs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:rs1" "rs1") ("raw:vd" "vd")) "vandn.vx vm, vs2, rs1, vd")
+   (instruction-info 'vbrev8.v 'rv_zvks 32 4 '("vm" "vs2" "vd") '("vm" "vs2" "vd") '((26 31 18) (15 19 8) (12 14 2) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vbrev8.v) '(("vm" "vm") ("vs2" "vs2") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:vd" "vd")) "vbrev8.v vm, vs2, vd")
+   (instruction-info 'vrev8.v 'rv_zvks 32 4 '("vm" "vs2" "vd") '("vm" "vs2" "vd") '((26 31 18) (15 19 9) (12 14 2) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vrev8.v) '(("vm" "vm") ("vs2" "vs2") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:vd" "vd")) "vrev8.v vm, vs2, vd")
+   (instruction-info 'vrol.vv 'rv_zvks 32 4 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 21) (12 14 0) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vrol.vv) '(("vm" "vm") ("vs2" "vs2") ("vs1" "vs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:vs1" "vs1") ("raw:vd" "vd")) "vrol.vv vm, vs2, vs1, vd")
+   (instruction-info 'vrol.vx 'rv_zvks 32 4 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 21) (12 14 4) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vrol.vx) '(("vm" "vm") ("vs2" "vs2") ("rs1" "rs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:rs1" "rs1") ("raw:vd" "vd")) "vrol.vx vm, vs2, rs1, vd")
+   (instruction-info 'vror.vv 'rv_zvks 32 4 '("vm" "vs2" "vs1" "vd") '("vm" "vs2" "vs1" "vd") '((26 31 20) (12 14 0) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vror.vv) '(("vm" "vm") ("vs2" "vs2") ("vs1" "vs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:vs1" "vs1") ("raw:vd" "vd")) "vror.vv vm, vs2, vs1, vd")
+   (instruction-info 'vror.vx 'rv_zvks 32 4 '("vm" "vs2" "rs1" "vd") '("vm" "vs2" "rs1" "vd") '((26 31 20) (12 14 4) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vror.vx) '(("vm" "vm") ("vs2" "vs2") ("rs1" "rs1") ("vd" "vd")) '(("raw:vm" "vm") ("raw:vs2" "vs2") ("raw:rs1" "rs1") ("raw:vd" "vd")) "vror.vx vm, vs2, rs1, vd")
+   (instruction-info 'vror.vi 'rv_zvks 32 4 '("zimm6" "vm" "vs2" "vd") '("zimm6hi" "vm" "vs2" "zimm6lo" "vd") '((27 31 10) (12 14 3) (0 6 87)) '() (instruction-origin 'import 'rv_zvbb 'vror.vi) '(("zimm6hi" "zimm6hi") ("vm" "vm") ("vs2" "vs2") ("zimm6lo" "zimm6lo") ("vd" "vd")) '(("rebuilt:zimm6" "zimm6") ("raw:vm" "vm") ("raw:vs2" "vs2") ("rebuilt:zimm6" "zimm6") ("raw:vd" "vd")) "vror.vi zimm6, vm, vs2, vd")
+   (instruction-info 'vsm4k.vi 'rv_zvks 32 4 '("vs2" "zimm5" "vd") '("vs2" "zimm5" "vd") '((26 31 33) (25 25 1) (12 14 2) (0 6 119)) '() (instruction-origin 'import 'rv_zvksed 'vsm4k.vi) '(("vs2" "vs2") ("zimm5" "zimm5") ("vd" "vd")) '(("raw:vs2" "vs2") ("raw:zimm5" "zimm5") ("raw:vd" "vd")) "vsm4k.vi vs2, zimm5, vd")
+   (instruction-info 'vsm4r.vv 'rv_zvks 32 4 '("vs2" "vd") '("vs2" "vd") '((26 31 40) (25 25 1) (15 19 16) (12 14 2) (0 6 119)) '() (instruction-origin 'import 'rv_zvksed 'vsm4r.vv) '(("vs2" "vs2") ("vd" "vd")) '(("raw:vs2" "vs2") ("raw:vd" "vd")) "vsm4r.vv vs2, vd")
+   (instruction-info 'vsm4r.vs 'rv_zvks 32 4 '("vs2" "vd") '("vs2" "vd") '((26 31 41) (25 25 1) (15 19 16) (12 14 2) (0 6 119)) '() (instruction-origin 'import 'rv_zvksed 'vsm4r.vs) '(("vs2" "vs2") ("vd" "vd")) '(("raw:vs2" "vs2") ("raw:vd" "vd")) "vsm4r.vs vs2, vd")
+   (instruction-info 'vsm3c.vi 'rv_zvks 32 4 '("vs2" "zimm5" "vd") '("vs2" "zimm5" "vd") '((26 31 43) (25 25 1) (12 14 2) (0 6 119)) '() (instruction-origin 'import 'rv_zvksh 'vsm3c.vi) '(("vs2" "vs2") ("zimm5" "zimm5") ("vd" "vd")) '(("raw:vs2" "vs2") ("raw:zimm5" "zimm5") ("raw:vd" "vd")) "vsm3c.vi vs2, zimm5, vd")
+   (instruction-info 'vsm3me.vv 'rv_zvks 32 4 '("vs2" "vs1" "vd") '("vs2" "vs1" "vd") '((26 31 32) (25 25 1) (12 14 2) (0 6 119)) '() (instruction-origin 'import 'rv_zvksh 'vsm3me.vv) '(("vs2" "vs2") ("vs1" "vs1") ("vd" "vd")) '(("raw:vs2" "vs2") ("raw:vs1" "vs1") ("raw:vd" "vd")) "vsm3me.vv vs2, vs1, vd")))
+
+(provide
+ rv_zvks-instructions)

@@ -1,0 +1,11 @@
+#lang racket/base
+
+(require "../../../lib/info/struct.rkt")
+
+(define rv64_q_zfa-instructions
+  (list
+   (instruction-info 'fmvh.x.q 'rv64_q_zfa 32 4 '("rd" "rs1") '("rd" "rs1") '((20 24 1) (27 31 28) (12 14 0) (25 26 3) (2 6 20) (0 1 3)) '() (instruction-origin 'standard #f #f) '(("rd" "rd") ("rs1" "rs1")) '(("raw:rd" "rd") ("raw:rs1" "rs1")) "fmvh.x.q rd, rs1")
+   (instruction-info 'fmvp.q.x 'rv64_q_zfa 32 4 '("rd" "rs1" "rs2") '("rd" "rs1" "rs2") '((27 31 22) (12 14 0) (25 26 3) (2 6 20) (0 1 3)) '() (instruction-origin 'standard #f #f) '(("rd" "rd") ("rs1" "rs1") ("rs2" "rs2")) '(("raw:rd" "rd") ("raw:rs1" "rs1") ("raw:rs2" "rs2")) "fmvp.q.x rd, rs1, rs2")))
+
+(provide
+ rv64_q_zfa-instructions)

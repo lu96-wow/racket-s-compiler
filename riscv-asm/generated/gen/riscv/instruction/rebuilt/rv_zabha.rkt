@@ -5,10 +5,10 @@
          (prefix-in raw: "../../../../lib/riscv/raw/compressed.rkt")
          (prefix-in raw: "../../../../lib/riscv/raw/vector.rkt")
          (prefix-in raw: "../../../../lib/riscv/raw/mop.rkt")
-         (prefix-in rebuilt: "../../../../lib/riscv/rebuilt/scalar.rkt")
-         (prefix-in rebuilt: "../../../../lib/riscv/rebuilt/compressed.rkt")
-         (prefix-in rebuilt: "../../../../lib/riscv/rebuilt/vector.rkt")
-         (prefix-in rebuilt: "../../../../lib/riscv/rebuilt/mop.rkt"))
+         (prefix-in rebuilt: "../../field/rebuilt/scalar.rkt")
+         (prefix-in rebuilt: "../../field/rebuilt/compressed.rkt")
+         (prefix-in rebuilt: "../../field/rebuilt/vector.rkt")
+         (prefix-in rebuilt: "../../field/rebuilt/mop.rkt"))
 
 (define amoswap.b
   (make-instruction

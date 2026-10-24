@@ -1,14 +1,40 @@
 # riscv-asm
 
-RISC-V 指令编码生成器与测试数据整理。
+RISC-V 指令编码生成器、metadata 生成器与运行时查表包。
 
-当前实现从 `riscv-opcodes` 源文件生成：
+当前实现是 `riscv-asm` 的完整重构版。重构重点不是换 API，而是把几类
+容易混淆的东西显式分开：
 
-- raw 指令模块
-- rebuilt 指令模块
-- instruction metadata
-- 自包含生成包
-- 生成包路径辅助模块
+- **编码**：位宽、固定位、实际字段绑定
+- **操作数接口**：raw / rebuilt 的参数顺序
+- **来源**：standard / `$import` / `$pseudo_op`
+- **分组关系**：哪些 raw token 组成一个 rebuilt 逻辑操作数
+
+---
+
+## 快速开始
+
+```bash
+cd riscv-asm
+
+# 生成 generated/
+racket binary-build/main.rkt
+
+# 构建 + 全部测试
+make test
+```
+
+也可以只跑测试，但前提是 `generated/` 已经生成：
+
+```bash
+raco test test/*.rkt
+```
+
+当前结果：
+
+```text
+40161 tests passed
+```
 
 ---
 
@@ -16,114 +42,75 @@ RISC-V 指令编码生成器与测试数据整理。
 
 ```text
 riscv-asm/
-  binary-build/                 生成器源码
-    base.rkt                   底层宏表面
-    bit.rkt                    位组合实现
-    build.rkt                  构建入口
-    paths.rkt                  路径与生成布局唯一配置点
+  riscv-opcodes/
+    extensions/                 riscv-opcodes 扩展源文件
 
-    riscv/
-      parcel.rkt                RISC-V 指令长度（parcel）规则
+  binary-build/
+    main.rkt                    构建入口
+    config.rkt                  命令行选项
+    paths.rkt                   输入/输出路径与 require 路径策略
+    model.rkt                   解析数据结构、candidate、resolved-def
 
-      parse/                   解析层
-        struct.rkt             源文件数据结构
-        field.rkt              数字/fixed field 解析
-        line.rkt               单行、pseudo、import 解析
-        operand.rkt            alias operand 解析
-        query.rkt              fixed field 查询、指令宽度
-        resolve.rkt            import/pseudo/重名合并
-        file.rkt               文件级解析
-        main.rkt               解析层聚合入口
+    parse.rkt                   源文件解析
+    resolve.rkt                 $import / $pseudo_op / 同名合并
+    parcel.rkt                  指令长度规则
+    layout/
+      groups.rkt                唯一的分组注册表
+      plan.rkt                  raw / rebuilt operand plan
+    emit/
+      render.rkt                Racket 模块渲染
+      fields.rkt                从 groups 生成 rebuilt 字段模块
+      instruction.rkt           生成 raw / rebuilt 指令模块
+      metadata.rkt              生成 instruction-info
+      package.rkt               构建编排、清理、复制运行时模块
 
-      raw/                     原始表示字段函数
-        scalar.rkt
-        compressed.rkt
-        vector.rkt
-        mop.rkt
-
-      rebuilt/                 重建表示字段函数
-        scalar.rkt
-        compressed.rkt
-        vector.rkt
-        mop.rkt
-
-      instruction_info/
-        struct.rkt             metadata 结构
-        query.rkt              metadata 查询
-        lookup.rkt             按扩展符号查 metadata 表的辅助模块
-
-      codegen.rkt              指令模块生成
-      info-codegen.rkt         instruction_info 生成
-      render.rkt               Racket 模块三段式渲染
-      instruction_paths.rkt    生成包内的路径辅助模块
-
-  test/                         测试与测试数据
-    field-ranges.rkt            操作数范围测试数据
-    instruction-range-test.rkt  每条指令逐操作数范围测试
-    parcel-test.rkt             长度（parcel）规则测试
-    info-size-test.rkt          instruction_info 的 size 一致性测试
-    info-lookup-test.rkt        instruction_info 查表辅助测试
-
-  generated/                   自包含生成包
-    lib/                       从 binary-build 复制的模块
+    runtime/lib/                原样复制到 generated/lib
       base.rkt
       bit.rkt
       instruction_paths.rkt
-      riscv/
-        raw/
-        rebuilt/
-        instruction_info/      struct.rkt / query.rkt / lookup.rkt
-    gen/                       由 build 生成的模块
-      riscv/
-        instruction/
-          raw/
-          rebuilt/
-        instruction_info/      <ext>.rkt / extensions.rkt / instruction_extensions.rkt
+      riscv/raw/                手写 raw 字段布局
+      info/
+        struct.rkt              instruction-info / instruction-origin
+        query.rkt               metadata 查询与规范化签名
+        lookup.rkt              按扩展查表、消歧
 
-  riscv-opcodes/               外部 RISC-V opcodes 源
+  test/                         测试
+  generated/                    构建输出（已生成）
+    lib/                        运行时模块
+    gen/                        生成的字段/指令/metadata
+  DESIGN.md                     设计说明与操作点
 ```
 
 ---
 
-## 构建
-
-在 `riscv-asm/` 目录下：
+## 构建选项
 
 ```bash
-racket binary-build/build.rkt
+racket binary-build/main.rkt
+racket binary-build/main.rkt --opcodes /path/to/riscv-opcodes/extensions
+racket binary-build/main.rkt --output /tmp/riscv-asm-generated
+racket binary-build/main.rkt --help
 ```
 
-默认生成到：
+默认：
 
 ```text
-riscv-asm/generated/
+opcodes: riscv-asm/riscv-opcodes/extensions
+output:  riscv-asm/generated
 ```
 
-也可以指定输出根目录：
+构建会：
 
-```bash
-racket binary-build/build.rkt /tmp/riscv-asm-generated
-```
+1. 读取 `extensions/` 顶层 ratified 文件
+2. 解析 `$import` / `$pseudo_op`
+3. 按优先级选择同名定义
+4. 生成 rebuilt 字段模块
+5. 生成 raw / rebuilt 指令模块
+6. 生成 instruction metadata
+7. 复制运行时 `lib/`
+8. 生成扩展清单和反向索引
 
-构建时会：
-
-1. 解析 `riscv-opcodes/extensions/` 顶层的 ratified 扩展
-2. 解析 `$import` 和 `$pseudo_op`
-3. 按优先级合并同名定义
-4. 生成 raw / rebuilt 指令模块
-5. 生成 instruction_info
-6. 复制依赖模块到生成包
-7. 生成 `instruction_paths.rkt`
-8. 清理旧的已知生成路径，避免残留文件
-
-生成包分成两个顶层目录，显式区分文件来源：
-
-```text
-lib/   从 binary-build 原样复制的手写模块
- gen/   由 build 生成的模块
-```
-
-当前生成统计：
+当前统计：
 
 ```text
 ratified extensions: 110
@@ -134,16 +121,7 @@ emitted definitions:  1232
 skipped duplicates:   3
 ```
 
-同名定义优先级：
-
-```text
-1. 当前扩展的 standard 定义
-2. import 进来的 standard 定义
-3. 与所依赖 standard 指令 fixed fields 兼容的 pseudo
-4. 其他 pseudo（兜底，并记录 ambiguous-pseudo）
-```
-
-当前跳过的重名：
+跳过项：
 
 ```text
 jal:  overridden-by-standard-definition
@@ -153,208 +131,181 @@ ld:   not-a-standard-form
 
 ---
 
-## 生成包
+## 设计要点
 
-生成包是自包含的：
+### 1. 分组关系只有一个来源
 
-```text
-generated/
-  lib/                         复制（手写）
-    base.rkt
-    bit.rkt
-    instruction_paths.rkt
-    riscv/
-      raw/
-      rebuilt/
-      instruction_info/
-        struct.rkt
-        query.rkt
-        lookup.rkt
-  gen/                         生成
-    riscv/
-      instruction/
-        raw/
-        rebuilt/
-      instruction_info/
-        <ext>.rkt
-        extensions.rkt
-        instruction_extensions.rkt
+`binary-build/layout/groups.rkt` 同时驱动：
+
+- `binary-build/layout/plan.rkt` 的 raw/rebuilt operand plan
+- `binary-build/emit/fields.rkt` 的 rebuilt 字段模块生成
+- metadata 中的 rebuilt 绑定
+
+不再出现“手写 rebuilt 模块 + codegen 里再写一份 grouping 表”的重复。
+
+新增一个逻辑操作数分组，例如：
+
+```racket
+(operand-group "c_uimm8" 'compressed '("c_uimm8lo" "c_uimm8hi"))
 ```
 
-`lib/instruction_paths.rkt` 提供：
+只需要改 `groups.rkt`。rebuilt 字段模块会自动生成。
+
+### 2. raw 字段布局仍然是手写的
+
+`binary-build/runtime/lib/riscv/raw/*.rkt` 是唯一的位布局来源。
+
+这些字段包含不规则 bit-map、范围、对齐、压缩寄存器偏移等复杂规则，
+不尝试从 token 名自动推断。新增字段时直接在这里显式写。
+
+### 3. 编码签名与操作数接口分开
+
+运行时 `generated/lib/info/query.rkt` 提供三组不同签名：
+
+```racket
+(instruction-info-encoding-signature info)
+;; width + 规范化固定位 + raw 字段绑定 + rebuilt 字段绑定
+
+(instruction-info-interface-signature info)
+;; operands 顺序 + raw-operands 顺序 + 规范化 aliases
+
+(instruction-info-provenance-signature info)
+;; standard / import / pseudo + 来源扩展 + 来源指令
+```
+
+关键点：
+
+- 固定字段按实际生成语义合并成 fixed word，所以字段顺序/切分不同不影响比较
+- raw/rebuilt 绑定按集合比较，因为 `make-instruction` 是按位 OR
+- `operands` / `raw-operands` 的顺序保留，因为参数顺序是公开接口
+- `asm`、`size`、`name`、`extension` 不参与编码签名
+- provenance 不参与编码签名
+
+### 4. `$import` 和 `$pseudo_op` 显式保留来源
+
+`instruction-info` 的 `origin` 字段：
+
+```racket
+(instruction-origin 'standard #f #f)
+(instruction-origin 'import 'rv_zbb 'andn)
+(instruction-origin 'pseudo 'rv64_i 'ld)
+```
+
+例子：
+
+- `andn`：`rv_zbb` 是 standard，`rv_zbkb` 是 import → 编码相同，provenance 不同
+- `zip`：`rv32_zbkb` 是 standard，`rv32_zk` 是 pseudo → 编码相同，provenance 不同
+- `rv32_i` 的 `slli`：pseudo，来源 `rv64_i::slli`，但使用 `shamtw`，编码与 RV64 standard 不同
+
+`resolve-instruction-info` 只在编码和接口都相同时去重；provenance 不导致冲突。
+同编码时优先返回 standard，其次 import，最后 pseudo。
+
+### 5. rv32/rv64 混用显式报错
+
+`resolve-instruction-info` 会在查表前拒绝同时包含 `rv32_*` 和 `rv64_*` 的扩展集合。
+不再依赖“签名不同才报错”来间接发现 XLEN 混用。
+
+### 6. 不生成跨扩展总表
+
+查表必须先给扩展集合：
+
+```racket
+(require "generated/lib/instruction_paths.rkt"
+         "generated/lib/info/struct.rkt"
+         "generated/lib/info/query.rkt"
+         "generated/lib/info/lookup.rkt")
+
+(define info
+  (resolve-instruction-info '(rv_i rv_m) 'add))
+```
+
+同名指令在不同扩展下可能是不同变体，不能隐式全包搜索。
+
+---
+
+## 运行时 API
+
+### 指令模块路径
 
 ```racket
 (raw-instruction-path 'rv_i)
-;; => ".../generated/gen/riscv/instruction/raw/rv_i.rkt"
-
 (rebuilt-instruction-path 'rv_i)
-;; => ".../generated/gen/riscv/instruction/rebuilt/rv_i.rkt"
 ```
 
-返回绝对路径字符串，适合 `dynamic-require`。
-
-`lib/riscv/instruction_info/lookup.rkt` 提供 metadata 的查表原语，同样接受扩展符号：
+### metadata 查表
 
 ```racket
 (instruction-info-extensions)
-;; => '(rv32_c rv32_c_f ... rv_zvksh)  生成包里有 metadata 的扩展清单
+;; => '(rv32_c rv32_c_f ... rv_zvksh)
 
 (instruction-info-path 'rv_i)
-;; => ".../generated/gen/riscv/instruction_info/rv_i.rkt"
-
 (extension-instruction-info 'rv_i)
-;; => 该扩展的全部 instruction-info 列表（模块只加载一次，结果缓存）
-
 (find-extension-instruction-info 'rv_i 'add)
-;; => add 的 instruction-info；找不到返回 #f
-```
 
-**不生成跨扩展总表**（没有 `all-instruction-info`）。同名指令在不同扩展下可能是
-不同变体（`slli` 在 `rv32_i` 和 `rv64_i` 里操作数和 fixed fields 都不同），
-所以查表必须先按目标 ISA 选扩展，再查对应扩展的表；用 `instruction->extensions`
-可以得到某个名字的候选扩展集合。
-
-多扩展消歧（`resolve-instruction-info`）：
-
-```racket
-(instruction-info-candidates '(rv_zbb rv_zbkb) 'andn)  ; 所有候选
-;; => (rv_zbb 的 andn, rv_zbkb 的 andn)
-
+(instruction-info-candidates '(rv_zbb rv_zbkb) 'andn)
 (resolve-instruction-info '(rv_zbb rv_zbkb) 'andn)
-;; => 签名相同（import re-export），返回第一条
-
-(resolve-instruction-info '(rv32_i rv64_i) 'slli)
-;; => 报错：编码不同，说明 ISA 集合把 rv32/rv64 混用了
 ```
 
-消歧规则：
-
-1. 命中 0 条 → 报错
-2. 命中 1 条 → 直接返回
-3. 命中多条、签名相同（`width`/`size`/`operands`/`raw-operands`/`fixed-fields`/`aliases`/`asm` 全等）
-   → 视为同一编码，返回第一条（import re-export、同编码 pseudo/standard）
-4. 命中多条、签名不同 → 报错，**不猜**；通常意味着 `rv32_*` 和 `rv64_*` 同时进了 ISA 集合
-
-设计约束：
-
-- 不生成、不提供跨扩展总表；查表必须点名扩展
-- 不做隐式全包搜索；扩展列表由调用方（ISA 配置）给出
-- ISA 配置必须自洽：`rv32_*` 与 `rv64_*` 不能同时出现在一个集合里
-
-两种路径辅助模块的职责分工：`instruction_paths.rkt` 给指令模块路径，
-`instruction_info/lookup.rkt` 给 metadata 模块路径并负责加载成表。
-两个模块都位于 `lib/`，内部根据自身位置定位 `gen/`。
-
-metadata 对外统一用符号：
+### metadata 访问
 
 ```racket
-(instruction-info-name info)       ; => 'add
-(instruction-info-extension info)  ; => 'rv_i
+(instruction-info-name info)
+(instruction-info-extension info)
+(info-kind info)
+(info-source-extension info)
+(info-source-instruction info)
+(info-raw-bindings info)
+(info-rebuilt-bindings info)
 ```
+
+---
+
+## 操作点
+
+| 想改什么 | 改哪里 |
+| --- | --- |
+| 新增 raw 位布局/字段 | `binary-build/runtime/lib/riscv/raw/*.rkt` |
+| 新增 raw 字段模块（新的 kind） | `binary-build/paths.rkt` 的 `field-module-names` |
+| 新增 rebuilt 逻辑分组 | `binary-build/layout/groups.rkt` |
+| 改源文件语法 | `binary-build/parse.rkt` |
+| 改 import/pseudo 优先级或冲突策略 | `binary-build/resolve.rkt` |
+| 改 raw/rebuilt 参数生成 | `binary-build/layout/plan.rkt`、`binary-build/emit/instruction.rkt` |
+| 改 metadata 字段 | `binary-build/runtime/lib/info/struct.rkt`、`binary-build/emit/metadata.rkt` |
+| 改查表/消歧规则 | `binary-build/runtime/lib/info/lookup.rkt`、`query.rkt` |
+| 改输出目录布局 | `binary-build/paths.rkt`、`binary-build/emit/package.rkt` |
+| 改命令行选项 | `binary-build/config.rkt` |
+| 改构建阶段/清理策略 | `binary-build/emit/package.rkt` |
+
+新增 raw 字段后，通常还要在 `test/field-ranges.rkt` 加范围，并重新构建测试。
 
 ---
 
 ## 测试
 
-运行：
-
 ```bash
-raco test test/*.rkt
+make test
 ```
 
-当前结果：
+测试覆盖：
 
-```text
-26267 tests passed
-```
-
-### 1. 逐指令范围测试
-
-```text
-test/field-ranges.rkt
-test/instruction-range-test.rkt
-```
-
-生产代码中的 `checked-field` 负责范围/对齐校验。测试对全部 generated 指令逐操作数验证：
-
-- 每条指令
-- 每个操作数
-- 合法值：`0`、`+1`、`-1`、`min`、`max`（只要在范围内）
-- 非法值：`min-1`、`max+1`、未对齐值
-
-合法值必须成功编码，非法值必须抛错。
-
-当前覆盖：
-
-```text
-instructions: 1232
-checked values: 18175
-```
-
-### 2. 长度（parcel）规则测试
-
-```text
-test/parcel-test.rkt
-```
-
-用合成取位函数覆盖 `parcel.rkt` 的判定分支：
-
-- 16 位：`bits[1:0] != 11`
-- 32 位：`bits[1:0] == 11` 且 `bits[4:2] != 111`
-- `bits[4:2] == 111`（48 位或更长）：报错
-- `bits[1:0]` 未固定、`bits[4:2]` 不足以区分：报错
-
-### 3. `size` 一致性测试
-
-```text
-test/info-size-test.rkt
-```
-
-对全部 generated info 验证 `size == width / 8`，且 `width` 只能是 16 或 32。
-
-### 4. `instruction_info` 查表测试
-
-```text
-test/info-lookup-test.rkt
-```
-
-对全部扩展验证：
-
-- `instruction-info-extensions` 列出的扩展无重复且有序
-- 每个扩展的路径存在，表非空，表内扩展名正确、名字唯一
-- `instruction->extensions` 与各扩展表双向一致
-- `instruction-info-candidates` / `resolve-instruction-info`：re-export 去重、同编码 pseudo/standard 去重、rv32+rv64 混用报错、找不到报错
-- `find-extension-instruction-info` 按名字命中/未命中
-- 指令名与扩展名都是符号，传字符串报错
-- 重复查表命中缓存，非符号参数报错
-
----
-
-## 测试数据来源
-
-### 1. `riscv-opcodes/extensions/*`
-
-指令定义、fixed fields、pseudo/import 的唯一输入源。
-
-### 2. `test/field-ranges.rkt`
-
-测试用操作数范围数据：
-
-```racket
-(min max align)
-```
-
-用于生成合法值、越界值和未对齐值。
+- 每条 generated 指令、每个操作数的合法/越界/未对齐值
+- parcel 长度规则
+- metadata `size == width / 8`
+- 扩展清单、反向索引、查表缓存
+- encoding/interface/provenance 签名
+- 固定字段顺序/切分规范化
+- alias/binding 顺序无关
+- rv32/rv64 混用报错
+- 构建审计：源解析/解析结果 vs generated info vs raw/rebuilt 导出
+- 已知跳过项
 
 ---
 
 ## 已知边界
 
-- 当前只生成 ratified 顶层扩展；`extensions/unratified` 不在生成范围内。
-- `instruction-width` 由 `riscv/parcel.rkt` 的长度规则判定：`bits[1:0]` 必须固定；`bits[1:0] = 11` 时 `bits[4:2]` 必须能排除 `111`。否则报错。
-- 当前编码器只支持 ≤32 位编码，48 位及以上的定义会被 `parcel.rkt` 直接拒绝。
-- raw 字段函数接收完整逻辑值，并通过 `checked-field` 检查范围/对齐。
-- raw 指令里 hi/lo 分片可能接收同一个完整立即数，因此分片共享完整逻辑范围。
-- rebuilt 参数顺序等于逻辑操作数在源 token 中第一次出现的位置。
-- 不生成跨扩展总表；同名指令按扩展分别保存，查询时先选扩展再查表。
-- 生成包分 `lib/`（复制）与 `gen/`（生成）两层；`gen/` 下的模块用相对路径引用 `lib/`，因此 `lib/` 内部保留 `binary-build` 的目录结构。
+- 只处理 `extensions/` 顶层 ratified 扩展；`unratified/` 不参与生成。
+- 只支持 ≤32 位编码；48 位及以上由 `parcel.rkt` 拒绝。
+- raw 字段布局是手写的，不从 `arg_lut.csv` 自动推导。
+- rebuilt 分组是手写注册表，不根据 token 名猜测 hi/lo 关系。
+- `$import` 当前只能导入源扩展的 standard 定义；`$pseudo_op` 的源也必须是 standard。
+- 同优先级同名定义会直接报错，不静默取第一条。
