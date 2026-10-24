@@ -12,6 +12,9 @@
 ;;   <jump sequence>
 ;;
 ;; skip = 4 + jump-size
+;;
+;; 每个函数只接受一个明确形式，不自动回退。
+;; 长分支的 jump sequence 由调用者通过 jump-expander 显式提供。
 ;; ============================================================
 
 (require "instruction.rkt"
@@ -52,60 +55,28 @@
     (error 'branch-b "offset ~a does not fit B-type branch" offset))
   (list (I mnemonic rs1 rs2 offset)))
 
-(define (branch-long mnemonic rs1 rs2 offset
-                     #:scratch [scratch #f]
-                     #:word-size [word-size 'rv64]
-                     #:compressed-jump? [compressed-jump? #f])
+(define (branch-long mnemonic rs1 rs2 offset jump-expander)
+  (unless (even? offset)
+    (error 'branch-long "offset must be even, got ~a" offset))
+  (unless (procedure? jump-expander)
+    (error 'branch-long "jump-expander must be a procedure"))
   (define inverse (branch-inverse mnemonic))
   (define jump
-    (expand-jump (- offset 4)
-                 #:link 'zero
-                 #:scratch scratch
-                 #:word-size word-size
-                 #:compressed? compressed-jump?))
+    (jump-expander (- offset 4)))
+  (unless (and (list? jump)
+               (pair? jump)
+               (andmap insn? jump))
+    (error 'branch-long
+           "jump-expander must return a non-empty list of instructions"))
   (define skip (+ 4 (insns-size jump)))
+  (unless (fits-branch? skip)
+    (error 'branch-long
+           "inverse-branch skip ~a does not fit B-type range"
+           skip))
   (cons (I inverse rs1 rs2 skip)
         jump))
-
-;; ------------------------------------------------------------
-;; 组合
-;; ------------------------------------------------------------
-
-(define (expand-branch mnemonic rs1 rs2 offset
-                       #:scratch [scratch #f]
-                       #:word-size [word-size 'rv64]
-                       #:compressed? [compressed? #f])
-  (unless (even? offset)
-    (error 'expand-branch "offset must be even, got ~a" offset))
-
-  (cond
-    ;; beq rs1, x0 等价于 c.beqz
-    [(and compressed?
-          (eq? mnemonic 'beq)
-          (zero-register? rs2)
-          (compressed-register? rs1)
-          (fits-cbranch? offset))
-     (branch-c 'c.beqz rs1 offset)]
-
-    ;; bne rs1, x0 等价于 c.bnez
-    [(and compressed?
-          (eq? mnemonic 'bne)
-          (zero-register? rs2)
-          (compressed-register? rs1)
-          (fits-cbranch? offset))
-     (branch-c 'c.bnez rs1 offset)]
-
-    [(fits-branch? offset)
-     (branch-b mnemonic rs1 rs2 offset)]
-
-    [else
-     (branch-long mnemonic rs1 rs2 offset
-                  #:scratch scratch
-                  #:word-size word-size
-                  #:compressed-jump? compressed?)]))
 
 (provide branch-inverse
          branch-c
          branch-b
-         branch-long
-         expand-branch)
+         branch-long)

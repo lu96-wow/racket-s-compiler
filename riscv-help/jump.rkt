@@ -13,6 +13,9 @@
 ;;   jalr rd, base, imm12
 ;;   li/la tmp, target
 ;;   jalr rd, tmp, 0
+;;
+;; 每个函数只接受一个明确形式，不自动回退。
+;; 调用者应先用 fits-*? 检查范围，再选择对应函数。
 ;; ============================================================
 
 (require "instruction.rkt"
@@ -127,45 +130,10 @@
    (expand-li temp target #:word-size word-size)
    (list (I 'jalr link temp 0))))
 
-;; ------------------------------------------------------------
-;; 组合
-;; ------------------------------------------------------------
-
-(define (expand-jump offset
-                     #:link [link 'zero]
-                     #:scratch [scratch #f]
-                     #:word-size [word-size 'rv64]
-                     #:compressed? [compressed? #f])
-  (check-even-offset 'expand-jump offset)
-
-  (cond
-    [(and compressed? (eq? link 'zero) (fits-cjump? offset))
-     (jump-cj offset)]
-
-    [(and compressed?
-          (eq? link 'ra)
-          (eq? word-size 'rv32)
-          (fits-cjump? offset))
-     (jump-cjal offset)]
-
-    [(fits-jal? offset)
-     (jump-jal link offset)]
-
-    [(fits-auipc-pair? offset word-size)
-     (jump-auipc-jalr link offset
-                      #:scratch scratch
-                      #:word-size word-size)]
-
-    [else
-     (jump-pcrel-far link offset
-               #:scratch scratch
-               #:word-size word-size)]))
-
 (provide jump-cj
          jump-cjal
          jump-jal
          jump-auipc-jalr
          jump-jalr
          jump-pcrel-far
-         jump-abs
-         expand-jump)
+         jump-abs)
