@@ -16,6 +16,7 @@
 
 (require "instruction.rkt"
          "ranges.rkt"
+         "registers.rkt"
          "jump.rkt")
 
 (define (branch-inverse mnemonic)
@@ -36,11 +37,17 @@
 (define (branch-c mnemonic rs1 offset)
   (unless (memq mnemonic '(c.beqz c.bnez))
     (error 'branch-c "expected c.beqz or c.bnez, got ~a" mnemonic))
+  (unless (compressed-register? rs1)
+    (error 'branch-c
+           "compressed branch requires rs1 in x8..x15, got ~a"
+           rs1))
   (unless (fits-cbranch? offset)
     (error 'branch-c "offset ~a does not fit compressed branch" offset))
   (list (I16 mnemonic rs1 offset)))
 
 (define (branch-b mnemonic rs1 rs2 offset)
+  (unless (memq mnemonic '(beq bne blt bge bltu bgeu))
+    (error 'branch-b "not a B-type branch: ~a" mnemonic))
   (unless (fits-branch? offset)
     (error 'branch-b "offset ~a does not fit B-type branch" offset))
   (list (I mnemonic rs1 rs2 offset)))
@@ -75,14 +82,16 @@
     ;; beq rs1, x0 等价于 c.beqz
     [(and compressed?
           (eq? mnemonic 'beq)
-          (eq? rs2 'zero)
+          (zero-register? rs2)
+          (compressed-register? rs1)
           (fits-cbranch? offset))
      (branch-c 'c.beqz rs1 offset)]
 
     ;; bne rs1, x0 等价于 c.bnez
     [(and compressed?
           (eq? mnemonic 'bne)
-          (eq? rs2 'zero)
+          (zero-register? rs2)
+          (compressed-register? rs1)
           (fits-cbranch? offset))
      (branch-c 'c.bnez rs1 offset)]
 

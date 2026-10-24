@@ -9,7 +9,8 @@
 
 (require racket/list
          "instruction.rkt"
-         "ranges.rkt")
+         "ranges.rkt"
+         "registers.rkt")
 
 ;; ------------------------------------------------------------
 ;; 内部：按 32 位 bit pattern 加载
@@ -45,14 +46,18 @@
   (list (I 'addi rd 'x0 value)))
 
 ;; 低 12 位为 0；LUI 单独完成
-(define (li-lui rd value)
-  (unless (zero? (bitwise-and value #xFFF))
-    (error 'li-lui "value ~a does not have zero low 12 bits" value))
+(define (li-lui rd value #:word-size [word-size 'rv64])
+  (unless (fits-lui? value word-size)
+    (error 'li-lui "value ~a is not a LUI-representable value for ~a"
+           value word-size))
   (define-values (hi _lo) (split-hi-lo value))
   (list (I 'lui rd hi)))
 
 ;; 一般 LUI + ADDI
-(define (li-lui-addi rd value)
+(define (li-lui-addi rd value #:word-size [word-size 'rv64])
+  (unless (fits-lui-addi? value word-size)
+    (error 'li-lui-addi "value ~a is not a LUI+ADDI-representable value for ~a"
+           value word-size))
   (define-values (hi lo) (split-hi-lo value))
   (cond
     [(zero? lo)
@@ -73,8 +78,9 @@
 ;; RV64：low32(value) = 0
 ;; value = high32 << 32
 (define (li-low32-zero rd value)
-  (unless (fits-low32-zero? value)
-    (error 'li-low32-zero "value ~a does not have zero low 32 bits" value))
+  (unless (and (fits-64? value)
+               (fits-low32-zero? value))
+    (error 'li-low32-zero "value ~a is not a valid low32-zero 64-bit value" value))
   (define high32 (arithmetic-shift value -32))
   (append (li-32-bits rd high32)
           (list (I 'slli rd rd 32))))
@@ -85,12 +91,14 @@
 (define (li-general64 rd value #:scratch [scratch #f])
   (unless (fits-64? value)
     (error 'li-general64 "value ~a does not fit in 64 bits" value))
+  (when (zero-register? scratch)
+    (error 'li-general64 "scratch cannot be zero"))
 
   (define raw (bitwise-and value #xFFFFFFFFFFFFFFFF))
   (define low32 (bitwise-and raw #xFFFFFFFF))
   (define high32 (arithmetic-shift raw -32))
 
-  (if (and scratch (not (eq? scratch rd)))
+  (if (and scratch (not (same-register? scratch rd)))
       (append
        (li-32-bits rd high32)
        (list (I 'slli rd rd 32))
@@ -151,17 +159,17 @@
        [(fits-s12? v)
         (li-s12 rd v)]
        [(zero? (bitwise-and v #xFFF))
-        (li-lui rd v)]
+        (li-lui rd v #:word-size 'rv32)]
        [else
-        (li-lui-addi rd v)])]
+        (li-lui-addi rd v #:word-size 'rv32)])]
     [(rv64)
      (cond
        [(fits-s12? v)
         (li-s12 rd v)]
        [(fits-lui-addi? v 'rv64)
         (if (fits-lui? v 'rv64)
-            (li-lui rd v)
-            (li-lui-addi rd v))]
+            (li-lui rd v #:word-size 'rv64)
+            (li-lui-addi rd v #:word-size 'rv64))]
        [(fits-zext32? v)
         (li-zext32 rd v)]
        [(fits-low32-zero? v)

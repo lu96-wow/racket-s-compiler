@@ -17,6 +17,7 @@
 
 (require "instruction.rkt"
          "ranges.rkt"
+         "registers.rkt"
          "li.rkt"
          "scratch.rkt")
 
@@ -33,7 +34,9 @@
     (error 'jump-cj "offset ~a does not fit C.J" offset))
   (list (I16 'c.j offset)))
 
-(define (jump-cjal offset)
+(define (jump-cjal offset #:word-size [word-size 'rv32])
+  (unless (eq? word-size 'rv32)
+    (error 'jump-cjal "C.JAL is only available on RV32"))
   (unless (fits-cjump? offset)
     (error 'jump-cjal "offset ~a does not fit C.JAL" offset))
   (list (I16 'c.jal offset)))
@@ -47,7 +50,7 @@
                          #:scratch [scratch #f]
                          #:word-size [word-size 'rv64])
   (check-even-offset 'jump-auipc-jalr offset)
-  (unless (fits-pcrel-32? offset word-size)
+  (unless (fits-auipc-pair? offset word-size)
     (error 'jump-auipc-jalr
            "offset ~a does not fit auipc+jalr"
            offset))
@@ -76,24 +79,24 @@
 ;;   auipc base, 0
 ;;   add   base, base, off-reg
 ;;   jalr  link, base, 0
-(define (jump-far link offset
+(define (jump-pcrel-far link offset
                   #:scratch [scratch #f]
                   #:word-size [word-size 'rv64])
-  (check-even-offset 'jump-far offset)
+  (check-even-offset 'jump-pcrel-far offset)
   (when (eq? word-size 'rv32)
-    (error 'jump-far "RV32 PC-relative offset out of range: ~a" offset))
+    (error 'jump-pcrel-far "RV32 PC-relative offset out of range: ~a" offset))
 
   (define regs (scratch-list scratch))
-  (check-distinct! 'jump-far regs)
+  (check-distinct! 'jump-pcrel-far regs)
 
   (cond
     [(eq? link 'zero)
      (define-values (base off-reg)
-       (apply values (take-scratch! 'jump-far regs 2)))
-     (check-not-zero! 'jump-far base)
-     (check-not-zero! 'jump-far off-reg)
+       (apply values (take-scratch! 'jump-pcrel-far regs 2)))
+     (check-not-zero! 'jump-pcrel-far base)
+     (check-not-zero! 'jump-pcrel-far off-reg)
      (when (eq? base off-reg)
-       (error 'jump-far "base and offset scratch must differ"))
+       (error 'jump-pcrel-far "base and offset scratch must differ"))
      (append
       (expand-li off-reg offset #:word-size 'rv64)
       (list (I 'auipc base 0)
@@ -101,10 +104,10 @@
             (I 'jalr 'zero base 0)))]
     [else
      (define off-reg
-       (car (take-scratch! 'jump-far regs 1)))
-     (check-not-zero! 'jump-far off-reg)
-     (when (eq? off-reg link)
-       (error 'jump-far "offset scratch must differ from link register"))
+       (car (take-scratch! 'jump-pcrel-far regs 1)))
+     (check-not-zero! 'jump-pcrel-far off-reg)
+     (when (same-register? off-reg link)
+       (error 'jump-pcrel-far "offset scratch must differ from link register"))
      (append
       (expand-li off-reg offset #:word-size 'rv64)
       (list (I 'auipc link 0)
@@ -118,7 +121,7 @@
   (check-even-offset 'jump-abs target)
   (define temp (car (take-scratch! 'jump-abs (scratch-list scratch) 1)))
   (check-not-zero! 'jump-abs temp)
-  (when (eq? temp link)
+  (when (same-register? temp link)
     (error 'jump-abs "temporary register must differ from link register"))
   (append
    (expand-li temp target #:word-size word-size)
@@ -148,13 +151,13 @@
     [(fits-jal? offset)
      (jump-jal link offset)]
 
-    [(fits-pcrel-32? offset word-size)
+    [(fits-auipc-pair? offset word-size)
      (jump-auipc-jalr link offset
                       #:scratch scratch
                       #:word-size word-size)]
 
     [else
-     (jump-far link offset
+     (jump-pcrel-far link offset
                #:scratch scratch
                #:word-size word-size)]))
 
@@ -163,6 +166,6 @@
          jump-jal
          jump-auipc-jalr
          jump-jalr
-         jump-far
+         jump-pcrel-far
          jump-abs
          expand-jump)

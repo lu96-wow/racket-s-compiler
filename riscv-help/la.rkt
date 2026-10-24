@@ -13,6 +13,7 @@
 
 (require "instruction.rkt"
          "ranges.rkt"
+         "registers.rkt"
          "li.rkt"
          "scratch.rkt")
 
@@ -29,7 +30,7 @@
                   #:word-size [word-size 'rv64])
   (cond
     [delta
-     (unless (fits-pcrel-32? delta word-size)
+     (unless (fits-auipc-pair? delta word-size)
        (error 'la-pcrel
               "PC-relative delta ~a cannot be encoded by auipc+addi"
               delta))
@@ -97,7 +98,7 @@
      (define tmp
        (car (take-scratch! 'la-frame (scratch-list scratch) 1)))
      (check-not-zero! 'la-frame tmp)
-     (when (or (eq? tmp rd) (eq? tmp base))
+     (when (or (same-register? tmp rd) (same-register? tmp base))
        (error 'la-frame
               "scratch register ~a must differ from rd and base"
               tmp))

@@ -4,7 +4,8 @@
 ;; scratch 寄存器参数处理
 ;; ============================================================
 
-(require racket/list)
+(require racket/list
+         "registers.rkt")
 
 (define (scratch-list scratch)
   (cond
@@ -20,13 +21,17 @@
   (take regs n))
 
 (define (check-distinct! who regs)
-  (unless (= (length regs)
-             (length (remove-duplicates regs eq?)))
+  ;; 已知物理寄存器按编号判断；未知符号/虚拟寄存器按 eq? 判断。
+  (define keys
+    (for/list ([reg (in-list regs)])
+      (or (register-number reg) reg)))
+  (unless (= (length keys)
+             (length (remove-duplicates keys eq?)))
     (error who "scratch registers must be distinct: ~a" regs)))
 
 (define (check-not-zero! who reg)
-  (when (eq? reg 'zero)
-    (error who "register 'zero cannot be used as a scratch/base here")))
+  (when (zero-register? reg)
+    (error who "register zero cannot be used as a scratch/base here")))
 
 (provide scratch-list
          take-scratch!

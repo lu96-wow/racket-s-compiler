@@ -125,14 +125,14 @@
             (+ (arithmetic-shift (sign-extend 20 hi) 12)
                lo)))))
 
-(define (fits-pcrel-32? delta word-size)
+(define (fits-auipc-pair? delta word-size)
   (case word-size
     [(rv32)
      (fits-32? delta)]
     [(rv64)
      (fits-pcrel-hi-lo? delta)]
     [else
-     (error 'fits-pcrel-32? "unknown word size: ~a" word-size)]))
+     (error 'fits-auipc-pair? "unknown word size: ~a" word-size)]))
 
 (provide fits-signed?
          fits-unsigned?
@@ -152,4 +152,4 @@
          fits-zext32?
          fits-low32-zero?
          fits-pcrel-hi-lo?
-         fits-pcrel-32?)
+         fits-auipc-pair?)
