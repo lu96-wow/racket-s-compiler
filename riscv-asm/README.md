@@ -214,6 +214,33 @@ generated/
 所以查表必须先按目标 ISA 选扩展，再查对应扩展的表；用 `instruction->extensions`
 可以得到某个名字的候选扩展集合。
 
+多扩展消歧（`resolve-instruction-info`）：
+
+```racket
+(instruction-info-candidates '(rv_zbb rv_zbkb) 'andn)  ; 所有候选
+;; => (rv_zbb 的 andn, rv_zbkb 的 andn)
+
+(resolve-instruction-info '(rv_zbb rv_zbkb) 'andn)
+;; => 签名相同（import re-export），返回第一条
+
+(resolve-instruction-info '(rv32_i rv64_i) 'slli)
+;; => 报错：编码不同，说明 ISA 集合把 rv32/rv64 混用了
+```
+
+消歧规则：
+
+1. 命中 0 条 → 报错
+2. 命中 1 条 → 直接返回
+3. 命中多条、签名相同（`width`/`size`/`operands`/`raw-operands`/`fixed-fields`/`aliases`/`asm` 全等）
+   → 视为同一编码，返回第一条（import re-export、同编码 pseudo/standard）
+4. 命中多条、签名不同 → 报错，**不猜**；通常意味着 `rv32_*` 和 `rv64_*` 同时进了 ISA 集合
+
+设计约束：
+
+- 不生成、不提供跨扩展总表；查表必须点名扩展
+- 不做隐式全包搜索；扩展列表由调用方（ISA 配置）给出
+- ISA 配置必须自洽：`rv32_*` 与 `rv64_*` 不能同时出现在一个集合里
+
 两种路径辅助模块的职责分工：`instruction_paths.rkt` 给指令模块路径，
 `instruction_info/lookup.rkt` 给 metadata 模块路径并负责加载成表。
 两个模块都位于 `lib/`，内部根据自身位置定位 `gen/`。
@@ -238,7 +265,7 @@ raco test test/*.rkt
 当前结果：
 
 ```text
-26257 tests passed
+26267 tests passed
 ```
 
 ### 1. 逐指令范围测试
@@ -296,6 +323,7 @@ test/info-lookup-test.rkt
 - `instruction-info-extensions` 列出的扩展无重复且有序
 - 每个扩展的路径存在，表非空，表内扩展名正确、名字唯一
 - `instruction->extensions` 与各扩展表双向一致
+- `instruction-info-candidates` / `resolve-instruction-info`：re-export 去重、同编码 pseudo/standard 去重、rv32+rv64 混用报错、找不到报错
 - `find-extension-instruction-info` 按名字命中/未命中
 - 指令名与扩展名都是符号，传字符串报错
 - 重复查表命中缓存，非符号参数报错

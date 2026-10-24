@@ -72,8 +72,45 @@
            'add)
 (check-false (find-extension-instruction-info 'rv_i 'no-such-instruction))
 
+;; ------------------------------------------------------------
+;; 多扩展消歧
+;; ------------------------------------------------------------
+
+;; 单扩展：候选就是表里那一条
+(check-equal? (length (instruction-info-candidates '(rv_i) 'add)) 1)
+(check-equal? (instruction-info-candidates '(rv_i) 'no-such-instruction) '())
+
+;; import re-export：andn 由 rv_zbb 定义，rv_zbkb 通过 $import 再导出，签名相同
+(check-equal? (map instruction-info-extension
+                   (instruction-info-candidates '(rv_zbb rv_zbkb) 'andn))
+              '(rv_zbb rv_zbkb))
+(check-eq? (instruction-info-extension
+            (resolve-instruction-info '(rv_zbb rv_zbkb) 'andn))
+           'rv_zbb)
+
+;; 同编码 standard + pseudo：zip 在 rv32_zbkb 是 standard，rv32_zk 是 pseudo
+(check-eq? (instruction-info-extension
+            (resolve-instruction-info '(rv32_zbkb rv32_zk) 'zip))
+           'rv32_zbkb)
+
+;; 单个 XLEN 内可以解析
+(check-eq? (instruction-info-extension
+            (resolve-instruction-info '(rv32_i) 'slli))
+           'rv32_i)
+
+;; rv32/rv64 混用：编码不同，必须报错而不是猜
+(check-exn exn:fail?
+           (lambda () (resolve-instruction-info '(rv32_i rv64_i) 'slli)))
+
+;; 找不到报错
+(check-exn exn:fail? (lambda () (resolve-instruction-info '(rv_i) 'no-such-instruction)))
+
 ;; 参数类型检查：扩展与指令名都必须是符号
 (check-exn exn:fail:contract? (lambda () (instruction-info-path "rv_i")))
 (check-exn exn:fail:contract? (lambda () (extension-instruction-info "rv_i")))
 (check-exn exn:fail:contract?
            (lambda () (find-extension-instruction-info 'rv_i "add")))
+(check-exn exn:fail:contract?
+           (lambda () (instruction-info-candidates 'rv_i 'add)))
+(check-exn exn:fail:contract?
+           (lambda () (resolve-instruction-info '(rv_i) "add")))
