@@ -49,8 +49,8 @@
 | `la.rkt` | PC 相对地址、绝对地址、GOT 占位、gp/frame 相对地址 |
 | `jump.rkt` | 跳转展开 |
 | `branch.rkt` | 条件分支展开 |
-| `compose.rkt` | 聚合导出 |
-| `test/` | `li`、`la` 的回归测试 |
+| `main.rkt` | 对外唯一入口，只导出稳定公共 API |
+| `test/` | `li`、`la`、`main` 公共 API 的回归测试 |
 
 不要在 `li.rkt` / `la.rkt` 里重新维护寄存器表。
 寄存器唯一来源是 `riscv-asm/base/register.rkt`。
@@ -145,24 +145,58 @@ check-not-zero!
 
 ## 4. API 分层
 
-### 4.1 推荐入口
-
-调用方通常只用四个：
+外部调用方统一使用：
 
 ```racket
-(li rd value
-    #:word-size 'rv32|'rv64)
+(require "riscv-help/main.rkt")
+```
 
-(li-size value
-         #:word-size 'rv32|'rv64)
+`main.rkt` 是唯一对外入口，只导出稳定公共 API。叶子展开函数、占位形式、scratch 工具和寄存器表不通过它导出。
 
-(load-pcrel rd delta
-            #:word-size 'rv32|'rv64
-            #:scratch scratch)
+### 4.1 公共 API
 
-(load-pcrel-size delta
-                 #:word-size 'rv32|'rv64
-                 #:scratch scratch)
+```racket
+;; 常量 / 绝对地址
+li
+li-size
+
+;; PC 相对地址
+load-pcrel
+load-pcrel-size
+
+;; gp / 栈帧相对地址
+la-gp
+la-frame
+
+;; 跳转
+jump-cj
+jump-cjal
+jump-jal
+jump-auipc-jalr
+jump-jalr
+jump-pcrel-far
+jump-abs
+
+;; 条件分支
+branch-c
+branch-b
+branch-long
+
+;; 分支 / 跳转 / gp 选择需要的范围判断
+fits-s12?
+fits-cjump?
+fits-branch?
+fits-cbranch?
+fits-jal?
+fits-jalr12?
+fits-auipc-pair?
+
+;; scratch / 压缩寄存器选择需要的寄存器判断
+register?
+register->number
+same-register?
+zero-register?
+compressed-branch-register?
 ```
 
 语义：
@@ -171,10 +205,14 @@ check-not-zero!
 - `load-pcrel`：加载 `address(AUIPC) + delta`
 - `li-size`：返回 `li` 展开后的字节数
 - `load-pcrel-size`：返回 `load-pcrel` 展开后的字节数
+- `la-gp` / `la-frame`：gp 和栈帧相对地址
+- `jump-*` / `branch-*`：跳转和条件分支
+- `fits-*`：调用方选择跳转/分支/gp 形式时使用
+- 寄存器判断：scratch 选择和压缩分支选择时使用
 
-### 4.2 低层入口
+### 4.2 内部低层入口
 
-这些入口保留，供需要明确控制形式时使用：
+以下入口不通过 `main.rkt` 导出，只供内部模块或专门的测试使用：
 
 ```racket
 li-s12
@@ -189,18 +227,14 @@ expand-li
 la-pcrel
 la-abs
 la-got
-la-gp
-la-frame
 expand-la
 ```
 
-低层入口是**严格叶子函数**：范围不满足直接报错，不自动回退。
+低层入口是**严格叶子函数**：范围不满足直接报错，不自动回退。高层入口负责自动分派。
 
-高层入口负责自动分派。
+### 4.3 内部兼容入口
 
-### 4.3 兼容入口
-
-`expand-la` 仍然保留：
+`expand-la` 仍然保留在 `la.rkt` 内部：
 
 ```racket
 (expand-la rd value
@@ -210,7 +244,7 @@ expand-la
            #:base ...)
 ```
 
-它只是分派器，不承担新的标签/重定位语义。
+它只是分派器，不承担新的标签/重定位语义，也不通过 `main.rkt` 导出。
 
 ---
 
@@ -256,6 +290,8 @@ delta = target - address(AUIPC)
 | `la-gp` | `addi rd, gp, off` | `[-2048, 2047]` | 4B | 可用 |
 | `la-frame` 小 offset | `addi rd, base, off` | `[-2048, 2047]` | 4B | 可用 |
 | `la-frame` 大 offset | `li tmp, off` + `add rd, base, tmp` | offset 同 `li` | `li-size+4B` | 可用，需要 scratch |
+
+`la-pcrel`、`la-abs`、`la-got`、`expand-la` 不通过 `main.rkt` 导出。公共地址入口是 `li`、`load-pcrel`、`la-gp`、`la-frame`。
 
 ### 5.4 跳转 / 分支范围
 
@@ -399,7 +435,7 @@ fits-auipc-pair?(delta, word-size)
   - 不代表最终链接后的压缩/松弛结果
 - `load-pcrel` 只接受数值 delta，不接受 `target + pc` 自动求差。
 - RV32 没有 far PC 相对形式。
-- `li` 的 `#:scratch` 目前不参与选择。
+- `expand-li` 的 `#:scratch` 目前不参与选择。
 - `load-pcrel-size` 的 far 分支只检查 scratch 是否存在且非零，不检查 scratch 与最终 `rd` 是否冲突（size API 没有 `rd`）。
 
 ---
@@ -421,6 +457,7 @@ fits-auipc-pair?(delta, word-size)
 | 寄存器名 | `riscv-asm/base/register.rkt` |
 | 跳转范围 | `ranges.rkt`、`jump.rkt` |
 | 分支范围 | `ranges.rkt`、`branch.rkt` |
+| 对外导出集合 | `main.rkt` 的 `provide` 列表 |
 | 测试 | `riscv-help/test/` |
 
 ---
@@ -447,11 +484,12 @@ raco test riscv-help/test/*.rkt
 - RV32 超范围
 - `load-pcrel-size` 与生成结果一致
 - `la-pcrel`、`la-abs`、`la-gp`、`la-frame`、`expand-la` 基础行为
+- `main.rkt` 公共 API 面
 
 最近结果：
 
 ```text
-1078 tests passed
+1105 tests passed
 ```
 
 ---

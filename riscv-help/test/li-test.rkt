@@ -7,7 +7,9 @@
 (require rackunit
          racket/list
          racket/match
-         "../compose.rkt")
+         "../li.rkt"
+         "../ranges.rkt"
+         "../registers.rkt")
 
 (define (eval-li-sequence sequence word-size)
   (define xlen
