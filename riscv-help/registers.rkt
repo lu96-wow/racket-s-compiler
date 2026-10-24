@@ -1,43 +1,63 @@
 #lang racket/base
 
 ;; ============================================================
-;; 寄存器编号辅助
+;; RISC-V 寄存器表
 ;;
-;; 这一层只做符号到编号的解析，不做寄存器分配。
-;; 压缩分支等指令需要判断寄存器是否落在 x8..x15。
+;; 所有 x0..x31 和 ABI 别名都只在这个文件维护。
+;;   (list x-name '(alias ...) number)
 ;; ============================================================
 
-(require racket/string)
+(require racket/list
+         racket/match)
 
-(define abi-register-table
-  (hash 'zero 0
-        'ra 1
-        'sp 2
-        'gp 3
-        'tp 4
-        't0 5 't1 6 't2 7
-        's0 8 'fp 8 's1 9
-        'a0 10 'a1 11 'a2 12 'a3 13
-        'a4 14 'a5 15 'a6 16 'a7 17
-        's2 18 's3 19 's4 20 's5 21
-        's6 22 's7 23 's8 24 's9 25
-        's10 26 's11 27
-        't3 28 't4 29 't5 30 't6 31))
+(define register-info
+  (list
+   (list 'x0  '(zero)      0)
+   (list 'x1  '(ra)        1)
+   (list 'x2  '(sp)        2)
+   (list 'x3  '(gp)        3)
+   (list 'x4  '(tp)        4)
+   (list 'x5  '(t0)        5)
+   (list 'x6  '(t1)        6)
+   (list 'x7  '(t2)        7)
+   (list 'x8  '(s0 fp)     8)
+   (list 'x9  '(s1)        9)
+   (list 'x10 '(a0)       10)
+   (list 'x11 '(a1)       11)
+   (list 'x12 '(a2)       12)
+   (list 'x13 '(a3)       13)
+   (list 'x14 '(a4)       14)
+   (list 'x15 '(a5)       15)
+   (list 'x16 '(a6)       16)
+   (list 'x17 '(a7)       17)
+   (list 'x18 '(s2)       18)
+   (list 'x19 '(s3)       19)
+   (list 'x20 '(s4)       20)
+   (list 'x21 '(s5)       21)
+   (list 'x22 '(s6)       22)
+   (list 'x23 '(s7)       23)
+   (list 'x24 '(s8)       24)
+   (list 'x25 '(s9)       25)
+   (list 'x26 '(s10)      26)
+   (list 'x27 '(s11)      27)
+   (list 'x28 '(t3)       28)
+   (list 'x29 '(t4)       29)
+   (list 'x30 '(t5)       30)
+   (list 'x31 '(t6)       31)))
 
-(define (raw-register-number reg)
-  (cond
-    [(exact-integer? reg) reg]
-    [(hash-ref abi-register-table reg #f)]
-    [(and (symbol? reg)
-          (let* ([s (symbol->string reg)]
-                 [n (and (string-prefix? s "x")
-                         (string->number (substring s 1)))])
-            n))]
-    [else #f]))
+(define name->number
+  (for/fold ([table (hash)]) ([entry (in-list register-info)])
+    (match-define (list x-name aliases number) entry)
+    (for/fold ([table table])
+              ([name (in-list (cons x-name aliases))])
+      (hash-set table name number))))
 
 (define (register-number reg)
-  (define n (raw-register-number reg))
-  (and n (<= 0 n 31) n))
+  (cond
+    [(exact-integer? reg)
+     (and (<= 0 reg 31) reg)]
+    [(hash-ref name->number reg #f)]
+    [else #f]))
 
 (define (register? reg)
   (and (register-number reg) #t))
@@ -53,7 +73,7 @@
       [(and na nb) (= na nb)]
       [else (eq? a b)])))
 
-;; RISC-V 的 rd'/rs1'/rs2' 压缩字段只能编码 x8..x15。
+;; RISC-V 的 rd' / rs1' / rs2' 压缩字段只能编码 x8..x15。
 (define (compressed-prime-register? reg)
   (define n (register-number reg))
   (and n (<= 8 n 15)))

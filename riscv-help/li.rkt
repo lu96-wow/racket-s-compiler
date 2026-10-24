@@ -8,7 +8,6 @@
 ;; ============================================================
 
 (require racket/list
-         "instruction.rkt"
          "ranges.rkt"
          "registers.rkt")
 
@@ -25,15 +24,15 @@
   (define signed (sign-extend 32 raw))
   (cond
     [(fits-s12? signed)
-     (list (I 'addi rd 'x0 signed))]
+     (list (list 'addi rd 'x0 signed))]
     [else
      (define-values (hi lo) (split-hi-lo raw))
      (cond
        [(zero? lo)
-        (list (I 'lui rd hi))]
+        (list (list 'lui rd hi))]
        [else
-        (list (I 'lui rd hi)
-              (I 'addi rd rd lo))])]))
+        (list (list 'lui rd hi)
+              (list 'addi rd rd lo))])]))
 
 ;; ------------------------------------------------------------
 ;; 叶子函数
@@ -43,7 +42,7 @@
 (define (li-s12 rd value)
   (unless (fits-s12? value)
     (error 'li-s12 "value ~a is outside signed 12-bit range" value))
-  (list (I 'addi rd 'x0 value)))
+  (list (list 'addi rd 'x0 value)))
 
 ;; 低 12 位为 0；LUI 单独完成
 (define (li-lui rd value #:word-size [word-size 'rv64])
@@ -51,7 +50,7 @@
     (error 'li-lui "value ~a is not a LUI-representable value for ~a"
            value word-size))
   (define-values (hi _lo) (split-hi-lo value))
-  (list (I 'lui rd hi)))
+  (list (list 'lui rd hi)))
 
 ;; 一般 LUI + ADDI
 (define (li-lui-addi rd value #:word-size [word-size 'rv64])
@@ -61,10 +60,10 @@
   (define-values (hi lo) (split-hi-lo value))
   (cond
     [(zero? lo)
-     (list (I 'lui rd hi))]
+     (list (list 'lui rd hi))]
     [else
-     (list (I 'lui rd hi)
-           (I 'addi rd rd lo))]))
+     (list (list 'lui rd hi)
+           (list 'addi rd rd lo))]))
 
 ;; RV64：正的 32 位值，但不在 LUI+ADDI 窗口内。
 ;; 先按 32 位加载，再零扩展。
@@ -72,8 +71,8 @@
   (unless (fits-zext32? value)
     (error 'li-zext32 "value ~a is outside zext32 range" value))
   (append (li-32-bits rd value)
-          (list (I 'slli rd rd 32)
-                (I 'srli rd rd 32))))
+          (list (list 'slli rd rd 32)
+                (list 'srli rd rd 32))))
 
 ;; RV64：low32(value) = 0
 ;; value = high32 << 32
@@ -83,7 +82,7 @@
     (error 'li-low32-zero "value ~a is not a valid low32-zero 64-bit value" value))
   (define high32 (arithmetic-shift value -32))
   (append (li-32-bits rd high32)
-          (list (I 'slli rd rd 32))))
+          (list (list 'slli rd rd 32))))
 
 ;; 任意 64 位值
 ;; 有 scratch 时用 high32/low32 拼接；
@@ -101,22 +100,22 @@
   (if (and scratch (not (same-register? scratch rd)))
       (append
        (li-32-bits rd high32)
-       (list (I 'slli rd rd 32))
+       (list (list 'slli rd rd 32))
        (li-32-bits scratch low32)
        ;; OR 要求 scratch 是零扩展的 64 位值
        (if (>= low32 #x80000000)
-           (list (I 'slli scratch scratch 32)
-                 (I 'srli scratch scratch 32))
+           (list (list 'slli scratch scratch 32)
+                 (list 'srli scratch scratch 32))
            '())
-       (list (I 'or rd rd scratch)))
+       (list (list 'or rd rd scratch)))
       (let* ([chunks (12-bit-chunks raw)]
              [top (car chunks)])
         (append
-         (list (I 'addi rd 'x0 top))
+         (list (list 'addi rd 'x0 top))
          (append-map
           (lambda (chunk)
-            (list (I 'slli rd rd 12)
-                  (I 'addi rd rd chunk)))
+            (list (list 'slli rd rd 12)
+                  (list 'addi rd rd chunk)))
           (cdr chunks))))))
 
 ;; 将 64 位模式拆成 6 个有符号 12 位块（返回 high -> low）。

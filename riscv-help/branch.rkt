@@ -17,10 +17,28 @@
 ;; 长分支的 jump sequence 由调用者通过 jump-expander 显式提供。
 ;; ============================================================
 
-(require "instruction.rkt"
+(require racket/string
          "ranges.rkt"
          "registers.rkt"
          "jump.rkt")
+
+;; 指令统一用 list 表示：
+;;   (mnemonic arg ...)
+;; 大小由 mnemonic 决定：c.* 为 2 字节，其余为 4 字节。
+(define (instruction? value)
+  (and (list? value)
+       (pair? value)
+       (symbol? (car value))))
+
+(define (instruction-size instruction)
+  (define mnemonic (car instruction))
+  (if (string-prefix? (symbol->string mnemonic) "c.")
+      2
+      4))
+
+(define (instructions-size instructions)
+  (for/sum ([instruction (in-list instructions)])
+    (instruction-size instruction)))
 
 (define (branch-inverse mnemonic)
   (case mnemonic
@@ -46,14 +64,14 @@
            rs1))
   (unless (fits-cbranch? offset)
     (error 'branch-c "offset ~a does not fit compressed branch" offset))
-  (list (I16 mnemonic rs1 offset)))
+  (list (list mnemonic rs1 offset)))
 
 (define (branch-b mnemonic rs1 rs2 offset)
   (unless (memq mnemonic '(beq bne blt bge bltu bgeu))
     (error 'branch-b "not a B-type branch: ~a" mnemonic))
   (unless (fits-branch? offset)
     (error 'branch-b "offset ~a does not fit B-type branch" offset))
-  (list (I mnemonic rs1 rs2 offset)))
+  (list (list mnemonic rs1 rs2 offset)))
 
 (define (branch-long mnemonic rs1 rs2 offset jump-expander)
   (unless (even? offset)
@@ -65,15 +83,15 @@
     (jump-expander (- offset 4)))
   (unless (and (list? jump)
                (pair? jump)
-               (andmap insn? jump))
+               (andmap instruction? jump))
     (error 'branch-long
            "jump-expander must return a non-empty list of instructions"))
-  (define skip (+ 4 (insns-size jump)))
+  (define skip (+ 4 (instructions-size jump)))
   (unless (fits-branch? skip)
     (error 'branch-long
            "inverse-branch skip ~a does not fit B-type range"
            skip))
-  (cons (I inverse rs1 rs2 skip)
+  (cons (list inverse rs1 rs2 skip)
         jump))
 
 (provide branch-inverse

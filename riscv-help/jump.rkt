@@ -18,8 +18,7 @@
 ;; 调用者应先用 fits-*? 检查范围，再选择对应函数。
 ;; ============================================================
 
-(require "instruction.rkt"
-         "ranges.rkt"
+(require "ranges.rkt"
          "registers.rkt"
          "li.rkt"
          "scratch.rkt")
@@ -35,19 +34,19 @@
 (define (jump-cj offset)
   (unless (fits-cjump? offset)
     (error 'jump-cj "offset ~a does not fit C.J" offset))
-  (list (I16 'c.j offset)))
+  (list (list 'c.j offset)))
 
 (define (jump-cjal offset #:word-size [word-size 'rv32])
   (unless (eq? word-size 'rv32)
     (error 'jump-cjal "C.JAL is only available on RV32"))
   (unless (fits-cjump? offset)
     (error 'jump-cjal "offset ~a does not fit C.JAL" offset))
-  (list (I16 'c.jal offset)))
+  (list (list 'c.jal offset)))
 
 (define (jump-jal link offset)
   (unless (fits-jal? offset)
     (error 'jump-jal "offset ~a does not fit JAL" offset))
-  (list (I 'jal link offset)))
+  (list (list 'jal link offset)))
 
 (define (jump-auipc-jalr link offset
                          #:scratch [scratch #f]
@@ -66,16 +65,16 @@
     [(eq? link 'zero)
      (define base (car (take-scratch! 'jump-auipc-jalr regs 1)))
      (check-not-zero! 'jump-auipc-jalr base)
-     (list (I 'auipc base hi)
-           (I 'jalr 'zero base lo))]
+     (list (list 'auipc base hi)
+           (list 'jalr 'zero base lo))]
     [else
-     (list (I 'auipc link hi)
-           (I 'jalr link link lo))]))
+     (list (list 'auipc link hi)
+           (list 'jalr link link lo))]))
 
 (define (jump-jalr link base offset)
   (unless (fits-jalr12? offset)
     (error 'jump-jalr "offset ~a does not fit jalr imm12" offset))
-  (list (I 'jalr link base offset)))
+  (list (list 'jalr link base offset)))
 
 ;; 超出 32 位 PC-relative 范围：
 ;;   先加载完整 offset
@@ -102,9 +101,9 @@
        (error 'jump-pcrel-far "base and offset scratch must differ"))
      (append
       (expand-li off-reg offset #:word-size 'rv64)
-      (list (I 'auipc base 0)
-            (I 'add base base off-reg)
-            (I 'jalr 'zero base 0)))]
+      (list (list 'auipc base 0)
+            (list 'add base base off-reg)
+            (list 'jalr 'zero base 0)))]
     [else
      (define off-reg
        (car (take-scratch! 'jump-pcrel-far regs 1)))
@@ -113,9 +112,9 @@
        (error 'jump-pcrel-far "offset scratch must differ from link register"))
      (append
       (expand-li off-reg offset #:word-size 'rv64)
-      (list (I 'auipc link 0)
-            (I 'add link link off-reg)
-            (I 'jalr link link 0)))]))
+      (list (list 'auipc link 0)
+            (list 'add link link off-reg)
+            (list 'jalr link link 0)))]))
 
 ;; 绝对/间接跳转：先把目标地址放进临时寄存器，再 jalr。
 (define (jump-abs link target
@@ -128,7 +127,7 @@
     (error 'jump-abs "temporary register must differ from link register"))
   (append
    (expand-li temp target #:word-size word-size)
-   (list (I 'jalr link temp 0))))
+   (list (list 'jalr link temp 0))))
 
 (provide jump-cj
          jump-cjal

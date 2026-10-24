@@ -11,8 +11,7 @@
 ;; GOT / gp / frame 分别提供独立入口。
 ;; ============================================================
 
-(require "instruction.rkt"
-         "ranges.rkt"
+(require "ranges.rkt"
          "registers.rkt"
          "li.rkt"
          "scratch.rkt")
@@ -35,13 +34,13 @@
               "PC-relative delta ~a cannot be encoded by auipc+addi"
               delta))
      (define-values (hi lo) (split-hi-lo delta))
-     (list (I 'auipc rd hi)
-           (I 'addi rd rd lo))]
+     (list (list 'auipc rd hi)
+           (list 'addi rd rd lo))]
     [else
      ;; 外部/未解析符号的占位形式。
      ;; R_RISCV_PCREL_HI20 / R_RISCV_PCREL_LO12_I 由 object 层生成。
-     (list (I 'auipc rd 0)
-           (I 'addi rd rd 0))]))
+     (list (list 'auipc rd 0)
+           (list 'addi rd rd 0))]))
 
 ;; ------------------------------------------------------------
 ;; 绝对地址
@@ -66,8 +65,8 @@
                  [(rv32) 'lw]
                  [(rv64) 'ld]
                  [else (error 'la-got "unknown word size: ~a" word-size)]))
-  (list (I 'auipc rd 0)
-        (I load rd rd 0)))
+  (list (list 'auipc rd 0)
+        (list load rd rd 0)))
 
 ;; ------------------------------------------------------------
 ;; gp-relative
@@ -76,7 +75,7 @@
 (define (la-gp rd offset)
   (unless (fits-s12? offset)
     (error 'la-gp "gp-relative offset ~a is outside signed 12-bit range" offset))
-  (list (I 'addi rd 'gp offset)))
+  (list (list 'addi rd 'gp offset)))
 
 ;; ------------------------------------------------------------
 ;; 栈帧相对
@@ -93,7 +92,7 @@
                  #:word-size [word-size 'rv64])
   (cond
     [(fits-s12? offset)
-     (list (I 'addi rd base offset))]
+     (list (list 'addi rd base offset))]
     [else
      (define tmp
        (car (take-scratch! 'la-frame (scratch-list scratch) 1)))
@@ -103,7 +102,7 @@
               "scratch register ~a must differ from rd and base"
               tmp))
      (append (expand-li tmp offset #:word-size word-size)
-             (list (I 'add rd base tmp)))]))
+             (list (list 'add rd base tmp)))]))
 
 ;; ------------------------------------------------------------
 ;; 通用组合
