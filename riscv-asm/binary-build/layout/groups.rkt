@@ -15,6 +15,8 @@
 ;; field lives: scalar, compressed, vector, mop.
 ;; ============================================================
 
+(require "modules.rkt")
+
 (struct operand-group (name module raw-tokens)
   #:transparent)
 
@@ -52,6 +54,13 @@
    (for*/list ([g (in-list operand-groups)]
                [token (in-list (operand-group-raw-tokens g))])
      (cons token g))))
+
+(for ([g (in-list operand-groups)])
+  (unless (memq (operand-group-module g) field-module-names)
+    (error 'operand-groups
+           "group ~a uses unknown field module ~a"
+           (operand-group-name g)
+           (operand-group-module g))))
 
 (define (groups-for-module module)
   (for/list ([g (in-list operand-groups)]

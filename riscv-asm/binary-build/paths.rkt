@@ -11,7 +11,9 @@
          racket/list
          racket/path
          racket/string
-         racket/runtime-path)
+         racket/runtime-path
+         "layout/modules.rkt"
+         "runtime/lib/layout-spec.rkt")
 
 (define-runtime-path self-path "paths.rkt")
 (define binary-build-dir (path-only self-path))
@@ -22,42 +24,44 @@
 (define default-output-dir
   (build-path project-root "generated"))
 
+(define source-extension-file-prefix "rv")
+
 (define runtime-lib-source-dir
   (build-path binary-build-dir "runtime" "lib"))
-
-(define field-module-files
-  '("scalar.rkt" "compressed.rkt" "vector.rkt" "mop.rkt"))
 
 ;; ------------------------------------------------------------
 ;; output layout
 ;; ------------------------------------------------------------
 
+(define (path-under-root root parts)
+  (apply build-path root parts))
+
 (define (generated-lib-dir root)
-  (build-path root "lib"))
+  (path-under-root root lib-dir-parts))
 
 (define (generated-gen-dir root)
-  (build-path root "gen"))
+  (path-under-root root gen-dir-parts))
 
 (define (generated-base-path root)
-  (build-path (generated-lib-dir root) "base.rkt"))
+  (build-path (generated-lib-dir root) base-filename))
 
 (define (raw-field-dir root)
-  (build-path (generated-lib-dir root) "riscv" "raw"))
+  (path-under-root root raw-field-dir-parts))
 
 (define (rebuilt-field-dir root)
-  (build-path (generated-gen-dir root) "riscv" "field" "rebuilt"))
+  (path-under-root root rebuilt-field-dir-parts))
 
 (define (raw-instruction-dir root)
-  (build-path (generated-gen-dir root) "riscv" "instruction" "raw"))
+  (path-under-root root raw-instruction-dir-parts))
 
 (define (rebuilt-instruction-dir root)
-  (build-path (generated-gen-dir root) "riscv" "instruction" "rebuilt"))
+  (path-under-root root rebuilt-instruction-dir-parts))
 
 (define (info-dir root)
-  (build-path (generated-gen-dir root) "riscv" "info"))
+  (path-under-root root info-dir-parts))
 
 (define (info-lib-dir root)
-  (build-path (generated-lib-dir root) "info"))
+  (path-under-root root info-lib-dir-parts))
 
 (define (raw-field-path root module-file)
   (build-path (raw-field-dir root) module-file))
@@ -66,19 +70,22 @@
   (build-path (rebuilt-field-dir root) module-file))
 
 (define (raw-output-path root extension)
-  (build-path (raw-instruction-dir root) (string-append extension ".rkt")))
+  (build-path (raw-instruction-dir root)
+              (extension-module-filename (string->symbol extension))))
 
 (define (rebuilt-output-path root extension)
-  (build-path (rebuilt-instruction-dir root) (string-append extension ".rkt")))
+  (build-path (rebuilt-instruction-dir root)
+              (extension-module-filename (string->symbol extension))))
 
 (define (info-output-path root extension)
-  (build-path (info-dir root) (string-append extension ".rkt")))
+  (build-path (info-dir root)
+              (extension-module-filename (string->symbol extension))))
 
 (define (extensions-output-path root)
-  (build-path (info-dir root) "extensions.rkt"))
+  (build-path (info-dir root) extensions-filename))
 
 (define (instruction-extensions-output-path root)
-  (build-path (info-dir root) "instruction_extensions.rkt"))
+  (build-path (info-dir root) instruction-extensions-filename))
 
 ;; ------------------------------------------------------------
 ;; input discovery
@@ -97,7 +104,7 @@
               #:when (let ([p (build-path dir name)])
                        (and (file-exists? p)
                             (not (directory-exists? p))
-                            (string-prefix? (path->string name) "rv"))))
+                            (string-prefix? (path->string name) source-extension-file-prefix))))
      (build-path dir name))
    (lambda (a b) (string<? (path->string a) (path->string b)))))
 
@@ -149,8 +156,6 @@
          runtime-lib-source-dir
          default-opcodes-dir
          default-output-dir
-         field-module-files
-
          generated-lib-dir
          generated-gen-dir
          generated-base-path

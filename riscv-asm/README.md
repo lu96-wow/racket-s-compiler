@@ -56,6 +56,7 @@ riscv-asm/
     resolve.rkt                 $import / $pseudo_op / 同名合并
     parcel.rkt                  指令长度规则
     layout/
+      modules.rkt               raw/rebuilt 字段模块注册表
       groups.rkt                唯一的分组注册表
       plan.rkt                  raw / rebuilt operand plan
     emit/
@@ -68,6 +69,8 @@ riscv-asm/
     runtime/lib/                原样复制到 generated/lib
       base.rkt
       bit.rkt
+      limits.rkt                目标位索引上限
+      layout-spec.rkt           相对路径段与文件名契约
       layout.rkt                运行时生成包布局（唯一来源）
       instruction_paths.rkt     指令路径 API
       riscv/raw/                手写 raw 字段布局
@@ -91,6 +94,7 @@ riscv-asm/
 racket binary-build/main.rkt
 racket binary-build/main.rkt --opcodes /path/to/riscv-opcodes/extensions
 racket binary-build/main.rkt --output /tmp/riscv-asm-generated
+racket binary-build/main.rkt --clean
 racket binary-build/main.rkt --help
 ```
 
@@ -106,7 +110,7 @@ output:  riscv-asm/generated
 1. 读取 `extensions/` 顶层 ratified 文件
 2. 解析 `$import` / `$pseudo_op`
 3. 按优先级选择同名定义
-4. 复制运行时 `lib/`
+4. 清理输出并复制运行时 `lib/`
 5. 生成 rebuilt 字段模块
 6. 生成 raw / rebuilt 指令模块
 7. 生成 instruction metadata
@@ -141,6 +145,25 @@ output:  riscv-asm/generated
 
 `binary-build/emit/package.rkt` 会先完成全部解析和合并，再清理和写入输出；
 源文件有错误时不会留下半成品 `generated/`。
+
+## 常量与约束归属
+
+| 类别 | 唯一维护点 | 说明 |
+| --- | --- | --- |
+| 生成包内相对路径段 / 文件名 | `binary-build/runtime/lib/layout-spec.rkt` | build-time 和 runtime 共用 |
+| build-time 源目录 / 输出根 / 绝对路径 | `binary-build/paths.rkt` | `config.rkt` 的默认值也来自这里 |
+| 源扩展文件前缀 | `binary-build/paths.rkt` | 当前是 `rv` |
+| raw/rebuilt 字段模块注册表 | `binary-build/layout/modules.rkt` | build 会校验它和实际 `raw/*.rkt` 文件一致 |
+| 逻辑操作数分组 | `binary-build/layout/groups.rkt` | 启动时会校验 group 的 module 名已注册 |
+| raw 位布局 / 范围 / 对齐 | `binary-build/runtime/lib/riscv/raw/*.rkt` | 手写唯一来源 |
+| 固定字段取位 | `binary-build/fixed.rkt` | resolve 和 width 计算共用 |
+| 目标位索引上限 | `binary-build/runtime/lib/limits.rkt` | `model.rkt` 和 `bit.rkt` 共用 |
+| 指令位宽规则 | `binary-build/parcel.rkt` | 16/32 与拒绝 48+ |
+| extension 文件名 / info 变量名 | `layout-spec.rkt` | `<ext>.rkt`、`<ext>-instructions` |
+| rv32/rv64 前缀 | `runtime/lib/info/lookup.rkt` | 本地常量 |
+
+`origin` 的 `'standard / 'import / 'pseudo` 是一个小的封闭协议，定义在
+`info/struct.rkt`，由 `resolve.rkt` 和 `lookup.rkt` 使用；它不是路径常量。
 
 当前统计：
 
@@ -297,15 +320,15 @@ ld:   not-a-standard-form
 | 想改什么 | 改哪里 |
 | --- | --- |
 | 新增 raw 位布局/字段 | `binary-build/runtime/lib/riscv/raw/*.rkt` |
-| 新增 raw 字段模块（新的 kind） | `binary-build/paths.rkt` 的 `field-module-files` |
+| 新增 raw 字段模块（新的 kind） | `binary-build/layout/modules.rkt` + `runtime/lib/riscv/raw/<file>.rkt` |
 | 新增 rebuilt 逻辑分组 | `binary-build/layout/groups.rkt` |
 | 改源文件语法 | `binary-build/parse.rkt` |
 | 改 import/pseudo 优先级或冲突策略 | `binary-build/resolve.rkt` |
 | 改 raw/rebuilt 参数生成 | `binary-build/layout/plan.rkt`、`binary-build/emit/instruction.rkt` |
 | 改 metadata 字段 | `binary-build/runtime/lib/info/struct.rkt`、`binary-build/emit/metadata.rkt` |
 | 改查表/消歧规则 | `binary-build/runtime/lib/info/lookup.rkt`、`query.rkt` |
-| 改构建输出目录布局 | `binary-build/paths.rkt`、`binary-build/emit/package.rkt` |
-| 改运行时生成包布局 | `binary-build/runtime/lib/layout.rkt` |
+| 改构建输出目录布局 | `binary-build/runtime/lib/layout-spec.rkt`、`binary-build/paths.rkt`、`binary-build/emit/package.rkt` |
+| 改运行时生成包布局 | `binary-build/runtime/lib/layout-spec.rkt`、`binary-build/runtime/lib/layout.rkt` |
 | 改命令行选项 | `binary-build/config.rkt` |
 | 改构建阶段/清理策略 | `binary-build/emit/package.rkt` |
 

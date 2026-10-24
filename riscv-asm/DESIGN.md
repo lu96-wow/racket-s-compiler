@@ -55,10 +55,41 @@ therefore leaves an existing `generated/` untouched.
 
 `binary-build/layout/groups.rkt` feeds both `plan.rkt` and `binary-build/emit/fields.rkt`.
 
-Build-time output layout lives in `binary-build/paths.rkt`.
-Runtime layout lives in `binary-build/runtime/lib/layout.rkt`; it is copied to
-`generated/lib/layout.rkt` and is the only runtime module that knows the
-generated package structure.
+Relative generated-package path segments and filename conventions live in
+`binary-build/runtime/lib/layout-spec.rkt`.
+
+Build-time absolute output paths are built in `binary-build/paths.rkt`.
+Runtime package-relative paths are built in `binary-build/runtime/lib/layout.rkt`;
+it is copied to `generated/lib/layout.rkt`. Both layers consume the same
+`layout-spec.rkt`, so directory/file-name constants have one definition.
+
+---
+
+## 2.1 Constants and constraints
+
+| Kind | Owner |
+| --- | --- |
+| generated package relative paths / filenames | `runtime/lib/layout-spec.rkt` |
+| build-time absolute source/output paths | `binary-build/paths.rkt` |
+| source extension file prefix | `binary-build/paths.rkt` (`rv`) |
+| field-module registry | `binary-build/layout/modules.rkt` |
+| operand group registry | `binary-build/layout/groups.rkt` |
+| raw bit layout, ranges, alignment | `runtime/lib/riscv/raw/*.rkt` |
+| fixed-field bit access | `binary-build/fixed.rkt` |
+| target bit index limit | `runtime/lib/limits.rkt` (used by `bit.rkt` and `model.rkt`) |
+| instruction width rule | `parcel.rkt` (16/32, reject 48+) |
+| extension module/info variable names | `layout-spec.rkt` |
+| rv32/rv64 extension prefixes | `runtime/lib/info/lookup.rkt` |
+
+`layout-spec.rkt` is the single definition of generated-package-relative
+directory/file names. `paths.rkt` and runtime `layout.rkt` both consume it.
+`modules.rkt` is the single field-module list; build validation compares it with
+the actual files in `runtime/lib/riscv/raw/`. `groups.rkt` validates its module
+symbols against the same registry.
+
+The target bit index limit is shared by `model.rkt` and `bit.rkt` through
+`runtime/lib/limits.rkt`. Instruction-width rules stay in `parcel.rkt` because
+they are a separate RISC-V parcel rule, not a generic encoding limit.
 
 ---
 
@@ -222,6 +253,8 @@ generated/
   lib/                          copied runtime modules
     base.rkt
     bit.rkt
+    limits.rkt                  target bit index limit
+    layout-spec.rkt             relative path/filename contract
     layout.rkt                  runtime package layout
     instruction_paths.rkt
     riscv/raw/*.rkt
@@ -265,6 +298,7 @@ removes only those two directories.
 | Area | File |
 | --- | --- |
 | raw field bit layout | `binary-build/runtime/lib/riscv/raw/*.rkt` |
+| field module registry | `binary-build/layout/modules.rkt` |
 | logical operand grouping | `binary-build/layout/groups.rkt` |
 | source syntax | `binary-build/parse.rkt` |
 | fixed-field bit access | `binary-build/fixed.rkt` |
@@ -273,6 +307,7 @@ removes only those two directories.
 | instruction module codegen | `binary-build/emit/instruction.rkt` |
 | metadata schema/codegen | `binary-build/runtime/lib/info/struct.rkt`, `binary-build/emit/metadata.rkt` |
 | runtime signatures/query | `binary-build/runtime/lib/info/query.rkt` |
+| layout contract | `binary-build/runtime/lib/layout-spec.rkt` |
 | runtime layout | `binary-build/runtime/lib/layout.rkt` |
 | runtime lookup | `binary-build/runtime/lib/info/lookup.rkt` |
 | output layout | `binary-build/paths.rkt` |

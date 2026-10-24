@@ -9,4 +9,4 @@ test: build
 rebuild: clean build
 
 clean:
-	rm -rf generated/lib generated/gen
+	racket binary-build/main.rkt --clean

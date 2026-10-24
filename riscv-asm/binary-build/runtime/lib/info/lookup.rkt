@@ -9,6 +9,7 @@
 
 (require racket/list
          racket/string
+         "../layout-spec.rkt"
          "../layout.rkt"
          "struct.rkt"
          "query.rkt")
@@ -24,9 +25,6 @@
 (define (check-name who name)
   (unless (symbol? name)
     (raise-argument-error who "symbol?" name)))
-
-(define (extension-info-variable extension)
-  (string->symbol (format "~a-instructions" extension)))
 
 (define info-cache (make-hash))
 
@@ -56,11 +54,14 @@
 ;; ISA consistency and candidate choice
 ;; ------------------------------------------------------------
 
+(define rv32-extension-prefix "rv32_")
+(define rv64-extension-prefix "rv64_")
+
 (define (rv32-extension? ext)
-  (string-prefix? (symbol->string ext) "rv32_"))
+  (string-prefix? (symbol->string ext) rv32-extension-prefix))
 
 (define (rv64-extension? ext)
-  (string-prefix? (symbol->string ext) "rv64_"))
+  (string-prefix? (symbol->string ext) rv64-extension-prefix))
 
 (define (mixed-xlen? extensions)
   (and (ormap rv32-extension? extensions)

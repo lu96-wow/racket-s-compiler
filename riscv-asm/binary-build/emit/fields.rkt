@@ -11,6 +11,7 @@
          racket/path
          racket/string
          "../layout/groups.rkt"
+         "../layout/modules.rkt"
          "../paths.rkt"
          "render.rkt")
 
@@ -22,19 +23,14 @@
              (string-append "raw:" token))
            "\n           ")))
 
-(define (module-file->symbol module-file)
-  (string->symbol
-   (path->string
-    (path-replace-suffix (file-name-from-path module-file) ""))))
-
 (define (module-definitions module-file)
-  (for/list ([g (in-list (groups-for-module
-                           (module-file->symbol module-file)))])
+  (define module-name (field-module-file->name module-file))
+  (for/list ([g (in-list (groups-for-module module-name))])
     (define-combine g)))
 
 (define (module-provides module-file)
-  (for/list ([g (in-list (groups-for-module
-                           (module-file->symbol module-file)))])
+  (define module-name (field-module-file->name module-file))
+  (for/list ([g (in-list (groups-for-module module-name))])
     (operand-group-name g)))
 
 (define (gen-rebuilt-field-file root module-file)

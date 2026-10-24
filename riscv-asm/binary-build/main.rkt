@@ -5,7 +5,9 @@
 
 (define (main args)
   (define opts (parse-command-line args))
-  (build-all opts)
+  (if (build-options-clean-only? opts)
+      (clean-output! (build-options-output-dir opts))
+      (build-all opts))
   0)
 
 (module+ main

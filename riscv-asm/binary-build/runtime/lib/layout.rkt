@@ -13,21 +13,27 @@
 ;; ============================================================
 
 (require racket/path
-         racket/runtime-path)
+         racket/runtime-path
+         "layout-spec.rkt")
 
 (define-runtime-path self-path "layout.rkt")
 (define package-root
   (simplify-path (build-path (path-only self-path) "..")))
 
-(define (extension-module-filename extension)
-  (unless (symbol? extension)
-    (raise-argument-error 'extension-module-filename "symbol?" extension))
-  (string-append (symbol->string extension) ".rkt"))
+(define (path-under-root parts)
+  (apply build-path package-root parts))
+
+(define (instruction-directory-parts kind)
+  (case kind
+    [("raw") raw-instruction-dir-parts]
+    [("rebuilt") rebuilt-instruction-dir-parts]
+    [else (error 'instruction-path "unknown instruction kind: ~a" kind)]))
 
 (define (instruction-path kind extension)
   (path->string
-   (build-path package-root "gen" "riscv" "instruction" kind
-               (extension-module-filename extension))))
+   (path-under-root
+    (append (instruction-directory-parts kind)
+            (list (extension-module-filename extension))))))
 
 (define (raw-instruction-path extension)
   (instruction-path "raw" extension))
@@ -36,17 +42,17 @@
   (instruction-path "rebuilt" extension))
 
 (define (info-dir)
-  (build-path package-root "gen" "riscv" "info"))
+  (path-under-root info-dir-parts))
 
 (define (instruction-info-path extension)
   (path->string
    (build-path (info-dir) (extension-module-filename extension))))
 
 (define (extensions-path)
-  (build-path (info-dir) "extensions.rkt"))
+  (build-path (info-dir) extensions-filename))
 
 (define (instruction-extensions-path)
-  (build-path (info-dir) "instruction_extensions.rkt"))
+  (build-path (info-dir) instruction-extensions-filename))
 
 (provide package-root
          extension-module-filename

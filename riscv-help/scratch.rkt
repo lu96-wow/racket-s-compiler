@@ -24,7 +24,7 @@
   ;; 已知物理寄存器按编号判断；未知符号/虚拟寄存器按 eq? 判断。
   (define keys
     (for/list ([reg (in-list regs)])
-      (or (register-number reg) reg)))
+      (or (register->number reg) reg)))
   (unless (= (length keys)
              (length (remove-duplicates keys eq?)))
     (error who "scratch registers must be distinct: ~a" regs)))

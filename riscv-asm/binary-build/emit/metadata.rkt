@@ -14,6 +14,7 @@
          "../layout/plan.rkt"
          "../parcel.rkt"
          "../paths.rkt"
+         "../runtime/lib/layout-spec.rkt"
          "render.rkt")
 
 (define (instruction-width idef)
@@ -72,7 +73,8 @@
           (asm-format (instruction-def-name idef) rebuilt-operands)))
 
 (define (info-variable-name extension)
-  (format "~a-instructions" extension))
+  (symbol->string
+   (extension-info-variable (string->symbol extension))))
 
 (define (gen-info-file-content extension resolved-defs output-path root)
   (define var (info-variable-name extension))

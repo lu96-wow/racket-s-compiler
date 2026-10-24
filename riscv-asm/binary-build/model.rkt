@@ -8,6 +8,8 @@
 ;; and its provenance.
 ;; ============================================================
 
+(require "runtime/lib/limits.rkt")
+
 ;; A fixed bit range [lo, hi] with a constant value.
 (struct fixed-field (lo hi value)
   #:transparent
@@ -19,8 +21,11 @@
       (raise-argument-error who "exact-nonnegative-integer?" hi))
     (unless (<= lo hi)
       (error who "lo (~a) must be <= hi (~a)" lo hi))
-    (when (> hi 31)
-      (error who "hi (~a) must be <= 31" hi))
+    (when (> hi max-target-bit-index)
+      (error who
+             "hi (~a) must be <= ~a"
+             hi
+             max-target-bit-index))
     (unless (exact-nonnegative-integer? value)
       (raise-argument-error who "exact-nonnegative-integer?" value))
     (define width (add1 (- hi lo)))

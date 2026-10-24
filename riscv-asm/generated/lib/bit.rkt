@@ -14,7 +14,8 @@
 ;; 某个字段叫什么、属于 raw 还是 rebuilt，由模块导入关系决定。
 ;; ============================================================
 
-(require racket/list)
+(require racket/list
+         "limits.rkt")
 
 (provide bit
          bit-range
@@ -35,8 +36,11 @@
 (define (check-target-index who n)
   (unless (exact-nonnegative-integer? n)
     (raise-argument-error who "exact-nonnegative-integer?" n))
-  (when (> n 31)
-    (raise-argument-error who "target bit index <= 31" n)))
+  (when (> n max-target-bit-index)
+    (raise-argument-error
+     who
+     (format "target bit index <= ~a" max-target-bit-index)
+     n)))
 
 (define (check-value who v)
   (unless (exact-integer? v)
@@ -76,10 +80,10 @@
   (define mask (sub1 (arithmetic-shift 1 width)))
   (define dst-hi (+ dst-lo (sub1 width)))
 
-  (when (> dst-hi 31)
+  (when (> dst-hi max-target-bit-index)
     (error 'bit-range
-           "target range [~a..~a] exceeds bit 31"
-           dst-lo dst-hi))
+           "target range [~a..~a] exceeds bit ~a"
+           dst-lo dst-hi max-target-bit-index))
 
   (lambda (value)
     (check-value 'bit-range value)

@@ -13,6 +13,7 @@
          "../parse.rkt"
          "../resolve.rkt"
          "../paths.rkt"
+         "../layout/modules.rkt"
          "fields.rkt"
          "instruction.rkt"
          "metadata.rkt")
@@ -55,6 +56,24 @@
   (make-directory* (rebuilt-instruction-dir root))
   (make-directory* (info-dir root))
   (make-directory* (rebuilt-field-dir root)))
+
+(define (raw-field-source-files)
+  (define dir (build-path runtime-lib-source-dir "riscv" "raw"))
+  (sort
+   (for/list ([name (in-list (directory-list dir))]
+              #:when (and (file-exists? (build-path dir name))
+                          (string-suffix? (path->string name) ".rkt")))
+     (path->string name))
+   string<?))
+
+(define (validate-field-modules!)
+  (define registered (sort field-module-files string<?))
+  (define actual (raw-field-source-files))
+  (unless (equal? registered actual)
+    (error 'validate-field-modules!
+           "field module registry mismatch: registered ~a, files ~a"
+           registered
+           actual)))
 
 (define (write-file! path content)
   (make-directory* (path-only path))
@@ -106,6 +125,7 @@
   ;; Nothing is written until every source file has parsed and resolved.
   ;; This keeps the output directory untouched on source errors.
   ;; ----------------------------------------------------------
+  (validate-field-modules!)
   (clean-output! root)
   (copy-runtime-lib! root)
   (make-output-dirs! root)
@@ -156,4 +176,5 @@
   (printf "  package root:          ~a\n" (path->string root))
   (void))
 
-(provide build-all)
+(provide build-all
+         clean-output!)
