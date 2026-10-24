@@ -8,18 +8,10 @@
 ;; ============================================================
 
 (require racket/list
-         racket/path
-         racket/runtime-path
          racket/string
+         "../layout.rkt"
          "struct.rkt"
          "query.rkt")
-
-(define-runtime-path self-path "lookup.rkt")
-(define info-lib-dir (path-only self-path))
-
-;; generated/lib/info -> generated/gen/info
-(define info-gen-dir
-  (simplify-path (build-path info-lib-dir ".." ".." "gen" "riscv" "info")))
 
 (define (check-extension who extension)
   (unless (symbol? extension)
@@ -32,13 +24,6 @@
 (define (check-name who name)
   (unless (symbol? name)
     (raise-argument-error who "symbol?" name)))
-
-(define (extension-filename extension)
-  (string-append (symbol->string extension) ".rkt"))
-
-(define (instruction-info-path extension)
-  (check-extension 'instruction-info-path extension)
-  (path->string (build-path info-gen-dir (extension-filename extension))))
 
 (define (extension-info-variable extension)
   (string->symbol (format "~a-instructions" extension)))
@@ -54,7 +39,7 @@
                       (extension-info-variable extension)))))
 
 (define (instruction-info-extensions)
-  (dynamic-require (build-path info-gen-dir "extensions.rkt") 'extensions))
+  (dynamic-require (extensions-path) 'extensions))
 
 (define (find-extension-instruction-info extension name)
   (find-instruction-info (extension-instruction-info extension) name))
@@ -63,8 +48,9 @@
   (check-extensions 'instruction-info-candidates extensions)
   (check-name 'instruction-info-candidates name)
   (for/list ([ext (in-list extensions)]
-             #:when (find-extension-instruction-info ext name))
-    (find-extension-instruction-info ext name)))
+             #:do [(define info (find-extension-instruction-info ext name))]
+             #:when info)
+    info))
 
 ;; ------------------------------------------------------------
 ;; ISA consistency and candidate choice

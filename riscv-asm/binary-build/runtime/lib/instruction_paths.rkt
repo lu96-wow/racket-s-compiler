@@ -1,31 +1,13 @@
 #lang racket/base
 
 ;; ============================================================
-;; Runtime path helper copied into generated/lib/instruction_paths.rkt
+;; Public instruction-path helper for the generated package.
+;;
+;; The actual layout lives in layout.rkt; this module keeps the
+;; instruction-only API stable.
 ;; ============================================================
 
-(require racket/path
-         racket/runtime-path)
-
-(define-runtime-path self-path "instruction_paths.rkt")
-(define package-root
-  (simplify-path (build-path (path-only self-path) "..")))
-
-(define (extension-module-filename extension)
-  (unless (symbol? extension)
-    (raise-argument-error 'extension-module-filename "symbol?" extension))
-  (string-append (symbol->string extension) ".rkt"))
-
-(define (instruction-path kind extension)
-  (path->string
-   (build-path package-root "gen" "riscv" "instruction" kind
-               (extension-module-filename extension))))
-
-(define (raw-instruction-path extension)
-  (instruction-path "raw" extension))
-
-(define (rebuilt-instruction-path extension)
-  (instruction-path "rebuilt" extension))
+(require "layout.rkt")
 
 (provide raw-instruction-path
          rebuilt-instruction-path)

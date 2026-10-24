@@ -25,7 +25,7 @@
 (define runtime-lib-source-dir
   (build-path binary-build-dir "runtime" "lib"))
 
-(define field-module-names
+(define field-module-files
   '("scalar.rkt" "compressed.rkt" "vector.rkt" "mop.rkt"))
 
 ;; ------------------------------------------------------------
@@ -40,12 +40,6 @@
 
 (define (generated-base-path root)
   (build-path (generated-lib-dir root) "base.rkt"))
-
-(define (generated-bit-path root)
-  (build-path (generated-lib-dir root) "bit.rkt"))
-
-(define (generated-instruction-paths-path root)
-  (build-path (generated-lib-dir root) "instruction_paths.rkt"))
 
 (define (raw-field-dir root)
   (build-path (generated-lib-dir root) "riscv" "raw"))
@@ -65,13 +59,11 @@
 (define (info-lib-dir root)
   (build-path (generated-lib-dir root) "info"))
 
-(define (raw-field-path root module)
-  (build-path (raw-field-dir root)
-              (if (string-suffix? module ".rkt") module (string-append module ".rkt"))))
+(define (raw-field-path root module-file)
+  (build-path (raw-field-dir root) module-file))
 
-(define (rebuilt-field-path root module)
-  (build-path (rebuilt-field-dir root)
-              (if (string-suffix? module ".rkt") module (string-append module ".rkt"))))
+(define (rebuilt-field-path root module-file)
+  (build-path (rebuilt-field-dir root) module-file))
 
 (define (raw-output-path root extension)
   (build-path (raw-instruction-dir root) (string-append extension ".rkt")))
@@ -129,22 +121,24 @@
 (define (raw-require-specs output-path root)
   (append
    (list (require-spec output-path (generated-base-path root)))
-   (for/list ([module (in-list field-module-names)])
-     (require-spec output-path (raw-field-path root module)))))
+   (for/list ([module-file (in-list field-module-files)])
+     (require-spec output-path (raw-field-path root module-file)))))
 
 (define (rebuilt-require-specs output-path root)
   (append
    (list (require-spec output-path (generated-base-path root)))
-   (for/list ([module (in-list field-module-names)])
-     (prefix-require-spec "raw:" output-path (raw-field-path root module)))
-   (for/list ([module (in-list field-module-names)])
+   (for/list ([module-file (in-list field-module-files)])
+     (prefix-require-spec "raw:" output-path
+                          (raw-field-path root module-file)))
+   (for/list ([module-file (in-list field-module-files)])
      (prefix-require-spec "rebuilt:" output-path
-                          (rebuilt-field-path root module)))))
+                          (rebuilt-field-path root module-file)))))
 
-(define (rebuilt-field-require-specs output-path root module)
+(define (rebuilt-field-require-specs output-path root module-file)
   (list
    (require-spec output-path (generated-base-path root))
-   (prefix-require-spec "raw:" output-path (raw-field-path root module))))
+   (prefix-require-spec "raw:" output-path
+                        (raw-field-path root module-file))))
 
 (define (info-require-specs output-path root)
   (list (require-spec output-path
@@ -155,13 +149,11 @@
          runtime-lib-source-dir
          default-opcodes-dir
          default-output-dir
-         field-module-names
+         field-module-files
 
          generated-lib-dir
          generated-gen-dir
          generated-base-path
-         generated-bit-path
-         generated-instruction-paths-path
          raw-field-dir
          rebuilt-field-dir
          raw-instruction-dir

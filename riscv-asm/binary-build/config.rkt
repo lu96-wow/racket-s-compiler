@@ -1,7 +1,6 @@
 #lang racket/base
 
-(require racket/list
-         racket/path
+(require racket/path
          racket/string
          "paths.rkt")
 

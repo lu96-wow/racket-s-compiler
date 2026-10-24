@@ -14,6 +14,7 @@
 ;; ============================================================
 
 (require racket/list
+         "fixed.rkt"
          "model.rkt")
 
 ;; ------------------------------------------------------------
@@ -65,11 +66,7 @@
   (for*/fold ([bits (hash)]) ([ff (in-list fixed-fields)]
                               [bit (in-range (fixed-field-lo ff)
                                              (add1 (fixed-field-hi ff)))])
-    (hash-set bits bit
-              (bitwise-and
-               (arithmetic-shift (fixed-field-value ff)
-                                 (- (- bit (fixed-field-lo ff))))
-               1))))
+    (hash-set bits bit (fixed-field-bit-value ff bit))))
 
 (define (fixed-fields-compatible? source-fixed candidate-fixed)
   (define candidate-bits (fixed-field-bit-map candidate-fixed))
@@ -77,10 +74,7 @@
              [bit (in-range (fixed-field-lo ff)
                             (add1 (fixed-field-hi ff)))])
     (equal? (hash-ref candidate-bits bit #f)
-            (bitwise-and
-             (arithmetic-shift (fixed-field-value ff)
-                               (- (- bit (fixed-field-lo ff))))
-             1))))
+            (fixed-field-bit-value ff bit))))
 
 (define (pseudo-standard-form? pseudo extension-map)
   (define source-extension (pseudo-def-source-extension pseudo))
@@ -158,7 +152,7 @@
   (define candidates
     (append
      (for/list ([idef (in-list (extension-file-standard extension-file))])
-       (candidate idef 'standard (standard-origin) #f #t))
+       (candidate idef 'standard (standard-origin) #t))
      (for/list ([pair (in-list (resolve-imports extension-file extension-map))])
        (define im (car pair))
        (define idef (cdr pair))
@@ -168,7 +162,6 @@
         (reference-origin 'import
                           (import-def-source-extension im)
                           (import-def-instruction-name im))
-        #f
         #t))
      (for/list ([pseudo (in-list (extension-file-pseudo extension-file))])
        (candidate
@@ -177,7 +170,6 @@
         (reference-origin 'pseudo
                           (pseudo-def-source-extension pseudo)
                           (pseudo-def-source-instruction pseudo))
-        pseudo
         (pseudo-standard-form? pseudo extension-map)))))
 
   (define by-name (make-hash))

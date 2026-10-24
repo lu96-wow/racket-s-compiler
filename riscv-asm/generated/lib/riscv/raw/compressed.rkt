@@ -107,20 +107,20 @@
 (define c_nzuimm10
   (checked-field 'c_nzuimm10
                  (bit-map '(5 . 12)
-           '(4 . 11)
-           '(9 . 10)
-           '(8 . 9)
-           '(7 . 8)
-           '(6 . 7)
-           '(2 . 6)
-           '(3 . 5))
+                          '(4 . 11)
+                          '(9 . 10)
+                          '(8 . 9)
+                          '(7 . 8)
+                          '(6 . 7)
+                          '(2 . 6)
+                          '(3 . 5))
                  4 1020 4))
 
 ;; C.LW / C.SW uimm[2|6] 和 uimm[5:3]
 (define c_uimm7lo
   (checked-field 'c_uimm7lo
                  (bit-map '(2 . 6)
-           '(6 . 5))
+                          '(6 . 5))
                  0 124 4))
 
 (define c_uimm7hi
@@ -148,8 +148,8 @@
 (define c_uimm9hi
   (checked-field 'c_uimm9hi
                  (bit-map '(5 . 12)
-           '(4 . 11)
-           '(8 . 10))
+                          '(4 . 11)
+                          '(8 . 10))
                  0 511 1))
 
 ;; C.ADDI / C.LI 的 imm[4:0] / imm[5]
@@ -178,10 +178,10 @@
 (define c_nzimm10lo
   (checked-field 'c_nzimm10lo
                  (bit-map '(4 . 6)
-           '(6 . 5)
-           '(8 . 4)
-           '(7 . 3)
-           '(5 . 2))
+                          '(6 . 5)
+                          '(8 . 4)
+                          '(7 . 3)
+                          '(5 . 2))
                  -512 496 16))
 
 (define c_nzimm10hi
@@ -204,33 +204,33 @@
 (define c_imm12
   (checked-field 'c_imm12
                  (bit-map '(11 . 12)
-           '(4 . 11)
-           '(9 . 10)
-           '(8 . 9)
-           '(10 . 8)
-           '(6 . 7)
-           '(7 . 6)
-           '(3 . 5)
-           '(2 . 4)
-           '(1 . 3)
-           '(5 . 2))
+                          '(4 . 11)
+                          '(9 . 10)
+                          '(8 . 9)
+                          '(10 . 8)
+                          '(6 . 7)
+                          '(7 . 6)
+                          '(3 . 5)
+                          '(2 . 4)
+                          '(1 . 3)
+                          '(5 . 2))
                  -2048 2046 2))
 
 ;; C.BEQZ / C.BNEZ: imm[7:6|2:1|5] / imm[8|4:3]
 (define c_bimm9lo
   (checked-field 'c_bimm9lo
                  (bit-map '(7 . 6)
-           '(6 . 5)
-           '(2 . 4)
-           '(1 . 3)
-           '(5 . 2))
+                          '(6 . 5)
+                          '(2 . 4)
+                          '(1 . 3)
+                          '(5 . 2))
                  -256 254 2))
 
 (define c_bimm9hi
   (checked-field 'c_bimm9hi
                  (bit-map '(8 . 12)
-           '(4 . 11)
-           '(3 . 10))
+                          '(4 . 11)
+                          '(3 . 10))
                  -256 254 2))
 
 ;; C.SRLI / C.SRAI (RV32): shamt[4:0]
@@ -254,10 +254,10 @@
 (define c_uimm8splo
   (checked-field 'c_uimm8splo
                  (bit-map '(4 . 6)
-           '(3 . 5)
-           '(2 . 4)
-           '(7 . 3)
-           '(6 . 2))
+                          '(3 . 5)
+                          '(2 . 4)
+                          '(7 . 3)
+                          '(6 . 2))
                  0 255 4))
 
 (define c_uimm8sphi
@@ -269,21 +269,21 @@
 (define c_uimm8sp_s
   (checked-field 'c_uimm8sp_s
                  (bit-map '(5 . 12)
-           '(4 . 11)
-           '(3 . 10)
-           '(2 . 9)
-           '(7 . 8)
-           '(6 . 7))
+                          '(4 . 11)
+                          '(3 . 10)
+                          '(2 . 9)
+                          '(7 . 8)
+                          '(6 . 7))
                  0 255 4))
 
 ;; C.LDSP / C.FLDSP: uimm[4:3|8:6] / uimm[5]
 (define c_uimm9splo
   (checked-field 'c_uimm9splo
                  (bit-map '(4 . 6)
-           '(3 . 5)
-           '(8 . 4)
-           '(7 . 3)
-           '(6 . 2))
+                          '(3 . 5)
+                          '(8 . 4)
+                          '(7 . 3)
+                          '(6 . 2))
                  0 511 8))
 
 (define c_uimm9sphi
@@ -295,21 +295,21 @@
 (define c_uimm9sp_s
   (checked-field 'c_uimm9sp_s
                  (bit-map '(5 . 12)
-           '(4 . 11)
-           '(3 . 10)
-           '(8 . 9)
-           '(7 . 8)
-           '(6 . 7))
+                          '(4 . 11)
+                          '(3 . 10)
+                          '(8 . 9)
+                          '(7 . 8)
+                          '(6 . 7))
                  0 511 8))
 
 ;; 未在当前已批准扩展中使用，但 arg_lut 中存在
 (define c_uimm10splo
   (checked-field 'c_uimm10splo
                  (bit-map '(4 . 6)
-           '(9 . 5)
-           '(8 . 4)
-           '(7 . 3)
-           '(6 . 2))
+                          '(9 . 5)
+                          '(8 . 4)
+                          '(7 . 3)
+                          '(6 . 2))
                  0 1023 4))
 
 (define c_uimm10sphi
@@ -320,18 +320,18 @@
 (define c_uimm10sp_s
   (checked-field 'c_uimm10sp_s
                  (bit-map '(5 . 12)
-           '(4 . 11)
-           '(9 . 10)
-           '(8 . 9)
-           '(7 . 8)
-           '(6 . 7))
+                          '(4 . 11)
+                          '(9 . 10)
+                          '(8 . 9)
+                          '(7 . 8)
+                          '(6 . 7))
                  0 1023 4))
 
 ;; Zcb: uimm[1:0] / uimm[0]
 (define c_uimm2
   (checked-field 'c_uimm2
                  (bit-map '(1 . 6)
-           '(0 . 5))
+                          '(0 . 5))
                  0 3 1))
 
 (define c_uimm1

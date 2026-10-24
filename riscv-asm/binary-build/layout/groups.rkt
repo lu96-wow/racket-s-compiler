@@ -15,13 +15,8 @@
 ;; field lives: scalar, compressed, vector, mop.
 ;; ============================================================
 
-(require racket/list)
-
 (struct operand-group (name module raw-tokens)
   #:transparent)
-
-(define group-modules
-  '(scalar compressed vector mop))
 
 (define operand-groups
   (list
@@ -72,7 +67,6 @@
          operand-group-name
          operand-group-module
          operand-group-raw-tokens
-         group-modules
          operand-groups
          token->group
          groups-for-module

@@ -16,7 +16,6 @@
 ;; ============================================================
 
 (require racket/list
-         racket/path
          racket/string
          "model.rkt"
          "paths.rkt")

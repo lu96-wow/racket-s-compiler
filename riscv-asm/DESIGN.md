@@ -20,13 +20,17 @@ Non-goals:
 ## 2. Pipeline
 
 ```text
-riscv-opcodes/extensions/*
+source
+  binary-build/paths.rkt + binary-build/config.rkt
+  -> ordered source file list
         |
         v
+split
 binary-build/parse.rkt
   fixed-field / instruction-def / pseudo-def / import-def / extension-file
         |
         v
+merge
 binary-build/resolve.rkt
   candidate selection + origin + resolved-def + skipped-definition
         |
@@ -41,11 +45,20 @@ binary-build/emit/instruction.rkt         generated/gen/riscv/info/*.rkt
   raw/rebuilt modules
         |
         v
+output
 generated/gen/riscv/instruction/*/*.rkt
 ```
 
+`binary-build/emit/package.rkt` completes source discovery, parsing, and
+resolution before it cleans or writes the output package. A source error
+therefore leaves an existing `generated/` untouched.
+
 `binary-build/layout/groups.rkt` feeds both `plan.rkt` and `binary-build/emit/fields.rkt`.
-`binary-build/paths.rkt` is the only module that knows the output directory layout.
+
+Build-time output layout lives in `binary-build/paths.rkt`.
+Runtime layout lives in `binary-build/runtime/lib/layout.rkt`; it is copied to
+`generated/lib/layout.rkt` and is the only runtime module that knows the
+generated package structure.
 
 ---
 
@@ -209,6 +222,7 @@ generated/
   lib/                          copied runtime modules
     base.rkt
     bit.rkt
+    layout.rkt                  runtime package layout
     instruction_paths.rkt
     riscv/raw/*.rkt
     info/
@@ -253,11 +267,13 @@ removes only those two directories.
 | raw field bit layout | `binary-build/runtime/lib/riscv/raw/*.rkt` |
 | logical operand grouping | `binary-build/layout/groups.rkt` |
 | source syntax | `binary-build/parse.rkt` |
+| fixed-field bit access | `binary-build/fixed.rkt` |
 | import/pseudo policy | `binary-build/resolve.rkt` |
 | raw/rebuilt operand planning | `binary-build/layout/plan.rkt` |
 | instruction module codegen | `binary-build/emit/instruction.rkt` |
 | metadata schema/codegen | `binary-build/runtime/lib/info/struct.rkt`, `binary-build/emit/metadata.rkt` |
 | runtime signatures/query | `binary-build/runtime/lib/info/query.rkt` |
+| runtime layout | `binary-build/runtime/lib/layout.rkt` |
 | runtime lookup | `binary-build/runtime/lib/info/lookup.rkt` |
 | output layout | `binary-build/paths.rkt` |
 | CLI options | `binary-build/config.rkt` |

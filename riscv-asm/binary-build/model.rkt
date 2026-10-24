@@ -8,8 +8,6 @@
 ;; and its provenance.
 ;; ============================================================
 
-(require racket/list)
-
 ;; A fixed bit range [lo, hi] with a constant value.
 (struct fixed-field (lo hi value)
   #:transparent
@@ -67,7 +65,7 @@
 
 ;; Candidate before winner selection.
 (struct candidate
-  (definition kind origin pseudo standard-form?)
+  (definition kind origin standard-form?)
   #:transparent)
 
 ;; Final definition after winner selection.
@@ -119,7 +117,6 @@
          candidate-definition
          candidate-kind
          candidate-origin
-         candidate-pseudo
          candidate-standard-form?
 
          resolved-def

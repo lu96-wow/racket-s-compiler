@@ -52,6 +52,7 @@ riscv-asm/
     model.rkt                   解析数据结构、candidate、resolved-def
 
     parse.rkt                   源文件解析
+    fixed.rkt                   固定字段取位（resolve / width 共用）
     resolve.rkt                 $import / $pseudo_op / 同名合并
     parcel.rkt                  指令长度规则
     layout/
@@ -67,7 +68,8 @@ riscv-asm/
     runtime/lib/                原样复制到 generated/lib
       base.rkt
       bit.rkt
-      instruction_paths.rkt
+      layout.rkt                运行时生成包布局（唯一来源）
+      instruction_paths.rkt     指令路径 API
       riscv/raw/                手写 raw 字段布局
       info/
         struct.rkt              instruction-info / instruction-origin
@@ -104,11 +106,41 @@ output:  riscv-asm/generated
 1. 读取 `extensions/` 顶层 ratified 文件
 2. 解析 `$import` / `$pseudo_op`
 3. 按优先级选择同名定义
-4. 生成 rebuilt 字段模块
-5. 生成 raw / rebuilt 指令模块
-6. 生成 instruction metadata
-7. 复制运行时 `lib/`
+4. 复制运行时 `lib/`
+5. 生成 rebuilt 字段模块
+6. 生成 raw / rebuilt 指令模块
+7. 生成 instruction metadata
 8. 生成扩展清单和反向索引
+
+---
+
+## 构造流
+
+整个构建过程严格分成四段，前一段完成后才进入下一段：
+
+```text
+来源
+  binary-build/paths.rkt       源目录发现、扩展文件发现
+  binary-build/config.rkt      CLI 覆盖
+        |
+        v
+拆分处理
+  binary-build/parse.rkt       源文件 -> instruction-def / pseudo-def / import-def
+  binary-build/layout/groups   raw token -> 逻辑操作数分组
+  binary-build/layout/plan     instruction-def -> raw / rebuilt operand plan
+        |
+        v
+合并
+  binary-build/resolve.rkt     standard / import / pseudo 候选 -> resolved-def
+        |
+        v
+输出
+  binary-build/emit/*.rkt      raw / rebuilt / metadata / rebuilt fields
+  binary-build/paths.rkt       输出路径与 require 路径
+```
+
+`binary-build/emit/package.rkt` 会先完成全部解析和合并，再清理和写入输出；
+源文件有错误时不会留下半成品 `generated/`。
 
 当前统计：
 
@@ -265,14 +297,15 @@ ld:   not-a-standard-form
 | 想改什么 | 改哪里 |
 | --- | --- |
 | 新增 raw 位布局/字段 | `binary-build/runtime/lib/riscv/raw/*.rkt` |
-| 新增 raw 字段模块（新的 kind） | `binary-build/paths.rkt` 的 `field-module-names` |
+| 新增 raw 字段模块（新的 kind） | `binary-build/paths.rkt` 的 `field-module-files` |
 | 新增 rebuilt 逻辑分组 | `binary-build/layout/groups.rkt` |
 | 改源文件语法 | `binary-build/parse.rkt` |
 | 改 import/pseudo 优先级或冲突策略 | `binary-build/resolve.rkt` |
 | 改 raw/rebuilt 参数生成 | `binary-build/layout/plan.rkt`、`binary-build/emit/instruction.rkt` |
 | 改 metadata 字段 | `binary-build/runtime/lib/info/struct.rkt`、`binary-build/emit/metadata.rkt` |
 | 改查表/消歧规则 | `binary-build/runtime/lib/info/lookup.rkt`、`query.rkt` |
-| 改输出目录布局 | `binary-build/paths.rkt`、`binary-build/emit/package.rkt` |
+| 改构建输出目录布局 | `binary-build/paths.rkt`、`binary-build/emit/package.rkt` |
+| 改运行时生成包布局 | `binary-build/runtime/lib/layout.rkt` |
 | 改命令行选项 | `binary-build/config.rkt` |
 | 改构建阶段/清理策略 | `binary-build/emit/package.rkt` |
 

@@ -172,8 +172,7 @@
 ;;   operands : (listof procedure?) — 按源码顺序接收调用参数
 ;;   fixed    : (listof procedure?) — 常量字段，不接收参数
 ;;
-;; 固定字段显式分离，避免旧实现中“固定字段必须放在参数列表末尾”的
-;; 隐式约束。
+;; 固定字段显式分离，不依赖“固定字段必须放在参数列表末尾”的隐式约束。
 (define (make-instruction operands fixed)
   (check-fields 'make-instruction operands)
   (check-fields 'make-instruction fixed)

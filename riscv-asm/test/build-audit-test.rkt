@@ -9,7 +9,6 @@
 
 (require rackunit
          racket/list
-         racket/set
          racket/string
          "../binary-build/model.rkt"
          "../binary-build/parse.rkt"

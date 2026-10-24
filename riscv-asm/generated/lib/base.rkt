@@ -1,7 +1,7 @@
 #lang racket/base
 
 ;; ============================================================
-;; 新底层 base 宏
+;; 底层 base 宏表面
 ;;
 ;; 这是字段定义/指令定义的宏表面。具体位运算实现在 bit.rkt。
 ;; raw/rebuilt 层只依赖这里，不直接依赖实现模块。
@@ -18,8 +18,7 @@
          combine
          bit-map
          make-instruction
-         checked-field
-         define-field)
+         checked-field)
 
 ;; ------------------------------------------------------------
 ;; 字段原语
@@ -51,12 +50,3 @@
 ;; (checked-field name field min max [align])
 (define (checked-field name field min max [align 1])
   (impl:checked-field name field min max align))
-
-;; ------------------------------------------------------------
-;; 字段定义
-;; ------------------------------------------------------------
-
-;; (define-field name field ...)
-;; 等价于 (define name (combine field ...))
-(define-syntax-rule (define-field name field ...)
-  (define name (combine field ...)))

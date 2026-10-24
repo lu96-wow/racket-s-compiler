@@ -41,11 +41,11 @@
 (define (add-arg args arg)
   (if (member arg args) args (cons arg args)))
 
-(define (validate-alias-sources! plan)
+(define (validate-plan-expressions! plan)
   (for ([expr (in-list (operand-plan-exprs plan))])
     (unless (member expr (operand-plan-args plan))
-      (error 'validate-alias-sources!
-             "alias source '~a' is not one of the operands: ~a"
+      (error 'validate-plan-expressions!
+             "expression '~a' is not one of the operands: ~a"
              expr
              (operand-plan-args plan)))))
 
@@ -65,7 +65,7 @@
                  (cons token exprs))])))
   (define plan
     (operand-plan (reverse fields) (reverse args) (reverse exprs)))
-  (validate-alias-sources! plan)
+  (validate-plan-expressions! plan)
   plan)
 
 (define (rebuilt-operand-plan idef)
@@ -109,7 +109,7 @@
 
   (define plan
     (operand-plan (reverse fields) (reverse args) (reverse exprs)))
-  (validate-alias-sources! plan)
+  (validate-plan-expressions! plan)
   plan)
 
 (define (plan-bindings plan)

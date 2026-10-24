@@ -72,11 +72,9 @@
   (define root (build-options-output-dir opts))
   (define opcodes-dir (build-options-opcodes-dir opts))
 
-  (clean-output! root)
-  (copy-runtime-lib! root)
-  (make-output-dirs! root)
-  (gen-rebuilt-field-files! root)
-
+  ;; ----------------------------------------------------------
+  ;; source -> parse -> resolve
+  ;; ----------------------------------------------------------
   (define source-files
     (ratified-extension-source-files opcodes-dir))
   (define parsed-files
@@ -95,37 +93,50 @@
       (define ext (extension-stem (extension-file-path parsed)))
       (define-values (resolved-defs skipped-here)
         (prepare-extension-defs parsed ext-map))
-      (define idefs
-        (for/list ([resolved (in-list resolved-defs)])
-          (resolved-def-definition resolved)))
       (hash-set! ext->defs ext resolved-defs)
-
-      (define raw-path (raw-output-path root ext))
-      (define rebuilt-path (rebuilt-output-path root ext))
-      (define info-path (info-output-path root ext))
-
-      (write-file! raw-path
-                   (gen-raw-file-content idefs raw-path root))
-      (write-file! rebuilt-path
-                   (gen-rebuilt-file-content idefs rebuilt-path root))
-      (write-file! info-path
-                   (gen-info-file-content ext resolved-defs info-path root))
-
       (values (+ standard (length (extension-file-standard parsed)))
               (+ pseudo (length (extension-file-pseudo parsed)))
               (+ imports (length (extension-file-imports parsed)))
               (+ emitted (length resolved-defs))
               (append skipped-here skipped))))
 
-  (write-file! (extensions-output-path root)
-               (gen-extension-list-content ext->defs
-                                           (extensions-output-path root)
-                                           root))
-  (write-file! (instruction-extensions-output-path root)
-               (gen-extension-map-content ext->defs
-                                          (instruction-extensions-output-path root)
-                                          root))
+  ;; ----------------------------------------------------------
+  ;; output
+  ;;
+  ;; Nothing is written until every source file has parsed and resolved.
+  ;; This keeps the output directory untouched on source errors.
+  ;; ----------------------------------------------------------
+  (clean-output! root)
+  (copy-runtime-lib! root)
+  (make-output-dirs! root)
+  (gen-rebuilt-field-files! root)
 
+  (for ([parsed (in-list parsed-files)])
+    (define ext (extension-stem (extension-file-path parsed)))
+    (define resolved-defs (hash-ref ext->defs ext))
+    (define idefs
+      (for/list ([resolved (in-list resolved-defs)])
+        (resolved-def-definition resolved)))
+
+    (define raw-path (raw-output-path root ext))
+    (define rebuilt-path (rebuilt-output-path root ext))
+    (define info-path (info-output-path root ext))
+
+    (write-file! raw-path
+                 (gen-raw-file-content idefs raw-path root))
+    (write-file! rebuilt-path
+                 (gen-rebuilt-file-content idefs rebuilt-path root))
+    (write-file! info-path
+                 (gen-info-file-content ext resolved-defs info-path root)))
+
+  (write-file! (extensions-output-path root)
+               (gen-extension-list-content ext->defs))
+  (write-file! (instruction-extensions-output-path root)
+               (gen-extension-map-content ext->defs))
+
+  ;; ----------------------------------------------------------
+  ;; summary
+  ;; ----------------------------------------------------------
   (define skipped-unique
     (sort (remove-duplicates skipped
                              (lambda (a b)

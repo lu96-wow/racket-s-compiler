@@ -2,7 +2,6 @@
 
 (require rackunit
          racket/list
-         racket/set
          racket/string
          "../generated/lib/info/struct.rkt"
          "../generated/lib/info/query.rkt"

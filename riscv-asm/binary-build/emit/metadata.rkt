@@ -10,23 +10,16 @@
 (require racket/list
          racket/string
          "../model.rkt"
+         "../fixed.rkt"
          "../layout/plan.rkt"
          "../parcel.rkt"
          "../paths.rkt"
          "render.rkt")
 
-(define (fixed-bit-value fixed-fields bit)
-  (for/first ([ff (in-list fixed-fields)]
-              #:when (<= (fixed-field-lo ff) bit (fixed-field-hi ff)))
-    (bitwise-and
-     (arithmetic-shift (fixed-field-value ff)
-                       (- (- bit (fixed-field-lo ff))))
-     1)))
-
 (define (instruction-width idef)
   (parcel-length
    (lambda (bit)
-     (fixed-bit-value (instruction-def-fixed-fields idef) bit))
+     (fixed-fields-bit-value (instruction-def-fixed-fields idef) bit))
    (instruction-def-name idef)))
 
 (define (asm-format name operands)
@@ -99,7 +92,7 @@
 (define (sorted-extensions ext->defs)
   (sort (hash-keys ext->defs) string<?))
 
-(define (gen-extension-list-content ext->defs output-path root)
+(define (gen-extension-list-content ext->defs)
   (define extensions (sorted-extensions ext->defs))
   (render-module
    '()
@@ -107,7 +100,7 @@
                  (map string->symbol extensions)))
    (list "extensions")))
 
-(define (gen-extension-map-content ext->defs output-path root)
+(define (gen-extension-map-content ext->defs)
   (define name->exts (make-hash))
   (for ([ext (in-list (sorted-extensions ext->defs))])
     (for ([resolved (in-list (hash-ref ext->defs ext))])
