@@ -1,0 +1,28 @@
+(asm
+  ;; spill / local / arg / captured 共用同一张 frame 表。
+  (frame
+    (base fp)
+    (link fp)
+    (slots
+      (slot0 (kind arg))
+      (slot1 (kind local))
+      (slot2 (kind spill))))
+
+  (label main)
+
+  ;; 把 41 放进环境槽 slot1，再投影出来。
+  (addi v0 x0 41)
+  (env-set (heap 0 1) v0)
+  (env-ref v1 (heap 0 1))
+
+  ;; 非尾调用：捕获续延 K0，返回点由 (code Lafter) 指定。
+  (cont K0 (code Lafter) (env fp))
+  (call f (args v1) (cont K0))
+
+  (label Lafter)
+  (return (a0))
+
+  ;; 一个不分配 frame 的简单 callee；真实函数应有自己的 prologue。
+  (label f)
+  (addi a0 a0 1)
+  (jalr x0 ra 0))

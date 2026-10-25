@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F-asm / call/cc 可视化</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2430;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --orange: #d29922;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(13,17,23,.96);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  h1 { font-size: 16px; margin: 0 14px 0 0; font-weight: 600; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .scenarios, .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    background: #21262d;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #30363d; }
+  button.active { border-color: var(--green); color: var(--green); }
+  button.primary { border-color: var(--blue); color: var(--blue); }
+  input[type=range] { width: 100px; accent-color: var(--blue); }
+  #counter { color: var(--muted); font-size: 12px; min-width: 64px; text-align: right; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(420px, 1.2fr);
+    gap: 14px;
+    padding: 14px 18px 120px;
+    align-items: start;
+  }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-weight: 500;
+    letter-spacing: .04em;
+  }
+  #code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    overflow: auto;
+    max-height: calc(100vh - 190px);
+  }
+  .code-line {
+    display: flex;
+    border-left: 3px solid transparent;
+    padding: 1px 6px;
+    white-space: pre;
+    border-radius: 3px;
+  }
+  .code-line .line-no {
+    width: 2.6em;
+    color: #6e7681;
+    user-select: none;
+    flex: none;
+  }
+  .code-line .code-text { white-space: pre; }
+  .code-line.label-line .code-text { color: var(--purple); }
+  .code-line.active {
+    background: rgba(63,185,80,.14);
+    border-left-color: var(--green);
+  }
+  .code-line.active .code-text { color: #d2ffd8; }
+  .code-line.next {
+    background: rgba(88,166,255,.10);
+    border-left-color: var(--blue);
+  }
+  .code-line.next .code-text { color: #cfe6ff; }
+  .code-line .next-badge {
+    margin-left: 8px;
+    color: var(--blue);
+    font-size: 10px;
+    border: 1px solid var(--blue);
+    border-radius: 4px;
+    padding: 0 4px;
+    user-select: none;
+  }
+  .code-line.flash { animation: flashCode .55s ease-out; }
+  @keyframes flashCode {
+    0% { background: rgba(88,166,255,.42); }
+    100% { background: rgba(63,185,80,.14); }
+  }
+  .state-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 11px;
+    min-width: 0;
+  }
+  .card.flash { animation: flashCard .65s ease-out; }
+  @keyframes flashCard {
+    0% { box-shadow: 0 0 0 2px rgba(88,166,255,.9) inset; }
+    100% { box-shadow: 0 0 0 0 transparent inset; }
+  }
+  .card-title {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 4px;
+  }
+  .big {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 20px;
+    font-weight: 600;
+  }
+  .muted { color: var(--muted); font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .vec {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+  .chip {
+    display: inline-block;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .chip.cont { border-color: var(--purple); color: #e2ccff; }
+  .chip.closure { border-color: var(--blue); color: #cfe6ff; }
+  .chip.halt { border-color: var(--muted); color: var(--muted); }
+  .k-chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .knode {
+    background: #0d1117;
+    border: 1px solid var(--purple);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .knode.head { box-shadow: 0 0 0 2px rgba(63,185,80,.55); border-color: var(--green); }
+  .knode .kid { color: var(--purple); font-weight: 700; }
+  .knode .kfield { color: var(--muted); }
+  .knode .kfield b { color: var(--text); font-weight: 500; }
+  .arrow { color: var(--muted); font-size: 16px; }
+  .frames { display: flex; flex-wrap: wrap; gap: 10px; }
+  .frame {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    min-width: 150px;
+  }
+  .frame.current {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green) inset;
+  }
+  .frame.garbage { opacity: .32; filter: grayscale(1); }
+  .frame.flash { animation: flashFrame .7s ease-out; }
+  @keyframes flashFrame {
+    0% { box-shadow: 0 0 0 3px rgba(63,185,80,.9) inset; }
+    100% { box-shadow: 0 0 0 1px var(--green) inset; }
+  }
+  .frame-title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+  .frame-title .fp-badge {
+    font-size: 10px;
+    color: var(--green);
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    padding: 0 4px;
+    margin-left: 5px;
+  }
+  .frame-link { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+  .slot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 1px 0;
+  }
+  .slot-name { color: var(--muted); }
+  .slot-value { color: #d2ffd8; }
+  .regs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .reg {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 7px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .reg .rname { color: var(--muted); }
+  .reg .rval { color: var(--text); }
+  footer {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: rgba(13,17,23,.97);
+    border-top: 1px solid var(--border);
+    padding: 10px 18px;
+    backdrop-filter: blur(8px);
+  }
+  #note {
+    max-width: 1200px;
+    margin: 0 auto;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  #note b { color: var(--green); }
+  #note .tag {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-right: 7px;
+    color: var(--muted);
+    vertical-align: 1px;
+  }
+  .legend { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .legend span { margin-right: 10px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>F-asm 执行可视化 <span>value vector + heap frame + continuation chain</span></h1>
+  <div class="scenarios">
+    <button data-scenario="direct">(+ 1 41)</button>
+    <button data-scenario="callcc">(+ 1 (call/cc ...))</button>
+    <button data-scenario="nontail">(+ 2 (f 20))</button>
+  </div>
+  <div class="controls">
+    <button id="prev">◀ Prev</button>
+    <button id="next" class="primary">Next ▶</button>
+    <button id="play">▶ Play</button>
+    <button id="reset">Reset</button>
+    <label class="muted">speed <input id="speed" type="range" min="200" max="1800" value="850"></label>
+    <span id="counter"></span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>F-ASM</h2>
+    <div id="code"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--green)"></span>当前执行</span>
+      <span><span class="dot" style="background:var(--purple)"></span>label / continuation</span>
+      <span><span class="dot" style="background:var(--blue)"></span>closure / value vector</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>MACHINE STATE</h2>
+    <div class="state-grid">
+      <div class="card" id="pc-card">
+        <div class="card-title">pc</div>
+        <div class="big" id="pc-value">0</div>
+        <div class="muted mono" id="pc-insn"></div>
+      </div>
+      <div class="card" id="fp-card">
+        <div class="card-title">fp · current environment</div>
+        <div class="big" id="fp-value">global</div>
+        <div class="muted" id="fp-link"></div>
+      </div>
+      <div class="card" id="argv-card">
+        <div class="card-title">incoming value vector · argv</div>
+        <div class="vec" id="argv-value"></div>
+        <div class="muted" id="argv-note">arg-ref 从这里读</div>
+      </div>
+      <div class="card" id="result-card">
+        <div class="card-title">status</div>
+        <div class="big" id="status-value">running</div>
+        <div class="muted" id="result-value"></div>
+      </div>
+    </div>
+
+    <div class="card" id="k-card" style="margin-top:10px">
+      <div class="card-title">continuation chain · k</div>
+      <div class="k-chain" id="k-chain"></div>
+      <div class="muted" style="margin-top:6px">call 压节点，return 弹节点，tailcall 不压，call/cc 把链头当值</div>
+    </div>
+
+    <div class="panel" style="margin-top:10px; background:transparent; border:none; padding:0">
+      <h2>FRAMES · lexical environments</h2>
+      <div class="frames" id="frames"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--green)"></span>当前 fp</span>
+        <span><span class="dot" style="background:#444"></span>不可达 / 垃圾</span>
+        <span>link = 词法父环境</span>
+      </div>
+    </div>
+
+    <div class="card" id="regs-card" style="margin-top:10px">
+      <div class="card-title">registers · v0, v1, ... (k 单独显示)</div>
+      <div class="regs" id="regs"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div id="note"></div>
+</footer>
+
+<script>
+/* ============================================================
+   1. 程序定义
+   ============================================================ */
+
+function buildProgram(lines) {
+  const labels = {};
+  const instructions = [];
+  let pc = 0;
+  lines.forEach((line, i) => {
+    line.lineIndex = i;
+    if (line.label) {
+      labels[line.label] = pc;
+    } else {
+      line.insn.lineIndex = i;
+      instructions.push(line.insn);
+      pc++;
+    }
+  });
+  return { lines, labels, instructions };
+}
+
+const direct = buildProgram([
+  { label: 'main' },
+  { text: '(alloc-frame 0)', insn: { op: 'alloc-frame', n: 0, name: 'main', slots: [] } },
+  { text: '(const v0 1)', insn: { op: 'const', dst: 'v0', value: 1 } },
+  { text: '(const v1 41)', insn: { op: 'const', dst: 'v1', value: 41 } },
+  { text: '(prim add v2 v0 v1)', insn: { op: 'prim', name: 'add', dst: 'v2', args: ['v0', 'v1'] } },
+  { text: '(pack vals v2)', insn: { op: 'pack', dst: 'vals', regs: ['v2'] } },
+  { text: '(return vals)', insn: { op: 'return', values: 'vals' } }
+]);
+
+const callcc = buildProgram([
+  { label: 'main' },
+  { text: '(alloc-frame 2)', insn: { op: 'alloc-frame', n: 2, name: 'main', slots: ['one', 'f'] } },
+  { text: '(const v0 1)', insn: { op: 'const', dst: 'v0', value: 1 } },
+  { text: '(closure v2 L0 1)', insn: { op: 'closure', dst: 'v2', code: 'L0', arity: 1 } },
+  { text: '(env-set (env 0 0) v0)', insn: { op: 'env-set', depth: 0, index: 0, src: 'v0' } },
+  { text: '(env-set (env 0 1) v2)', insn: { op: 'env-set', depth: 0, index: 1, src: 'v2' } },
+  { text: '(cont k L1)', insn: { op: 'cont', dst: 'k', code: 'L1' } },
+  { text: '(prim call/cc v2)', insn: { op: 'prim', name: 'call/cc', args: ['v2'] } },
+  { label: 'L1' },
+  { text: '(env-ref v0 (env 0 0))', insn: { op: 'env-ref', dst: 'v0', depth: 0, index: 0 } },
+  { text: '(env-ref v2 (env 0 1))', insn: { op: 'env-ref', dst: 'v2', depth: 0, index: 1 } },
+  { text: '(arg-ref v1 0)', insn: { op: 'arg-ref', dst: 'v1', index: 0 } },
+  { text: '(prim add v7 v0 v1)', insn: { op: 'prim', name: 'add', dst: 'v7', args: ['v0', 'v1'] } },
+  { text: '(pack vals v7)', insn: { op: 'pack', dst: 'vals', regs: ['v7'] } },
+  { text: '(return vals)', insn: { op: 'return', values: 'vals' } },
+  { label: 'L0' },
+  { text: '(alloc-frame 1)', insn: { op: 'alloc-frame', n: 1, name: 'L0', slots: ['k'] } },
+  { text: '(arg-ref v3 0)', insn: { op: 'arg-ref', dst: 'v3', index: 0 } },
+  { text: '(env-set (env 0 0) v3)', insn: { op: 'env-set', depth: 0, index: 0, src: 'v3' } },
+  { text: '(env-ref v4 (env 0 0))', insn: { op: 'env-ref', dst: 'v4', depth: 0, index: 0 } },
+  { text: '(const v5 41)', insn: { op: 'const', dst: 'v5', value: 41 } },
+  { text: '(pack v6 v5)', insn: { op: 'pack', dst: 'v6', regs: ['v5'] } },
+  { text: '(tailcall v4 v6)', insn: { op: 'tailcall', target: 'v4', argv: 'v6' } }
+]);
+
+const nontail = buildProgram([
+  { label: 'main' },
+  { text: '(alloc-frame 2)', insn: { op: 'alloc-frame', n: 2, name: 'main', slots: ['x', 'f'] } },
+  { text: '(const v0 10)', insn: { op: 'const', dst: 'v0', value: 10 } },
+  { text: '(env-set (env 0 0) v0)', insn: { op: 'env-set', depth: 0, index: 0, src: 'v0' } },
+  { text: '(closure v1 f 1)', insn: { op: 'closure', dst: 'v1', code: 'f', arity: 1 } },
+  { text: '(env-set (env 0 1) v1)', insn: { op: 'env-set', depth: 0, index: 1, src: 'v1' } },
+  { text: '(const v2 20)', insn: { op: 'const', dst: 'v2', value: 20 } },
+  { text: '(const v3 2)', insn: { op: 'const', dst: 'v3', value: 2 } },
+  { text: '(pack argv v2)', insn: { op: 'pack', dst: 'argv', regs: ['v2'] } },
+  { text: '(cont k L1)', insn: { op: 'cont', dst: 'k', code: 'L1' } },
+  { text: '(call v1 argv (cont k))', insn: { op: 'call', target: 'v1', argv: 'argv', cont: 'k' } },
+  { label: 'L1' },
+  { text: '(arg-ref v4 0)', insn: { op: 'arg-ref', dst: 'v4', index: 0 } },
+  { text: '(prim add v5 v3 v4)', insn: { op: 'prim', name: 'add', dst: 'v5', args: ['v3', 'v4'] } },
+  { text: '(pack vals v5)', insn: { op: 'pack', dst: 'vals', regs: ['v5'] } },
+  { text: '(return vals)', insn: { op: 'return', values: 'vals' } },
+  { label: 'f' },
+  { text: '(alloc-frame 1)', insn: { op: 'alloc-frame', n: 1, name: 'f', slots: ['y'] } },
+  { text: '(arg-ref v6 0)', insn: { op: 'arg-ref', dst: 'v6', index: 0 } },
+  { text: '(env-set (env 0 0) v6)', insn: { op: 'env-set', depth: 0, index: 0, src: 'v6' } },
+  { text: '(env-ref v7 (env 0 0))', insn: { op: 'env-ref', dst: 'v7', depth: 0, index: 0 } },
+  { text: '(env-ref v8 (env 1 0))', insn: { op: 'env-ref', dst: 'v8', depth: 1, index: 0 } },
+  { text: '(prim add v9 v7 v8)', insn: { op: 'prim', name: 'add', dst: 'v9', args: ['v7', 'v8'] } },
+  { text: '(pack vals v9)', insn: { op: 'pack', dst: 'vals', regs: ['v9'] } },
+  { text: '(return vals)', insn: { op: 'return', values: 'vals' } }
+]);
+
+const scenarios = { direct, callcc, nontail };
+
+/* ============================================================
+   2. 小解释器
+   ============================================================ */
+
+function show(v) {
+  if (v === undefined) return '?';
+  if (v === 'HALT') return 'HALT';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) return '#(' + v.map(show).join(', ') + ')';
+  if (v.kind === 'closure') return 'closure ' + v.code;
+  if (v.kind === 'continuation') return v.id;
+  return String(v);
+}
+
+function showVec(v) {
+  return '#(' + v.map(show).join(', ') + ')';
+}
+
+function cloneK(k) {
+  if (k === 'HALT') return 'HALT';
+  return { kind: 'continuation', id: k.id, code: k.code, env: k.env, next: cloneK(k.next) };
+}
+
+function initialState() {
+  return {
+    pc: 0,
+    fp: 'global',
+    regs: { k: 'HALT' },
+    argv: [],
+    frames: {
+      global: { id: 'global', link: null, slots: [], names: [] }
+    },
+    halted: false,
+    result: undefined,
+    contSeq: 0,
+    frameSeq: 0
+  };
+}
+
+function walkFrame(state, depth) {
+  let f = state.fp;
+  for (let i = 0; i < depth; i++) {
+    const frame = state.frames[f];
+    if (!frame || !frame.link) throw new Error('frame depth out of range');
+    f = frame.link;
+  }
+  return f;
+}
+
+function applyProc(state, program, target, args, kval) {
+  if (target && target.kind === 'closure') {
+    if (args.length !== target.arity) {
+      throw new Error('arity mismatch: expected ' + target.arity + ', got ' + args.length);
+    }
+    state.argv = args.slice();
+    state.regs.k = kval;
+    state.fp = target.env;
+    state.pc = program.labels[target.code];
+    return `调用 closure <b>${target.code}</b>：fp = <b>${target.env}</b>，k = <b>${show(kval)}</b>，argv = <b>${showVec(args)}</b>。`;
+  }
+  if (target && target.kind === 'continuation') {
+    state.argv = args.slice();
+    state.fp = target.env;
+    state.pc = program.labels[target.code];
+    state.regs.k = target.next;
+    return `调用续延 <b>${target.id}</b>：fp = <b>${target.env}</b>，pc = <b>${target.code}</b>，k = <b>${show(target.next)}</b>，argv = <b>${showVec(args)}</b>。当前代码被直接替换，不经过普通 return。`;
+  }
+  throw new Error('not a procedure: ' + show(target));
+}
+
+function execute(state, program, insn) {
+  switch (insn.op) {
+    case 'alloc-frame': {
+      const id = insn.name || `F${++state.frameSeq}`;
+      const names = insn.slots && insn.slots.length
+        ? insn.slots.slice()
+        : Array.from({ length: insn.n }, (_, i) => `slot${i}`);
+      const slots = Array.from({ length: insn.n }, () => 'nil');
+      state.frames[id] = { id, link: state.fp, slots, names };
+      state.fp = id;
+      state.pc++;
+      return `分配 frame <b>${id}</b>：link = <b>${state.frames[id].link}</b>，slots = ${insn.n} 个；fp 现在指向 <b>${id}</b>。`;
+    }
+
+    case 'const': {
+      state.regs[insn.dst] = insn.value;
+      state.pc++;
+      return `<b>${insn.dst} = ${show(insn.value)}</b>。`;
+    }
+
+    case 'closure': {
+      state.regs[insn.dst] = {
+        kind: 'closure', code: insn.code, env: state.fp, arity: insn.arity
+      };
+      state.pc++;
+      return `<b>${insn.dst}</b> = closure <b>${insn.code}</b>，捕获当前环境 env = <b>${state.fp}</b>，arity = ${insn.arity}。`;
+    }
+
+    case 'cont': {
+      const cont = {
+        kind: 'continuation',
+        id: `C${++state.contSeq}`,
+        code: insn.code,
+        env: state.fp,
+        next: state.regs.k
+      };
+      state.regs[insn.dst] = cont;
+      state.pc++;
+      return `压入续延节点 <b>${cont.id}</b>{ code = <b>${cont.code}</b>, env = <b>${cont.env}</b>, next = <b>${show(cont.next)}</b> }，写入 <b>${insn.dst}</b>。`;
+    }
+
+    case 'env-ref': {
+      const f = walkFrame(state, insn.depth);
+      const value = state.frames[f].slots[insn.index];
+      state.regs[insn.dst] = value;
+      state.pc++;
+      return `从 <b>${f}</b> 的第 ${insn.index} 个 slot 读到 <b>${show(value)}</b>，写入 <b>${insn.dst}</b>。depth = ${insn.depth}，所以沿 link 走了 ${insn.depth} 层。`;
+    }
+
+    case 'env-set': {
+      const f = walkFrame(state, insn.depth);
+      const value = state.regs[insn.src];
+      state.frames[f].slots[insn.index] = value;
+      state.pc++;
+      return `<b>${f}</b>.slot${insn.index} = <b>${show(value)}</b>（来自 ${insn.src}）。`;
+    }
+
+    case 'arg-ref': {
+      if (insn.index >= state.argv.length) throw new Error('arg-ref out of range');
+      const value = state.argv[insn.index];
+      state.regs[insn.dst] = value;
+      state.pc++;
+      return `从 incoming value vector 读第 ${insn.index} 个：<b>${insn.dst} = ${show(value)}</b>。`;
+    }
+
+    case 'pack': {
+      const values = insn.regs.map(r => state.regs[r]);
+      state.regs[insn.dst] = values;
+      state.pc++;
+      return `<b>${insn.dst}</b> = ${showVec(values)}。`;
+    }
+
+    case 'call': {
+      const target = state.regs[insn.target];
+      const args = state.regs[insn.argv];
+      const kval = state.regs[insn.cont];
+      const note = applyProc(state, program, target, args, kval);
+      return note;
+    }
+
+    case 'tailcall': {
+      const target = state.regs[insn.target];
+      const args = state.regs[insn.argv];
+      const note = applyProc(state, program, target, args, state.regs.k);
+      if (target && target.kind === 'continuation') {
+        return note + ' 这不是普通尾调用：调用续延会忽略当前 k，使用续延自己的 next。';
+      }
+      return note + ' 这是尾调用：<b>k 保持不变</b>，不压新节点。';
+    }
+
+    case 'return': {
+      const values = state.regs[insn.values];
+      const k = state.regs.k;
+      if (k === 'HALT') {
+        state.argv = values.slice();
+        state.halted = true;
+        state.result = values[0];
+        return `当前 k = <b>HALT</b>：停机，结果 = <b>${show(values[0])}</b>。`;
+      }
+      state.argv = values.slice();
+      state.fp = k.env;
+      state.pc = program.labels[k.code];
+      state.regs.k = k.next;
+      return `return ${showVec(values)}：弹出 <b>${k.id}</b>，fp = <b>${k.env}</b>，pc = <b>${k.code}</b>，k = <b>${show(k.next)}</b>，argv = <b>${showVec(values)}</b>。`;
+    }
+
+    case 'prim': {
+      if (insn.name === 'call/cc') {
+        const f = state.regs[insn.args[0]];
+        const k0 = state.regs.k;
+        state.argv = [k0];
+        state.fp = f.env;
+        state.pc = program.labels[f.code];
+        // k 不变，仍是 k0
+        return `call/cc：<b>k0 = ${show(k0)}</b>；argv = <b>${showVec([k0])}</b>；进入 <b>${f.code}</b>（fp = ${f.env}）；<b>k 本身不变</b>。`;
+      }
+      if (insn.name === 'add') {
+        const a = state.regs[insn.args[0]];
+        const b = state.regs[insn.args[1]];
+        state.regs[insn.dst] = a + b;
+        state.pc++;
+        return `<b>${insn.dst} = ${show(a)} + ${show(b)} = ${show(a + b)}</b>。`;
+      }
+      if (insn.name === 'sub') {
+        const a = state.regs[insn.args[0]];
+        const b = state.regs[insn.args[1]];
+        state.regs[insn.dst] = a - b;
+        state.pc++;
+        return `<b>${insn.dst} = ${show(a)} - ${show(b)} = ${show(a - b)}</b>。`;
+      }
+      throw new Error('unknown prim: ' + insn.name);
+    }
+
+    default:
+      throw new Error('unknown instruction: ' + insn.op);
+  }
+}
+
+function snapshot(state, note, program, lineIndex) {
+  return {
+    pc: state.pc,
+    fp: state.fp,
+    k: cloneK(state.regs.k),
+    argv: state.argv.slice(),
+    regs: { ...state.regs },
+    frames: Object.fromEntries(Object.entries(state.frames).map(([id, f]) => [id, {
+      id: f.id,
+      link: f.link,
+      slots: f.slots.slice(),
+      names: f.names.slice()
+    }])),
+    halted: state.halted,
+    result: state.result,
+    note,
+    lineIndex
+  };
+}
+
+function runProgram(program) {
+  const state = initialState();
+  const snaps = [];
+  const firstLine = program.instructions[0].lineIndex;
+  snaps.push(snapshot(state, '初始状态：pc 指向 main，fp 指向 global，k = HALT，argv = #()。点 Next 开始。', program, firstLine));
+  let steps = 0;
+  while (!state.halted && steps < 200) {
+    const insn = program.instructions[state.pc];
+    if (!insn) break;
+    const lineIndex = insn.lineIndex;
+    const note = execute(state, program, insn);
+    snaps.push(snapshot(state, note, program, lineIndex));
+    steps++;
+  }
+  return snaps;
+}
+
+/* ============================================================
+   3. 渲染
+   ============================================================ */
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+function reachableFrames(snap) {
+  const reachable = new Set();
+  function addFrame(id) {
+    while (id && !reachable.has(id)) {
+      reachable.add(id);
+      id = snap.frames[id] ? snap.frames[id].link : null;
+    }
+  }
+  addFrame(snap.fp);
+  (function addK(k) {
+    if (k === 'HALT') return;
+    addFrame(k.env);
+    addK(k.next);
+  })(snap.k);
+  return reachable;
+}
+
+function renderK(k, head) {
+  if (k === 'HALT') {
+    return '<span class="chip halt">HALT</span>';
+  }
+  const node = `
+    <div class="knode ${head ? 'head' : ''}">
+      <div class="kid">${k.id}</div>
+      <div class="kfield">code: <b>${k.code}</b></div>
+      <div class="kfield">env: <b>${k.env}</b></div>
+      <div class="kfield">next: <b>${k.next === 'HALT' ? 'HALT' : k.next.id}</b></div>
+    </div>`;
+  return node + '<span class="arrow">→</span>' + renderK(k.next, false);
+}
+
+function render(snap, program, prev, index, total) {
+  // code
+  const codeEl = document.getElementById('code');
+  codeEl.innerHTML = '';
+  const nextInsn = program.instructions[snap.pc];
+  const nextLineIndex = nextInsn ? nextInsn.lineIndex : -1;
+  program.lines.forEach((line, i) => {
+    const div = document.createElement('div');
+    div.className = 'code-line' + (line.label ? ' label-line' : '');
+    if (i === snap.lineIndex) {
+      div.classList.add('active');
+      if (!prev || prev.lineIndex !== snap.lineIndex) div.classList.add('flash');
+    } else if (i === nextLineIndex) {
+      div.classList.add('next');
+    }
+    const text = line.label ? `(label ${line.label})` : line.text;
+    const badge = (i === nextLineIndex && i !== snap.lineIndex) ? '<span class="next-badge">pc ▶</span>' : '';
+    div.innerHTML = `<span class="line-no">${String(i).padStart(2, '0')}</span><span class="code-text">${escapeHtml(text)}${badge}</span>`;
+    codeEl.appendChild(div);
+  });
+
+  // pc / fp / argv / status
+  document.getElementById('pc-value').textContent = snap.pc;
+  const pcInsn = program.instructions[snap.pc];
+  const pcText = pcInsn ? program.lines[pcInsn.lineIndex].text : (snap.halted ? 'halted' : '');
+  document.getElementById('pc-insn').textContent = pcText || '';
+  document.getElementById('fp-value').textContent = snap.fp;
+  const fpFrame = snap.frames[snap.fp];
+  document.getElementById('fp-link').textContent = fpFrame ? `link → ${fpFrame.link || '—'}` : '';
+
+  const argvEl = document.getElementById('argv-value');
+  argvEl.innerHTML = snap.argv.length
+    ? snap.argv.map(v => `<span class="chip">${escapeHtml(show(v))}</span>`).join('')
+    : '<span class="muted">#()</span>';
+  document.getElementById('argv-card').classList.toggle('flash',
+    !!prev && JSON.stringify(prev.argv) !== JSON.stringify(snap.argv));
+
+  document.getElementById('status-value').textContent = snap.halted ? 'halted' : 'running';
+  document.getElementById('result-value').textContent = snap.halted ? `result = ${show(snap.result)}` : '';
+
+  // k chain
+  const kEl = document.getElementById('k-chain');
+  kEl.innerHTML = renderK(snap.k, true);
+  document.getElementById('k-card').classList.toggle('flash',
+    !!prev && JSON.stringify(prev.k) !== JSON.stringify(snap.k));
+
+  // frames
+  const reachable = reachableFrames(snap);
+  const framesEl = document.getElementById('frames');
+  framesEl.innerHTML = '';
+  for (const frame of Object.values(snap.frames)) {
+    const div = document.createElement('div');
+    div.className = 'frame';
+    if (frame.id === snap.fp) div.classList.add('current');
+    if (!reachable.has(frame.id)) div.classList.add('garbage');
+    if (prev && prev.fp !== snap.fp && frame.id === snap.fp) div.classList.add('flash');
+    const slots = frame.slots.map((v, i) => `
+      <div class="slot">
+        <span class="slot-name">${escapeHtml(frame.names[i] || ('slot' + i))}</span>
+        <span class="slot-value">${escapeHtml(show(v))}</span>
+      </div>`).join('');
+    div.innerHTML = `
+      <div class="frame-title">${frame.id}${frame.id === snap.fp ? '<span class="fp-badge">fp</span>' : ''}</div>
+      <div class="frame-link">link → ${frame.link || '—'}</div>
+      ${slots || '<div class="muted">(no slots)</div>'}
+    `;
+    framesEl.appendChild(div);
+  }
+
+  // registers
+  const regsEl = document.getElementById('regs');
+  const entries = Object.entries(snap.regs)
+    .filter(([name]) => name !== 'k')
+    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+  regsEl.innerHTML = entries.length
+    ? entries.map(([name, value]) => `
+        <div class="reg"><span class="rname">${escapeHtml(name)}</span> = <span class="rval">${escapeHtml(show(value))}</span></div>
+      `).join('')
+    : '<span class="muted">(empty)</span>';
+
+  // note
+  document.getElementById('note').innerHTML = `<span class="tag">step ${index}</span>${snap.note}`;
+  document.getElementById('counter').textContent = `${index + 1} / ${total}`;
+}
+
+/* ============================================================
+   4. 控制
+   ============================================================ */
+
+let currentName = 'direct';
+let program = scenarios[currentName];
+let snaps = runProgram(program);
+let index = 0;
+let playing = false;
+let timer = null;
+let speed = 850;
+
+function currentSpeed() {
+  return Number(document.getElementById('speed').value);
+}
+
+function stopPlay() {
+  playing = false;
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
+  document.getElementById('play').textContent = '▶ Play';
+}
+
+function startPlay() {
+  if (playing) return;
+  playing = true;
+  document.getElementById('play').textContent = '⏸ Pause';
+  timer = setInterval(() => {
+    if (index >= snaps.length - 1) {
+      stopPlay();
+      return;
+    }
+    index++;
+    renderAll();
+  }, currentSpeed());
+}
+
+function renderAll() {
+  const snap = snaps[index];
+  const prev = index > 0 ? snaps[index - 1] : null;
+  render(snap, program, prev, index, snaps.length);
+}
+
+function setScenario(name) {
+  stopPlay();
+  currentName = name;
+  program = scenarios[name];
+  snaps = runProgram(program);
+  index = 0;
+  document.querySelectorAll('[data-scenario]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.scenario === name);
+  });
+  renderAll();
+}
+
+document.getElementById('next').addEventListener('click', () => {
+  if (index < snaps.length - 1) {
+    index++;
+    renderAll();
+  }
+});
+
+document.getElementById('prev').addEventListener('click', () => {
+  if (index > 0) {
+    index--;
+    renderAll();
+  }
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  stopPlay();
+  index = 0;
+  renderAll();
+});
+
+document.getElementById('play').addEventListener('click', () => {
+  if (playing) stopPlay(); else startPlay();
+});
+
+document.getElementById('speed').addEventListener('input', () => {
+  if (playing) {
+    stopPlay();
+    startPlay();
+  }
+});
+
+document.querySelectorAll('[data-scenario]').forEach(btn => {
+  btn.addEventListener('click', () => setScenario(btn.dataset.scenario));
+});
+
+// 支持 ?scenario=callcc&step=7，方便分享某一步
+const params = new URLSearchParams(location.search);
+const initialScenario = params.get('scenario');
+const initialStep = params.get('step');
+setScenario(initialScenario && scenarios[initialScenario] ? initialScenario : 'callcc');
+if (initialStep !== null && initialStep !== undefined && initialStep !== '') {
+  const n = Number(initialStep);
+  if (!Number.isNaN(n)) {
+    index = Math.max(0, Math.min(n, snaps.length - 1));
+    renderAll();
+  }
+}
+</script>
+</body>
+</html>

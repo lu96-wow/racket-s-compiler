@@ -1,0 +1,20 @@
+(asm
+  (struct point
+    (field x b8)
+    (field y b64))
+  (frame
+    (base fp)
+    (link fp)
+    (slots
+      (slot0 (kind local) (repr bool))
+      (slot1 (kind local) (repr nil))
+      (slot2 (kind local) (repr (ptr (struct point))))))
+  (label main)
+  (const v0 #f)
+  (const v1 'nil)
+  (env-set (heap 0 0) v0)
+  (env-set (heap 0 1) v1)
+  (env-ref v2 (heap 0 0))
+  (env-ref v3 (heap 0 1))
+  (add v4 v2 v3)
+  (return (v4)))
