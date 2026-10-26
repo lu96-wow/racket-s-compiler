@@ -4,11 +4,19 @@
 ;;; 在 CFG 上做优化。每个 pass 都是 (items ctx -> items), 只按块做局部改动。
 ;;;
 ;;; 程序是普通 list: '((item) (item) ...)
-;;
-;; 段(segment): 屏障((bytes ...) 等数据形式)把程序切成若干段。
-;;; 屏障不跨: 每段单独建图、单独优化, 屏障本身原样保留。
-;;; 跨段只会通过 label 引用发生, 所以可达性分析的根要包含
-;;; "在本段之外被引用的 label"(见 program-context)。
+;;;
+;;; 整段程序一张 CFG。输出是**块列表**, 把控制流分析结果交给 L4:
+;;;
+;;;   (block (id 0) (labels ((prog1 main))) (insns ((lwu ...) ...))
+;;;          (succ (1 3)) (fallthrough 1))
+;;;
+;;;   id          块身份
+;;;   labels      块头的所有链(一个位置多名也在这里); 放置规则只认它
+;;;   insns       块内容
+;;;   succ        后继块 id
+;;;   fallthrough 顺序落到哪个块; #f = 不以顺序方式离开
+;;;
+;;; 这样 L4 不需要重新分析控制流, 也能检查"搬动块会不会剪断顺序执行"。
 ;;;
 ;;; 现有 pass:
 ;;;   drop-unreachable            删掉走不到的块(连它的 label 一起删)
@@ -19,20 +27,15 @@
 (require "insn.rkt"
          "cfg.rkt")
 
-(provide (struct-out segment)
-         split-into-segments
-         (struct-out program-context)
+(provide (struct-out program-context)
          make-context
          passes
          pass-names
-         optimize-segment
+         optimize-items
          program-items
          optimize-program)
 
-;; 一段连续可分析的代码
-(struct segment (items) #:transparent)
-
-;; 整程序的上下文: 跨段被引用的链 + 地址被取过的链 + 是否存在间接跳转
+;; 整程序的上下文: 被引用的链 + 地址被取过的链 + 是否存在间接跳转
 (struct program-context (referenced address-taken indirect?) #:transparent)
 
 (define (make-context items)
@@ -62,26 +65,11 @@
       (cdar items)
       items))
 
-;; 按屏障切段; 屏障本身留在结果里占位
-(define (split-into-segments items)
-  (define out '())
-  (define cur '())
-  (define (flush!)
-    (unless (null? cur)
-      (set! out (cons (segment (reverse cur)) out))
-      (set! cur '())))
-  (for ([it (in-list items)])
-    (cond
-      [(barrier-form? it) (flush!) (set! out (cons it out))]
-      [else (set! cur (cons it cur))]))
-  (flush!)
-  (reverse out))
-
 ;; ---------------------------------------------------------------------------
 ;; pass 1: 删不可达块
 ;;
-;; 根 = 本段第一块
-;;    + 名字被直接引用的块(本段或别的段 jal/分支过来)
+;; 根 = 入口块(第一块)
+;;    + 名字被直接引用的块(jal/分支的目标)
 ;;    + 存在 jalr 时, 名字"被取过地址"的块(间接跳转只可能落到这种地方)
 ;; 走不到的块连同它的 label 一起删: 既然 walk 不到, 它的 label 也就没被引用。
 ;; ---------------------------------------------------------------------------
@@ -158,7 +146,7 @@
 ;; 反复跑到不再变化; 轮数有上限, 防止 pass 之间来回抖
 (define max-rounds 16)
 
-(define (optimize-segment items ctx)
+(define (optimize-items items ctx)
   (let loop ([items items] [round 0])
     (cond
       [(>= round max-rounds) items]
@@ -170,13 +158,24 @@
            items
            (loop next (add1 round)))])))
 
-;; 全程序: 切段 -> 逐段优化 -> 按原顺序拼回
+;; 全程序: 优化到不动点 -> 按最终 CFG 输出块列表
 (define (optimize-program prog)
   (define items (program-items prog))
   (define ctx (make-context items))
-  (define optimized
-    (for/list ([piece (in-list (split-into-segments items))])
-      (cond
-        [(segment? piece) (optimize-segment (segment-items piece) ctx)]
-        [else (list piece)])))
-  (append* optimized))
+  (blocks->sexp (optimize-items items ctx)))
+
+;; 一张图 -> 块列表(交给 L4)
+(define (blocks->sexp items)
+  (define g (build-cfg items))
+  (define blocks (graph-blocks g))
+  (define n (vector-length blocks))
+  (for/list ([b (in-vector blocks)] [i (in-naturals)])
+    (define succ (block-successors b))
+    (define next (and (< (add1 i) n) (add1 i)))
+    (define fallthrough (and next (memv next succ) next))
+    (list 'block
+          (list 'id i)
+          (cons 'labels (block-labels b))
+          (cons 'insns (block-insns b))
+          (cons 'succ succ)
+          (list 'fallthrough (or fallthrough #f)))))

@@ -14,7 +14,8 @@
       (jal x0 (prog1cold cold))    ; 跨段跳: 写完整链
       (label done)
       (la t2 (data1 table))        ; 跨段取址
-      (move a0 a0))                ; L2: add
+      (move a0 a0)                 ; L2: add
+      (jalr x0 ra 0))              ; 顺序执行到此为止(否则 fallthrough 会跨段)
     (module prog1cold
       (label cold)                 ; 段归属由 layout 的 place 行决定
       (addi a0 a0 1)
@@ -31,6 +32,7 @@
               (segment prog1cold code #x300000 #x300FFF 16)
               (segment data1     data #x001000 #x0010FF 16))
     ;; 精确匹配 label 链; 没有 section, 没有 primary, 没有 entry
+    ;; 放完 L4 会检查 fallthrough 有没有被段切断
     (place prog1     (prog1 main) (prog1 done))
     (place prog1cold (prog1cold cold))
     (place data1     (data1 table))))
@@ -40,12 +42,17 @@
 (define after-l1 (list-ref flat-inputs 0))
 (define data*    (list-ref flat-inputs 1))
 (define after-l2 (rewrite-program after-l1))
-(define after-l3 (optimize-program after-l2))
+(define after-l3 (optimize-program after-l2))   ; 输出块列表, 不是扁平 item
+
+(displayln ";; L3 输出块 (id labels succ fallthrough)")
+(for ([b (in-list after-l3)])
+  (displayln (format "  ~a"
+                     (list (cadr (assoc 'id (cdr b)))
+                           (cdr (assoc 'labels (cdr b)))
+                           (cadr (assoc 'fallthrough (cdr b)))))))
 (define laid     (layout-program after-l3 data* layout-input))
 
-(displayln ";; L3 之后的程序")
-(for ([it (in-list after-l3)]) (displayln (format "  ~s" it)))
-(newline)
+
 
 (displayln ";; L4 布局")
 (for ([seg (in-list (cdr laid))]

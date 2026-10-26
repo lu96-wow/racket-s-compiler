@@ -7,6 +7,25 @@
          "opt.rkt"
          (only-in "../L1/flatten.rkt" flatten-program))
 
+;; ---- 测试用视图 ------------------------------------------------------------
+
+;; 块列表 -> 扁平 item(大部分语义测试只看内容)
+(define (flat blocks)
+  (append*
+   (for/list ([b (in-list blocks)])
+     (append (for/list ([l (in-list (cdr (assoc 'labels (cdr b))))])
+               (cons 'label l))
+             (cdr (assoc 'insns (cdr b)))))))
+
+(define (opt items) (flat (optimize-program items)))
+
+(define (block-by-id blocks n)
+  (findf (lambda (b) (= n (cadr (assoc 'id (cdr b))))) blocks))
+(define (block-labels* b) (cdr (assoc 'labels (cdr b))))
+(define (block-insns* b) (cdr (assoc 'insns (cdr b))))
+(define (block-succ* b) (cdr (assoc 'succ (cdr b))))
+(define (block-ft* b) (cadr (assoc 'fallthrough (cdr b))))
+
 ;; ---------------------------------------------------------------------------
 ;; 指令分类
 ;; ---------------------------------------------------------------------------
@@ -59,12 +78,6 @@
 (check-false (normalize-path #t))
 (check-equal? (normalize-path 1.5) '(1.5))
 
-(check-true  (barrier-form? '(bytes 1 2 3)))
-(check-false (barrier-form? '(section text)))   ; section 不再是指令头
-(check-true  (barrier-form? '(align 8)))
-(check-false (barrier-form? '(label main)))
-(check-false (barrier-form? '(add t0 t1 t2)))
-
 ;; ---------------------------------------------------------------------------
 ;; 建图
 ;; ---------------------------------------------------------------------------
@@ -98,10 +111,25 @@
                         (label c) (add t1 t1 t1))))
 (check-equal? (block-successors (vector-ref (graph-blocks g4) 0)) '(2 1))
 
-;; jalr: 目标不可知 -> 只有顺序边, 但整张图记为"有间接跳转"
-(define g5 (build-cfg '((label a) (jalr x0 ra 0) (label b) (add t0 t0 t0))))
+;; jalr ra = 间接调用: 目标不可知 -> 只有顺序边, 但整张图记为"有间接跳转"
+(define g5 (build-cfg '((label a) (jalr ra ra 0) (label b) (add t0 t0 t0))))
 (check-equal? (block-successors (vector-ref (graph-blocks g5) 0)) '(1))
 (check-true (graph-indirect? g5))
+
+;; jalr x0 = ret: 不回来, 没有顺序边
+(define g5b (build-cfg '((label a) (jalr x0 ra 0) (label b) (add t0 t0 t0))))
+(check-equal? (block-successors (vector-ref (graph-blocks g5b) 0)) '())
+(check-true (graph-indirect? g5b))
+
+;; falls-through? 一览
+(check-true  (falls-through? '(add t0 t1 t2)))
+(check-true  (falls-through? '(beq t0 t1 (l))))
+(check-true  (falls-through? '(jal ra (l))))
+(check-false (falls-through? '(jal x0 (l))))
+(check-true  (falls-through? '(jalr ra ra 0)))
+(check-false (falls-through? '(jalr x0 ra 0)))
+(check-true  (falls-through? '(ecall)))
+(check-false (falls-through? '(ebreak)))
 
 ;; ecall 可能返回, ebreak 停住
 (define g6 (build-cfg '((label a) (ecall) (label b) (add t0 t0 t0))))
@@ -136,53 +164,51 @@
 ;; ---------------------------------------------------------------------------
 
 ;; jal x0 之后、且没人跳过去的块 -> 删(含它的 label)
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label start) (add t0 t1 t2) (jal x0 done)
                  (label dead) (add t3 t4 t5)
                  (label done) (add t0 t0 t0)))
               '((label start) (add t0 t1 t2) (label done) (add t0 t0 t0)))
 
 ;; 有间接跳转, 但 b 既没被直接引用、地址也没被取过 -> 仍然不可达
-(check-equal? (optimize-program
+;; (ret 之后那块也走不到, 一起删)
+(check-equal? (opt
                '((label a) (jalr x0 ra 0) (jal x0 a) (label b) (add t0 t0 t0)))
-              '((label a) (jalr x0 ra 0) (jal x0 a)))
+              '((label a) (jalr x0 ra 0)))
 
 ;; 有间接跳转 + b 的地址被取过(la) -> 可能被跳到, 保留
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
                  (label b) (add t0 t0 t0)))
-              '((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
-                       (label b) (add t0 t0 t0)))
+              '((label a) (la t0 (b)) (jalr x0 ra 0) (label b) (add t0 t0 t0)))
 
 ;; 有间接跳转 + b 被分支直接引用 -> 保留
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
                  (label c) (add t0 t0 t0)
                  (label b) (add t1 t1 t1)))
-              '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
-                       (label c) (add t0 t0 t0)
-                       (label b) (add t1 t1 t1)))
+              '((label a) (jalr x0 ra 0) (label b) (add t1 t1 t1)))
 
 ;; 同样的形状, 没有间接跳转 -> 无名块之后的 b 走不到, 删掉
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label a) (add t0 t0 t0) (jal x0 a) (label b) (add t1 t1 t1)))
               '((label a) (add t0 t0 t0) (jal x0 a)))
 
 ;; 调用会回来, jal ra 之后的代码保留
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label a) (jal ra f) (add t0 t0 t0)))
               '((label a) (jal ra f) (add t0 t0 t0)))
 
 ;; ebreak 之后到不了
-(check-equal? (optimize-program '((label a) (ebreak) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (ebreak) (add t0 t0 t0)))
               '((label a) (ebreak)))
 
 ;; ecall 之后可能回来, 保留
-(check-equal? (optimize-program '((label a) (ecall) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (ecall) (add t0 t0 t0)))
               '((label a) (ecall) (add t0 t0 t0)))
 
 ;; 回边不会误删循环体
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label top) (addi t0 t0 1) (blt t0 t1 top)
                  (label end) (add t1 t1 t1)))
               '((label top) (addi t0 t0 1) (blt t0 t1 top)
@@ -193,59 +219,69 @@
 ;; ---------------------------------------------------------------------------
 
 ;; jal x0 到下一块的 label -> 删跳转
-(check-equal? (optimize-program '((label a) (add t0 t0 t0) (jal x0 b) (label b) (add t1 t1 t1)))
+(check-equal? (opt '((label a) (add t0 t0 t0) (jal x0 b) (label b) (add t1 t1 t1)))
               '((label a) (add t0 t0 t0) (label b) (add t1 t1 t1)))
 
 ;; 分支到下一块的 label -> 两种走向一样, 删分支
-(check-equal? (optimize-program '((label a) (beq t0 t1 b) (label b) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (beq t0 t1 b) (label b) (add t0 t0 t0)))
               '((label a) (label b) (add t0 t0 t0)))
 
 ;; 目标不是紧邻下一块 -> 不动
-(check-equal? (optimize-program
+(check-equal? (opt
                '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
               '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
 
 ;; 调用 (jal ra) 即使目标是下一块也不能删: 它还承担"把返回地址写进 ra"
-(check-equal? (optimize-program '((label a) (jal ra b) (label b) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (jal ra b) (label b) (add t0 t0 t0)))
               '((label a) (jal ra b) (label b) (add t0 t0 t0)))
 
+;; 代码里没有屏障概念了: 数据在独立输入里, 由 L4 用 code-data-mixed 报。
+;; 这里只确认: 不认识的 item 当普通 item, 不参与控制流。
+(check-equal? (opt '((label a) (bytes 1 2 3) (label b) (add t0 t0 t0)))
+              '((label a) (bytes 1 2 3) (label b) (add t0 t0 t0)))
+
 ;; ---------------------------------------------------------------------------
-;; 屏障: 不跨过它搬代码
+;; 优化: 转移到紧邻下一块
 ;; ---------------------------------------------------------------------------
 
-;; 跳过数据段的跳转必须保留, 数据原样
-(check-equal? (optimize-program
-               '((label a) (jal x0 b) (bytes 1 2 3)
-                 (label b) (add t0 t0 t0)))
-              '((label a) (jal x0 b) (bytes 1 2 3)
-                       (label b) (add t0 t0 t0)))
+;; jal x0 到下一块的 label -> 删跳转
+(check-equal? (opt '((label a) (add t0 t0 t0) (jal x0 b) (label b) (add t1 t1 t1)))
+              '((label a) (add t0 t0 t0) (label b) (add t1 t1 t1)))
 
-;; 跨段被引用的 label 是根: 即使本段开头走不到, 也不删
-(check-equal? (optimize-program
-               '((label f) (jal x0 z)
-                 (label y) (add t0 t0 t0)        ; 没人引用 -> 删
-                 (bytes 9)
-                 (label z) (add t1 t1 t1)))
-              '((label f) (jal x0 z)
-                       (bytes 9)
-                       (label z) (add t1 t1 t1)))
+;; 分支到下一块的 label -> 两种走向一样, 删分支
+(check-equal? (opt '((label a) (beq t0 t1 b) (label b) (add t0 t0 t0)))
+              '((label a) (label b) (add t0 t0 t0)))
+
+;; 目标不是紧邻下一块 -> 不动
+(check-equal? (opt
+               '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
+              '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
+
+;; 调用 (jal ra) 即使目标是下一块也不能删: 它还承担"把返回地址写进 ra"
+(check-equal? (opt '((label a) (jal ra b) (label b) (add t0 t0 t0)))
+              '((label a) (jal ra b) (label b) (add t0 t0 t0)))
+
+;; 代码里没有屏障概念了: 数据在独立输入里, 由 L4 用 code-data-mixed 报。
+;; 这里只确认: 不认识的 item 当普通 item, 不参与控制流。
+(check-equal? (opt '((label a) (bytes 1 2 3) (label b) (add t0 t0 t0)))
+              '((label a) (bytes 1 2 3) (label b) (add t0 t0 t0)))
 
 ;; ---------------------------------------------------------------------------
 ;; 形状 / 幂等 / 透传
 ;; ---------------------------------------------------------------------------
 
 ;; 进 list, 出也一定是 list (而且不再是 quote/begin 壳)
-(check-true (list? (optimize-program '((label a) (add t0 t1 t2)))))
-(check-equal? (optimize-program '((label a) (add t0 t1 t2)))
+(check-true (list? (opt '((label a) (add t0 t1 t2)))))
+(check-equal? (opt '((label a) (add t0 t1 t2)))
               '((label a) (add t0 t1 t2)))
 
 ;; 幂等
-(define once (optimize-program '((label a) (jal x0 c) (label b) (add t0 t0 t0)
+(define once (opt '((label a) (jal x0 c) (label b) (add t0 t0 t0)
                                  (label c) (add t1 t1 t1))))
-(check-equal? (optimize-program once) once)
+(check-equal? (opt once) once)
 
 ;; 不认识的指令原样保留, 不影响分析
-(check-equal? (optimize-program '((label a) (frobnicate t0) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (frobnicate t0) (add t0 t0 t0)))
               '((label a) (frobnicate t0) (add t0 t0 t0)))
 
 ;; ---------------------------------------------------------------------------
@@ -276,7 +312,7 @@
 (define flat-prog (flatten-program '((module a (label f) (jal x0 (g)) (label g)))))
 (check-equal? flat-prog
               '((label a f) (jal x0 (a g)) (label a g)))
-(check-equal? (optimize-program flat-prog)
+(check-equal? (opt flat-prog)
               '((label a f) (label a g)))
 
 ;; ---------------------------------------------------------------------------
@@ -292,7 +328,7 @@
 (check-equal? (program-items '(add t0 t0 t0)) '((add t0 t0 t0)))
 
 ;; 出口一律 plain list
-(check-equal? (optimize-program '((label a) (jal x0 b) (label b)))
+(check-equal? (opt '((label a) (jal x0 b) (label b)))
               '((label a) (label b)))
 
 ;; begin 不当指令: 一块, 只有 1 条指令
@@ -301,10 +337,43 @@
 (check-equal? (block-insns (vector-ref (graph-blocks g-begin) 0)) '((add t0 t0 t0)))
 
 ;; 不带 begin 的裸列表: 出去也不带
-(check-equal? (optimize-program '((label a) (add t0 t0 t0)))
+(check-equal? (opt '((label a) (add t0 t0 t0)))
               '((label a) (add t0 t0 t0)))
 
 ;; pass 名字反映功能
 (check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block))
+
+;; ---------------------------------------------------------------------------
+;; 输出块: id / labels / insns / succ / fallthrough
+;; ---------------------------------------------------------------------------
+
+(define blocks
+  (optimize-program '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+
+(check-equal? (map (lambda (b) (cadr (assoc 'id (cdr b)))) blocks) '(0 1 2))
+(check-equal? (block-labels* (block-by-id blocks 0)) '((a)))
+(check-equal? (block-labels* (block-by-id blocks 1)) '())
+(check-equal? (block-labels* (block-by-id blocks 2)) '((c)))
+(check-equal? (block-succ* (block-by-id blocks 0)) '(2 1))   ; 分支: 目标 + 顺序
+(check-equal? (block-ft*   (block-by-id blocks 0)) 1)
+(check-equal? (block-ft*   (block-by-id blocks 1)) 2)
+(check-false  (block-ft*   (block-by-id blocks 2)))          ; 末尾块
+
+;; jal x0: 目标块是后继, 但不是顺序后继
+;; (让 b 自引用, 否则它不可达会被 L3 删掉, jal 也会被当成"跳到紧邻下一块"删掉)
+(define blocks-jump
+  (optimize-program '((label a) (jal x0 (c)) (label b) (jal x0 (b)) (label c) (add t1 t1 t1))))
+(check-equal? (block-succ* (block-by-id blocks-jump 0)) '(2))
+(check-false  (block-ft*   (block-by-id blocks-jump 0)))
+
+;; 调用: 目标 + 顺序
+(define blocks-call
+  (optimize-program '((label a) (jal ra (c)) (label b) (jal x0 (b)) (label c) (add t1 t1 t1))))
+(check-equal? (block-succ* (block-by-id blocks-call 0)) '(2 1))
+(check-equal? (block-ft*   (block-by-id blocks-call 0)) 1)
+
+;; 同一位置多个名字: 都进同一个块的 labels
+(define blocks-names (optimize-program '((label a) (label b) (add t0 t0 t0))))
+(check-equal? (block-labels* (block-by-id blocks-names 0)) '((a) (b)))
 
 (displayln "L3 tests: ok")

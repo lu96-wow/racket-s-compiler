@@ -1,56 +1,67 @@
-# L4 布局计算
+# L3 输出块 / L4 布局计算
 
-本层只做一件事：**给 item 分配段内偏移**。不做选择、不造 label、不填 scratch、不重排。
+## 0. 为什么要 L3 把块传出来
+
+label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、程序开头）决定，一个块可能没有 label，一个 label 也可能只是同一块里的另一个名字。按 label 搬代码会把「块」和「位置」混为一谈；更危险的是**顺序执行（fallthrough）**被段切断时，按名字搬动的布局层根本看不见。
+
+所以：**L3 输出块，L4 按块放置，并检查 fallthrough 没被剪断。**
+
+## 1. L3 输出形状
+
+```racket
+((block (id 0) (labels ((prog1 main))) (insns ((lwu t0 sp 8) (bge t1 t0 (prog1 done))))
+        (succ (1 3)) (fallthrough 1))
+ (block (id 1) (labels ()) (insns ((jal x0 (prog1cold cold)))) (succ (2)) (fallthrough #f))
+ ...)
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 块身份（L4 报错/检查用） |
+| `labels` | 块头的所有链（一个位置多名都在这里）；放置规则只认它 |
+| `insns` | 块内容 |
+| `succ` | 后继块 id |
+| `fallthrough` | **物理下一条**是哪个块；`#f` 表示不以顺序方式落下去 |
+
+`fallthrough` 的判据是 `falls-through?`：
+
+| 最后一条指令 | 会落到物理下一条吗 |
+| --- | --- |
+| 普通指令 / 分支 | 会 |
+| `jal ra` / `jalr ra`（调用） | 会（返回地址 = pc+4） |
+| `ecall` | 会（返回地址 = pc+4） |
+| `jal x0` / `jalr x0`（ret）/ `ebreak` | 不会 |
+
+注意调用和 `ecall` 也算「会」：它们的返回地址就是 pc+4，所以**下一条必须紧挨着**。
+
+## 2. L4 输入
 
 ```
-输入   program  list   ((label ...) (insn ...) ...)
-       data     list   ((label ...) (bytes ...) (align n) ...)
-       layout   list   ((segments (segment 名 kind start end align) ...)
-                        (place 段名 链 ...) ...)
-输出   (layout (segment ...) ... (symbols ...) (problems ...))
+program : L3 的块列表
+data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
+layout  : ((segments (segment 名 kind start end align) ...)
+           (place 段名 链 ...) ...)
 ```
 
-**代码里没有 `section`**：段归属全部写在 layout 的 `place` 行里。也没有 `primary` / `entry`。
+代码里**没有 `section`**，也没有 `primary` / `entry`。
 
-## 1. 核心概念
+## 3. 放置
 
-| 概念 | 是什么 | 从哪来 |
-| --- | --- | --- |
-| `module` | 名字作用域前缀（L1 吃掉） | 程序/数据源 |
-| **游程 run** | 从一条 `label` 到下一条 `label` 之间的 item，**放置的最小单位** | L4 自己切 |
-| `segment` | 物理区间 `[start, end)` + kind | layout 输入 |
-| `place` | `段名 + label 链` 的精确匹配规则 | layout 输入 |
+- **单位**：代码用 L3 的块；数据用「label 游程」（数据没有控制流）。
+- **place 行**：`(place 段名 链 ...)`，按**精确链**匹配（`equal?`），不做前缀、不按 kind 自动落位。
+- **region**：命中的块是锚点；之后直到下一个锚点的块跟随它（没有身份的东西只能跟着有身份的前驱）。
+- **顺序**：段内按源顺序（程序先、数据后），`place` 行书写顺序无关。
+- **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。补指令/插跳转留给 L5，L4 只报。
 
-游程的身份 = 它的 label 链；一个位置可以有多条链（连续写多条 `label`），命中任意一条即算匹配。
-
-## 2. 段
+## 4. 段与度量
 
 ```racket
 (segment prog1 code #x100000 #x100FFF 16)   ; 名 kind start end align
 ```
 
-自检：名字唯一、`start < end`、`start` 按 `align` 对齐、任意两段不重叠。
+自检：名字唯一、`start < end`、`start` 按 `align` 对齐、区间不重叠。
 
-## 3. 放置规则
-
-| 规则 | 内容 | 违反 |
-| --- | --- | --- |
-| P0 | 段归属只看 `place` 行，**精确匹配** label 链（`equal?`），不做前缀、不做默认 | `unplaced` |
-| P0b | 同一个链被两行 `place` 抢 | `ambiguous-placement` |
-| P0c | 开头的 item 在第一条 `label` 之前，没有身份 | `unlabeled-run` |
-| P0d | `place` 指向未声明的段 | `unknown-segment`（该行不生效） |
-| P1 | 段内 item 必须与段 kind 匹配 | `code-data-mixed` / `data-code-mixed` |
-| P2 | 段内顺序 = **源顺序**（程序先、数据后，各自按出现顺序）；`place` 行的书写顺序无关 | — |
-| P3 | 段内单游标从 `start` 起，`(align n)` 向上补齐，逐条累加 | — |
-| P4 | 内容越过 `end` | `segment-overflow` |
-| P5 | 段内没有 `(org ...)`；大空洞靠拆段 | 不支持 |
-| P6 | 一个游程不跨段 | —（结构上保证） |
-| P7 | `code` 段只许 指令 / `label` / `align`(4 的倍数)；`data`、`rodata` 段只许 `bytes` / `label` / `align` | 同 P1 |
-| P8 | label 的偏移 = 所在位置的游标 | — |
-| P9 | 填充字节由编码层写 `0x00` | — |
-| P10 | 产物 `size` = 实际内容长度，另给 `start`/`end` | — |
-
-## 4. 形式表（`forms.rkt`）
+段内单游标从 `start` 起，`label` 不占字节只记偏移，`(align n)` 向上补齐补 0，其余按形式表累加：
 
 | item | 字节 |
 | --- | --- |
@@ -70,33 +81,36 @@
 ## 5. 校验（只记 problems，不抛异常）
 
 ```racket
-((unplaced (main))
- (ambiguous-placement (main) a b)
- (unknown-segment nope)
- (unlabeled-run ((addi a0 a0 1)))
- (code-data-mixed prog1 4 (bytes 1 2))
- (data-code-mixed data1 0 (addi a0 a0 1))
+((unplaced-block 0 ((main)))                 ; 块没有锚点
+ (unplaced (data1 table))                    ; 数据游程没有锚点
+ (unlabeled-run ((bytes 1)))                 ; 数据开头没有 label
+ (ambiguous-placement (main) a b)            ; 两行 place 抢同一个链
+ (unknown-segment nope)                      ; place 指向未声明的段
+ (broken-fallthrough 0 1 ((a)) ((b)))        ; 顺序执行被段/区段剪断
+ (code-data-mixed prog1 4 (bytes 1 2))       ; 数据落进 code 段
+ (data-code-mixed data1 0 (addi a0 a0 1))    ; 指令落进 data 段
+ (code-align-not-4 prog1 8 2)                ; code 段里 align 不是 4 的倍数
  (segment-overflow prog1 8 7)
  (segment-misaligned prog1 #x1002 16)
  (segment-overlap a b)
  (segment-name-duplicated (a b a))
  (segment-bad-range b)
- (undefined-target prog1 0 (jal x0 (ghost)))
- (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)
- (scratch-hole prog1 0 (branch-indirect a0 a1 (done))))
+ (undefined-target s1 0 (jal x0 (ghost)))
+ (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L5
+ (scratch-hole prog1 0 (branch-indirect a0 a1 (done))))  ; 留给 L5
 ```
 
-最后两类**不是错误**，是留给远跳转层（L5）的入口。
+最后两类不是错误，是远跳转层（L5）的入口。
 
 ## 6. 远跳转层（L5，预留，不实现）
 
-- 只保留层的位置与契约：`annotated -> program'`，只做「超范围的 item 升成远形式」和「有洞就留着」。
+- 契约：`annotated -> program'`，只做「超范围的 item 升成远形式」和「有洞就留着」。
 - 空槽规则：`(branch-indirect a b L)` 少一个参数 = 洞；`(branch-indirect s a b L)` 已填。
-- 填槽方式（用户手写 / 用户规则 / 以后的分配器）不在本层定义。
-- L4 只负责把 `needs-far` / `scratch-hole` 报出来。
+- 填槽方式不在本层定义。
+- 补 fallthrough 跳转、trampoline、块重排都属于这一层或更后面的层。
 
 ## 7. 与真实工具链一致的地方
 
-- 条件分支远形式 = **反向分支 + `jal`**（8 字节，无需 scratch），与 gas `md_convert_frag_branch`、LLVM `expandLongCondBr` 一致。
-- 超过 ±1MB 才需要 scratch（`auipc + jalr`）；GAS 对此交给链接器报错，LLVM 在 machine 层用 `insertIndirectBranch` + reg scavenger。我们把它留给 L5，用显式空槽替代 scavenger。
-- 顺序与重排：本层不重排。将来若要 hot/cold 或 fallthrough 聚集，应作为独立可选层（改游程顺序，再重跑 L4），不在本层偷偷做。
+- 条件分支远形式 = **反向分支 + `jal`**（8 字节，无 scratch），与 gas `md_convert_frag_branch`、LLVM `expandLongCondBr` 一致。
+- 超过 ±1MB 才需要 scratch（`auipc + jalr`）；GAS 交给链接器报错，LLVM 在 machine 层用 `insertIndirectBranch` + reg scavenger。我们留给 L5，用显式空槽替代 scavenger。
+- 顺序执行跨段 = 必须显式跳转；真实工具链里由 `.section`/链接脚本决定，报错方式就是「这里断了」。我们用 `broken-fallthrough` 显式化。

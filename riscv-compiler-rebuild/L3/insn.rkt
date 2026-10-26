@@ -9,16 +9,14 @@
 ;;;   - 调用        (jal ra L)    两条边: 目标 + 顺序
 ;;;   - 间接跳转    (jalr ...)    目标不可知: 只有顺序边, 并让整张图"有间接跳转"
 ;;;   - 陷阱        (ecall) 可能返回 -> 顺序边; (ebreak) 停住 -> 无边
-;;;   - 屏障        (bytes ...) 等数据形式: 不跨过它做分析(段归属在 L4, 与 CFG 无关)
 ;;;
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
 (provide form?
          name? path? normalize-path
          label-form? label-path
-         barrier-heads barrier-form?
          branch-instruction? jump-instruction? indirect-instruction?
-         trap-instruction? ends-block?
+         trap-instruction? ends-block? falls-through?
          unconditional-jump? jump-target jump-register
          zero-register?)
 
@@ -49,12 +47,6 @@
 (define jump-mnemonics     '(jal))
 (define indirect-mnemonics '(jalr))
 (define trap-mnemonics     '(ecall ebreak))
-
-;; 不是指令: 出现就当作分段屏障, 不跨过它搬代码
-;; (段/place 归属是 L4 的事; 这里只管"别跨过数据搬代码")
-(define barrier-heads
-  '(bytes reserve align quote))
-
 ;; ---------------------------------------------------------------------------
 ;; 查询
 ;; ---------------------------------------------------------------------------
@@ -70,12 +62,22 @@
 
 (define (label-path x) (cdr x))
 
-(define (barrier-form? x) (head-in? x barrier-heads))
-
 (define (branch-instruction? x)   (head-in? x branch-mnemonics))
 (define (jump-instruction? x)     (head-in? x jump-mnemonics))
 (define (indirect-instruction? x) (head-in? x indirect-mnemonics))
 (define (trap-instruction? x)     (head-in? x trap-mnemonics))
+
+;; 执行会不会顺序落到**物理下一条**?
+;;   jal x0 / jalr x0: 不回来 -> 不会
+;;   ecall: 回到 pc+4 -> 会(所以下一条必须紧挨着)
+;;   普通指令 / 分支 / 调用: 会
+(define (falls-through? x)
+  (cond
+    [(branch-instruction? x) #t]
+    [(jump-instruction? x) (not (zero-register? (jump-register x)))]
+    [(indirect-instruction? x) (not (zero-register? (cadr x)))]
+    [(trap-instruction? x) (eq? (car x) 'ecall)]
+    [else #t]))
 
 ;; 这条指令之后必须开新块
 (define (ends-block? x)

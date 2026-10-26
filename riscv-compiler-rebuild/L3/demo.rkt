@@ -36,15 +36,16 @@
 
 (newline)
 (displayln ";; CFG of L2 output")
-(for ([piece (in-list (split-into-segments after-l2))])
-  (cond
-    [(segment? piece)
-     (for ([line (in-list (cfg->lines (build-cfg (segment-items piece))))])
-       (displayln (string-append "  " line)))]
-    [else (displayln (format "  ;; 屏障 ~s" piece))]))
+(for ([line (in-list (cfg->lines (build-cfg after-l2)))])
+  (displayln (string-append "  " line)))
 
 (define after-l3 (optimize-program after-l2))
 (newline)
-(displayln ";; after L3 (CFG 优化)")
-(displayln (show after-l3))
-(displayln (format "list? ~a" (list? after-l3)))
+(displayln ";; after L3 (优化 + 输出块)")
+(for ([b (in-list after-l3)])
+  (displayln (format "  id=~a labels=~s insns=~a succ=~s fallthrough=~s"
+                     (cadr (assoc 'id (cdr b)))
+                     (cdr (assoc 'labels (cdr b)))
+                     (length (cdr (assoc 'insns (cdr b))))
+                     (cdr (assoc 'succ (cdr b)))
+                     (cadr (assoc 'fallthrough (cdr b))))))

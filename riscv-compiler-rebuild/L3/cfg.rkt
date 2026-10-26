@@ -10,11 +10,12 @@
 ;;; 连续的多个 (label ...) 归同一个块(块可以有多名字)。
 ;;;
 ;;; 边: 块的最后一条指令决定后继
-;;;   分支        目标块 + 下一块
+;;;;   分支        目标块 + 下一块
 ;;;   jal x0      目标块
-;;;   jal ra      目标块 + 下一块
-;;;   jalr        下一块(目标不可知, 记 indirect?)
-;;;   ecall       下一块
+;;;   jal ra      目标块 + 下一块(返回地址 = pc+4)
+;;;   jalr x0     无(不回来)
+;;;   jalr ra     下一块(返回地址 = pc+4; 目标不可知, 记 indirect?)
+;;;   ecall       下一块(返回地址 = pc+4)
 ;;;   ebreak      无
 ;;;   其他        下一块
 ;;;
@@ -74,7 +75,7 @@
     (for ([p (in-list (car entry))])
       (hash-set! label->index p i)))
 
-  ;; 3. 算每个块的后继
+  ;; 3. 算每个块的后继(顺序边只在真的会落到下一条时才有)
   (define n (length raw))
   (define blocks
     (for/vector ([entry (in-list raw)] [i (in-naturals)])
@@ -90,15 +91,11 @@
              (cond
                [(branch-instruction? last-insn)
                 (succs (edge (jump-target last-insn)) fallthrough)]
-               [(unconditional-jump? last-insn)
-                (succs (edge (jump-target last-insn)))]
                [(jump-instruction? last-insn)
-                (succs (edge (jump-target last-insn)) fallthrough)]
-               [(indirect-instruction? last-insn)
-                (succs fallthrough)]
-               [(and (trap-instruction? last-insn)
-                     (eq? (car last-insn) 'ebreak))
-                (succs)]
+                (succs (edge (jump-target last-insn))
+                       (and (falls-through? last-insn) fallthrough))]
+               [(or (indirect-instruction? last-insn) (trap-instruction? last-insn))
+                (succs (and (falls-through? last-insn) fallthrough))]
                [else (succs fallthrough)]))))
 
   (graph blocks
