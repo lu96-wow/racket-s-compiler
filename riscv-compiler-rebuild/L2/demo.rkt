@@ -1,50 +1,33 @@
 #lang racket
-;;; L2/demo.rkt -- L1 按表替换 -> L2 CFG 优化
+;;; L1/demo.rkt -- 按表替换: 进 quote-list, 出 quote-list
 
-(require "../L1/rewrite.rkt"
-         "cfg.rkt"
-         "opt.rkt")
+(require "rewrite.rkt")
 
+;; 程序整体是一个 quote-list
 (define src
   '(begin
-     (label main)
-     (load-32 t0 sp 8)            ; L1: 伪指令
-     (store-64 sp 16 t0)          ; L1: 地址在前
-     (move t1 t0)                 ; L1: 换 add
-     (ble t0 t1 done)             ; L1: 换 bge
-     (jal x0 done)                ; L2: 后面紧邻 done, 多余
-     (label dead)                 ; L2: 没人引用, 整块不可达
-     (load-s8 t2 t0)              ; L1: 换 lb
-     (label done)
-     (li t3 42)))                 ; 透传
+     (load-32  t0 sp 8)        ; 显式写法
+     (ls8      t1 t0)          ; 简写, 省略 off
+     (add      t1 t1 t0)       ; 真指令, 透传
+     (store-64 sp 16 t1)       ; 地址在前, 值在后
+     (ble      t1 t0 L)        ; 简写分支
+     (move     t0 t1)          ; 显式 move
+     (li       t2 42)          ; 真指令, 透传
+     L))
 
+;; 打印成 quote-list 的样子: '( ... )
 (define (show x)
-  (if (quote-list? x) (format "'~s" (cadr x)) (format "~s" x)))
+  (format "'~s" (if (quote-list? x) (cadr x) x)))
 
-(define after-l1 (rewrite-program src))
-(displayln ";; after L1 (按表替换)")
-(displayln (show after-l1))
-(displayln (format "pseudo leftover? ~a" (pseudo-leftover? (cadr after-l1))))
+(displayln ";; P-asm")
+(displayln (show src))
 
-(newline)
-(displayln ";; CFG of L1 output (每段一张图)")
-(define-values (l1-items _) (program-parts after-l1))
-(for ([piece (in-list (split-into-segments l1-items))])
-  (cond
-    [(segment? piece)
-     (define g (build-cfg (segment-items piece)))
-     (for ([line (in-list (cfg->lines g))]) (displayln (string-append "  " line)))]
-    [else (displayln (format "  ;; 屏障 ~s" piece))]))
+(define out (rewrite-program src))
 
 (newline)
-(define after-l2 (optimize-program after-l1))
-(displayln ";; after L2 (CFG 优化)")
-(displayln (show after-l2))
+(displayln ";; after rewrite-program")
+(displayln (show out))
 
 (newline)
-(define pieces (split-into-segments l1-items))
-(displayln (format "段数 ~a, 块数(L1) ~a"
-                   (length pieces)
-                   (for/sum ([piece (in-list pieces)] #:when (segment? piece))
-                     (cfg-block-count (build-cfg (segment-items piece))))))
-(displayln (format "quote-list? ~a" (quote-list? after-l2)))
+(displayln (format "quote-list? ~a" (quote-list? out)))
+(displayln (format "pseudo leftover? ~a" (pseudo-leftover? out)))
