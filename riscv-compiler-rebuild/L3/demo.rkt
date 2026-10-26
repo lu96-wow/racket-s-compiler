@@ -1,51 +1,40 @@
 #lang racket
-;;; L3/demo.rkt -- L1 展平 -> L2 按表替换 -> L3 CFG 优化
+;;; L3/demo.rkt -- 控制流: 输入是 L2 的输出(扁平 item, 无 module), 输出是块列表
 
-(require (only-in "../L1/flatten.rkt" flatten-program)
-         (only-in "../L2/rewrite.rkt" rewrite-program pseudo-leftover?)
-         "cfg.rkt"
+(require "cfg.rkt"
          "opt.rkt")
 
-(define src
-  '((module main
-       (label entry)
-       (load-32 t0 sp 8)          ; L2: 伪指令
-       (ble t0 t1 (done))         ; L1: 链 -> (main done); L2: ble -> bge
-       (jal x0 (done))            ; L3: 后面紧邻 done, 多余
-       (label dead)               ; L3: 没人引用, 整块不可达
-       (load-s8 t2 t0)            ; L2: -> lb
-       (label done)               ; 同位置的第二个名字
-       (li t3 42))                ; 透传
-     (jal ra (lib helper))        ; 跨模块调用: 写完整链
-     (module lib
-       (label helper)
-       (move a0 a0)               ; L2: -> add a0 a0 x0
-       (jalr x0 ra 0))))
+;; L3 的输入形状: 扁平 item 列表(这里直接写 L2 的输出)
+(define items
+  '((label main entry)
+    (lwu t0 sp 8)                 ; 可达
+    (bge t1 t0 (main done))
+    (jal x0 (main done))          ; 紧邻 (main done) -> 多余
+    (label main dead)             ; 没人引用 -> 整块不可达
+    (lb t2 t0 0)
+    (label main done)
+    (li t3 42)
+    (jal ra (lib helper))
+    (label lib helper)
+    (add a0 a0 x0)
+    (jalr x0 ra 0)))
 
-(define (show x) (format "~s" x))
-
-(define after-l1 (flatten-program src))
-(displayln ";; after L1 (模块展平: 链带作用域前缀)")
-(displayln (show after-l1))
-
-(define after-l2 (rewrite-program after-l1))
-(newline)
-(displayln ";; after L2 (按表替换)")
-(displayln (show after-l2))
-(displayln (format "pseudo leftover? ~a" (pseudo-leftover? after-l2)))
+(displayln ";; L3 输入 (L2 输出)")
+(for ([it (in-list items)]) (displayln (format "  ~s" it)))
 
 (newline)
-(displayln ";; CFG of L2 output")
-(for ([line (in-list (cfg->lines (build-cfg after-l2)))])
+(displayln ";; CFG (优化前)")
+(for ([line (in-list (cfg->lines (build-cfg items)))])
   (displayln (string-append "  " line)))
 
-(define after-l3 (optimize-program after-l2))
+(define blocks (optimize-program items))
+
 (newline)
-(displayln ";; after L3 (优化 + 输出块)")
-(for ([b (in-list after-l3)])
-  (displayln (format "  id=~a labels=~s insns=~a succ=~s fallthrough=~s"
+(displayln ";; L3 输出: 块列表")
+(for ([b (in-list blocks)])
+  (displayln (format "  id=~a labels=~s insns=~s succ=~s fallthrough=~s"
                      (cadr (assoc 'id (cdr b)))
                      (cdr (assoc 'labels (cdr b)))
-                     (length (cdr (assoc 'insns (cdr b))))
+                     (cdr (assoc 'insns (cdr b)))
                      (cdr (assoc 'succ (cdr b)))
                      (cadr (assoc 'fallthrough (cdr b))))))

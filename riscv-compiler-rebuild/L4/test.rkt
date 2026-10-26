@@ -319,4 +319,15 @@
                 (offset 4 (label prog1 done)) (offset 4 (add a0 a0 x0))))
 (check-equal? (problems-of pipeline) '())
 
+;; 块字段形状不对 -> 解析阶段就报(这不是跨层守卫, 是 L4 自己的输入语法)
+(check-exn exn:fail?
+  (lambda () (layout-program '((block (id 0) (labels ((a))) (insns (addi a0 a0 1)) (fallthrough #f)))
+                             '() '())))
+(check-exn exn:fail?
+  (lambda () (layout-program '((block (id 0) (labels (a)) (insns ((addi a0 a0 1))) (fallthrough #f)))
+                             '() '())))
+(check-exn exn:fail?
+  (lambda () (layout-program '((block (id 0) (labels ()) (insns) (fallthrough #f)))
+                             '() '())))
+
 (displayln "L4 tests: ok")
