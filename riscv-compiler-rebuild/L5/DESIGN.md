@@ -1,17 +1,28 @@
-# L3 输出块 / L4 布局计算
+# L5 布局计算
 
-## 0. 为什么要 L3 把块传出来
+## 0. 上游: L3 分析 / L4 死代码消除
 
 label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、程序开头）决定，一个块可能没有 label，一个 label 也可能只是同一块里的另一个名字。按 label 搬代码会把「块」和「位置」混为一谈；更危险的是**顺序执行（fallthrough）**被段切断时，按名字搬动的布局层根本看不见。
 
-所以：**L3 输出块，L4 按块放置，并检查 fallthrough 没被剪断。**
+所以：**L3 只做分析并输出块列表（不改程序），L4 做死代码消除（会改控制流），
+L5 按块放置并检查 fallthrough 没被剪断。**
 
-## 1. L3 输出形状
+## 1. 块列表（L3 输出、L4 输入输出、L5 输入）
+
+块是 Racket struct（`L3/analyze.rkt` 里的 `block`），不是 s-exp；
+`blocks->sexp` / `sexp->blocks` 只用于打印和写字面量。
 
 ```racket
-((block (id 0) (labels ((prog1 main))) (insns ((lwu t0 sp 8) (bge t1 t0 (prog1 done))))
-        (succ (1 3)) (fallthrough 1))
- (block (id 1) (labels ()) (insns ((jal x0 (prog1cold cold)))) (succ (2)) (fallthrough #f))
+(struct block (id labels insns succ fallthrough root?) #:transparent)
+```
+
+
+打印出来长这样：
+
+```racket
+((block (id 0) (labels (prog1 main)) (insns (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
+        (succ 1 3) (fallthrough 1) (root? #t))
+ (block (id 1) (labels) (insns (jal x0 (prog1cold cold))) (succ 2) (fallthrough #f) (root? #f))
  ...)
 ```
 
@@ -22,6 +33,7 @@ label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、�
 | `insns` | 块内容 |
 | `succ` | 后继块 id |
 | `fallthrough` | **物理下一条**是哪个块；`#f` 表示不以顺序方式落下去 |
+| `root?` | 分析层算好的可达性根（入口 / 被外部引用 / 地址被取过）；后续层不用再懂指令语义 |
 
 `fallthrough` 的判据是 `falls-through?`：
 
@@ -34,10 +46,10 @@ label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、�
 
 注意调用和 `ecall` 也算「会」：它们的返回地址就是 pc+4，所以**下一条必须紧挨着**。
 
-## 2. L4 输入
+## 2. L5 输入
 
 ```
-program : L3 的块列表
+program : 块列表（L4 输出）
 data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
 layout  : ((segments (segment 名 kind start end align) ...)
            (place 段名 链 ...) ...)
@@ -47,7 +59,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 
 ## 3. 放置
 
-- **单位**：代码用 L3 的块；数据用「label 游程」（数据没有控制流）。
+- **单位**：代码用块；数据用「label 游程」（数据没有控制流）。
 - **place 行**：`(place 段名 链 ...)`，按**精确链**匹配（`equal?`），不做前缀、不按 kind 自动落位。
 - **region**：命中的块是锚点；之后直到下一个锚点的块跟随它（没有身份的东西只能跟着有身份的前驱）。
 - **顺序**：段内按源顺序（程序先、数据后），`place` 行书写顺序无关。

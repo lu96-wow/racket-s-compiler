@@ -1,13 +1,12 @@
 #lang racket
-;;; L4/layout.rkt
+;;; L5/layout.rkt
 ;;;
 ;;; 布局计算: (program-blocks, data, layout) -> (layout ...)
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
-;;;   program : L3 输出的块列表
-;;;             ((block (id 0) (labels (链...)) (insns (...)) (succ (id...)) (fallthrough id|#f))
-;;;              ...)
+;;;   program : L4 输出的块列表(L3 的 block struct)
+;;;             (listof (block id labels insns succ fallthrough root?))
 ;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
 ;;;              (place 段名 链 ...) ...)
@@ -21,13 +20,14 @@
 ;;;   - 段内顺序 = 源顺序; 不做前缀、不做按 kind 的自动落位
 ;;;   - 放完检查 fallthrough: 顺序后继必须紧挨在后面, 否则 broken-fallthrough
 
-(require "forms.rkt")
+(require "forms.rkt"
+         (only-in "../L3/analyze.rkt" block? block-id block-labels block-insns
+                  block-succ block-fallthrough block-root?))
 
 (provide layout-program
          items-of
          layout-problems
-         (struct-out run)
-         (struct-out blk))
+         (struct-out run))
 
 ;; ---------------------------------------------------------------------------
 ;; 输入整形
@@ -108,32 +108,14 @@
 ;; 两种放置单位
 ;; ---------------------------------------------------------------------------
 
-;; 代码: L3 的块
-(struct blk (id labels insns fallthrough) #:transparent)
-
-(define (parse-block x)
-  (unless (and (form? x) (eq? (car x) 'block))
-    (error 'layout-program
-           "program must be L3 output (a list of (block ...)); got: ~e" x))
-  (define fields (cdr x))
-  (define (scalar k) (cadr (assoc k fields)))
-  (define (lst k)    (cdr (assoc k fields)))
-  (define id (scalar 'id))
-  (define labels (lst 'labels))
-  (define insns (lst 'insns))
-  (define fallthrough (scalar 'fallthrough))
-  (unless (exact-nonnegative-integer? id)
-    (error 'layout-program "bad (id ...) in block: ~e" x))
-  (unless (andmap path? labels)                       ; (labels (a) (b))
-    (error 'layout-program "bad (labels ...) in block (need list of chains): ~e" x))
-  (unless (andmap (lambda (i) (and (form? i) (symbol? (car i)))) insns)   ; (insns (add ...) ...)
-    (error 'layout-program "bad (insns ...) in block (need list of items): ~e" x))
-  (unless (or (not fallthrough) (exact-nonnegative-integer? fallthrough))
-    (error 'layout-program "bad (fallthrough ...) in block: ~e" x))
-  (blk id labels insns fallthrough))
-
+;; 代码: L3/L4 的块(struct)
 (define (blocks-of input)
-  (for/list ([x (in-list (items-of input))]) (parse-block x)))
+  (unless (list? input)
+    (error 'layout-program "program must be a list of blocks (L3/L4 output); got: ~e" input))
+  (for/list ([x (in-list input)])
+    (unless (block? x)
+      (error 'layout-program "program must be a list of blocks (L3/L4 output); got: ~e" x))
+    x))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item
 (struct run (labels items) #:transparent)
@@ -181,17 +163,17 @@
   (define by-seg (make-hash))                 ; 段名 -> 块列表(源顺序)
   (define current (box #f))
   (for ([b (in-list blocks)])
-    (define hits (matching-segments (blk-labels b) rules))
+    (define hits (matching-segments (block-labels b) rules))
     (cond
       [(> (length hits) 1)
-       (problem! `(ambiguous-placement ,(car (blk-labels b)) ,@hits))]
+       (problem! `(ambiguous-placement ,(car (block-labels b)) ,@hits))]
       [(= (length hits) 1)
        (set-box! current (car hits))
        (hash-update! by-seg (car hits) (lambda (l) (append l (list b))) '())]
       [(unbox current)
        (hash-update! by-seg (unbox current) (lambda (l) (append l (list b))) '())]
       [else
-       (problem! `(unplaced-block ,(blk-id b) ,(blk-labels b)))]))
+       (problem! `(unplaced-block ,(block-id b) ,(block-labels b)))]))
   by-seg)
 
 ;; 数据游程: 精确匹配, 不跟随(数据没有顺序执行)
@@ -225,7 +207,7 @@
 
 (struct measured (segment items size blocks) #:transparent)
 ;; items  : (listof (list 'offset 偏移 item))
-;; blocks : 代码段里块的顺序 (listof blk), 数据段为空
+;; blocks : 代码段里块的顺序 (listof block), 数据段为空
 
 (define (measure seg blks runs problem!)
   (define seg-name (segment-name seg))
@@ -253,9 +235,9 @@
       [else (emit! it (item-size it))]))
 
   (for ([b (in-list blks)])
-    (for ([chain (in-list (blk-labels b))])
+    (for ([chain (in-list (block-labels b))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (blk-insns b))]) (emit-item! it)))
+    (for ([it (in-list (block-insns b))]) (emit-item! it)))
 
   (for ([r (in-list runs)])
     (for ([chain (in-list (run-labels r))])
@@ -281,20 +263,20 @@
   (define labels-of (make-hash))                ; 块 id -> labels
   (for ([m (in-list measured-segs)])
     (for ([b (in-list (measured-blocks m))] [i (in-naturals)])
-      (hash-set! where (blk-id b) (cons (segment-name (measured-segment m)) i))
-      (hash-set! labels-of (blk-id b) (blk-labels b))))
+      (hash-set! where (block-id b) (cons (segment-name (measured-segment m)) i))
+      (hash-set! labels-of (block-id b) (block-labels b))))
   (for ([m (in-list measured-segs)])
     (define blks (measured-blocks m))
     (for ([b (in-list blks)] [i (in-naturals)])
-      (define ft (blk-fallthrough b))
+      (define ft (block-fallthrough b))
       (when ft
         (define nxt (and (< (add1 i) (length blks)) (list-ref blks (add1 i))))
         (unless (and nxt
-                     (= (blk-id nxt) ft)
+                     (= (block-id nxt) ft)
                      (equal? (hash-ref where ft #f)
                              (cons (segment-name (measured-segment m)) (add1 i))))
-          (problem! `(broken-fallthrough ,(blk-id b) ,ft
-                                         ,(blk-labels b)
+          (problem! `(broken-fallthrough ,(block-id b) ,ft
+                                         ,(block-labels b)
                                          ,(hash-ref labels-of ft '()))))))))
 
 ;; ---------------------------------------------------------------------------

@@ -1,16 +1,16 @@
 #lang racket
-;;; L3/demo.rkt -- 控制流: 输入是 L2 的输出(扁平 item, 无 module), 输出是块列表
+;;; L3/demo.rkt -- 控制流分析: s-exp 程序 -> block list (只分析, 不改程序)
 
-(require "cfg.rkt"
-         "opt.rkt")
+(require "insn.rkt"
+         (prefix-in cfg: "cfg.rkt")
+         "analyze.rkt")
 
-;; L3 的输入形状: 扁平 item 列表(这里直接写 L2 的输出)
 (define items
   '((label main entry)
-    (lwu t0 sp 8)                 ; 可达
+    (lwu t0 sp 8)
     (bge t1 t0 (main done))
-    (jal x0 (main done))          ; 紧邻 (main done) -> 多余
-    (label main dead)             ; 没人引用 -> 整块不可达
+    (jal x0 (main done))
+    (label main dead)             ; 没人引用
     (lb t2 t0 0)
     (label main done)
     (li t3 42)
@@ -19,22 +19,15 @@
     (add a0 a0 x0)
     (jalr x0 ra 0)))
 
-(displayln ";; L3 输入 (L2 输出)")
+(displayln ";; 输入 (扁平 item)")
 (for ([it (in-list items)]) (displayln (format "  ~s" it)))
 
 (newline)
-(displayln ";; CFG (优化前)")
-(for ([line (in-list (cfg->lines (build-cfg items)))])
+(displayln ";; CFG")
+(for ([line (in-list (cfg:cfg->lines (cfg:build-cfg items)))])
   (displayln (string-append "  " line)))
 
-(define blocks (optimize-program items))
-
 (newline)
-(displayln ";; L3 输出: 块列表")
-(for ([b (in-list blocks)])
-  (displayln (format "  id=~a labels=~s insns=~s succ=~s fallthrough=~s"
-                     (cadr (assoc 'id (cdr b)))
-                     (cdr (assoc 'labels (cdr b)))
-                     (cdr (assoc 'insns (cdr b)))
-                     (cdr (assoc 'succ (cdr b)))
-                     (cadr (assoc 'fallthrough (cdr b))))))
+(displayln ";; 分析结果: block list")
+(for ([b (in-list (analyze items))])
+  (displayln (format "  ~s" (first (blocks->sexp (list b)) ))))

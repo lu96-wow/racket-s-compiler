@@ -1,5 +1,5 @@
 #lang racket
-;;; L4/forms.rkt
+;;; L5/forms.rkt
 ;;;
 ;;; 形式表: 每条 item 的字节数、类别、可达距离、是否需要 scratch。
 ;;; 只放数据 + 查询; 布局计算本身在 layout.rkt。
