@@ -51,7 +51,12 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 形状：`label-form?` `label-path` `name?` `path?` `normalize-path` | 任意 | 布尔 / 值 |
 
 `block` 是 struct：`(struct block (id labels insns succ fallthrough root?) #:transparent)`。
-`root?` 由分析层算好（入口 / 被外部引用 / 地址被取过），后面的层不用再懂指令语义。
+
+**块边界只由控制流决定**：程序开头 / 控制转移的目标 label / 切流指令之后。
+非目标的 `label` 不是边界，它作为位置标记留在 `insns` 里（`(label …)` 可以出现在块中间）。
+
+`root?` = 外部入口：程序入口，或（有 `jalr` 时）地址被取过的块。
+内部引用不算根——它们在 CFG 里就是边，这样死代码才删得干净。
 
 ### L4 `L4/dce.rkt` — 死代码消除（改控制流）
 

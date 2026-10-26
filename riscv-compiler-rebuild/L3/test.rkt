@@ -170,14 +170,22 @@
 (define blocks-names (analyze '((label a) (label b) (add t0 t0 t0))))
 (check-equal? (block-labels (block-by-id blocks-names 0)) '((a) (b)))
 
-;; root?: 入口 / 被引用 / 地址被取过
+;; root? 只有外部入口: 程序入口 / (有间接跳转时)地址被取过
+;; 内部分支引用不算根 —— 它在 CFG 里就是边
 (check-true (block-root? (block-by-id blocks 0)))            ; 入口
-(check-true (block-root? (block-by-id blocks 2)))            ; 被 beq 引用
-(check-false (block-root? (block-by-id blocks 1)))           ; 无名、没人引用
+(check-false (block-root? (block-by-id blocks 2)))           ; 被 beq 引用, 但不是外部入口
+(check-false (block-root? (block-by-id blocks 1)))
 
 (define blocks-indirect
-  (analyze '((label a) (la t0 (b)) (jalr x0 ra 0) (label b) (add t0 t0 t0))))
-(check-true (block-root? (block-by-id blocks-indirect 1)))   ; 地址被取过
+  (analyze '((label a) (la t0 (b)) (jalr x0 t0 0) (label b) (add t0 t0 t0))))
+(check-true (block-root? (block-by-id blocks-indirect 1)))   ; 地址被取过 + 有 jalr
+
+;; 没有被取地址(也没有 jalr)时, 块头的 label 也不是外部入口
+(define blocks-no-taken
+  (analyze '((label a) (ebreak) (label b) (add t0 t0 t0))))
+(check-equal? (map block-id blocks-no-taken) '(0 1))
+(check-true  (block-root? (block-by-id blocks-no-taken 0)))   ; 入口
+(check-false (block-root? (block-by-id blocks-no-taken 1)))   ; b 不是外部入口
 
 ;; 链(label) 模型: 同位置多名 / 任意类型 / 链做跳转目标
 (define g-names (cfg:build-cfg '((label a f) (label a g) (jal x0 (a g)))))
@@ -217,5 +225,29 @@
 (check-equal? (blocks->sexp (analyze '((label a) (add t0 t0 t0))))
               '((block (id 0) (labels (a)) (insns (add t0 t0 t0))
                        (succ) (fallthrough #f) (root? #t))))
+
+;; ---------------------------------------------------------------------------
+;; label 不切块: 只有控制流才切
+;; ---------------------------------------------------------------------------
+
+;; 非目标 label 只是位置标记, 留在块里
+(define blocks-mid (analyze '((label a) (add t0 t0 t0) (label mid) (add t0 t0 t0))))
+(check-equal? (map block-id blocks-mid) '(0))
+(check-equal? (block-labels (block-by-id blocks-mid 0)) '((a)))
+(check-equal? (block-insns (block-by-id blocks-mid 0))
+              '((add t0 t0 t0) (label mid) (add t0 t0 t0)))
+
+;; 被跳转的 label 才切块
+(define blocks-target (analyze '((label a) (jal x0 (mid))
+                                 (label b) (add t0 t0 t0)
+                                 (label mid) (add t0 t0 t0))))
+(check-equal? (map block-id blocks-target) '(0 1 2))
+(check-equal? (block-labels (block-by-id blocks-target 1)) '((b)))
+(check-equal? (block-labels (block-by-id blocks-target 2)) '((mid)))
+
+;; 切流指令之后也切块(即使没有 label)
+(define blocks-after-branch (analyze '((label a) (beq t0 t1 (a)) (add t0 t0 t0))))
+(check-equal? (map block-id blocks-after-branch) '(0 1))
+(check-equal? (block-labels (block-by-id blocks-after-branch 1)) '())
 
 (displayln "L3 tests: ok")

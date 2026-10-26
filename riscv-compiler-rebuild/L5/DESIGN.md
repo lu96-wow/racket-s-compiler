@@ -2,7 +2,8 @@
 
 ## 0. 上游: L3 分析 / L4 死代码消除
 
-label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、程序开头）决定，一个块可能没有 label，一个 label 也可能只是同一块里的另一个名字。按 label 搬代码会把「块」和「位置」混为一谈；更危险的是**顺序执行（fallthrough）**被段切断时，按名字搬动的布局层根本看不见。
+label 不等于块：块由 **leader**（程序开头、**控制转移的目标 label**、`ends-block?` 指令之后）决定。
+非目标的 label 不是边界，它只是块内的位置标记；一个块可以没有 label，也可以有多个名字（块头连续多条 label）。按 label 搬代码会把「块」和「位置」混为一谈；更危险的是**顺序执行（fallthrough）**被段切断时，按名字搬动的布局层根本看不见。
 
 所以：**L3 只做分析并输出块列表（不改程序），L4 做死代码消除（会改控制流），
 L5 按块放置并检查 fallthrough 没被剪断。**
@@ -36,7 +37,7 @@ L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-e
 | `insns` | 块内容 |
 | `succ` | 后继块 id |
 | `fallthrough` | **物理下一条**是哪个块；`#f` 表示不以顺序方式落下去 |
-| `root?` | 分析层算好的可达性根（入口 / 被外部引用 / 地址被取过）；后续层不用再懂指令语义 |
+| `root?` | 外部入口（程序入口 / 有 jalr 时地址被取过的块）；内部引用不算根，它在 CFG 里就是边 |
 
 `fallthrough` 的判据是 `falls-through?`：
 
@@ -63,7 +64,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 ## 3. 放置
 
 - **单位**：代码用块；数据用「label 游程」（数据没有控制流）。
-- **place 行**：`(place 段名 链 ...)`，按**精确链**匹配（`equal?`），不做前缀、不按 kind 自动落位。
+- **place 行**：`(place 段名 链 ...)`，按**精确链**匹配块头的 label（`equal?`），不做前缀、不按 kind 自动落位。
+  指向块内位置标记的链会报 `unmatched-place`（块不能拆）。
 - **region**：命中的块是锚点；之后直到下一个锚点的块跟随它（没有身份的东西只能跟着有身份的前驱）。
 - **顺序**：段内按源顺序（程序先、数据后），`place` 行书写顺序无关。
 - **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。补指令/插跳转留给 L5，L4 只报。

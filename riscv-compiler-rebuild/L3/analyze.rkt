@@ -14,7 +14,10 @@
 ;;;   insns       块内容
 ;;;   succ        后继块 id
 ;;;   fallthrough 物理下一条是哪个块; #f = 不以顺序方式离开
-;;;   root?       可达性分析的根: 入口 / 被外部引用 / 地址被取过
+;;;   root?       外部入口: 程序入口 / (有间接跳转时)地址被取过的块
+;;;
+;;; 注意: block 的边界只由控制流决定(程序开头 / 转移目标 / 切流指令之后)。
+;;; 非目标的 label 不是边界, 它作为位置标记留在 insns 里。
 ;;;
 ;;; root? 由分析层算好, 后面的层不需要再认识指令语义。
 ;;;
@@ -61,20 +64,23 @@
   (define blocks (cfg:graph-blocks g))
   (define n (vector-length blocks))
 
-  ;; 根: 入口 + 被直接引用 + (有 indirect 时)地址被取过
-  (define referenced (cfg:referenced-labels items))
-  (define roots (if (cfg:graph-indirect? g)
-                    (append referenced (cfg:address-taken-paths items))
-                    referenced))
+  ;; 根只有"外部入口": 入口块 + (有间接跳转时)地址被取过的块。
+  ;; 内部引用不需要当根 —— 它们在 CFG 里就是边。
+  (define address-taken (if (cfg:graph-indirect? g)
+                            (cfg:address-taken-paths items)
+                            '()))
 
   (for/list ([b (in-vector blocks)] [i (in-naturals)])
     (define succ (cfg:block-successors b))
     (define next (and (< (add1 i) n) (add1 i)))
     (define fallthrough (and next (memv next succ) next))
+    ;; 块里所有 label(块头 + 块内位置标记)
+    (define all-labels
+      (append (cfg:block-labels b)
+              (for/list ([it (in-list (cfg:block-insns b))] #:when (label-form? it))
+                (label-path it))))
     (define root? (or (zero? i)
-                      (and (ormap (lambda (p) (member p roots))
-                                  (cfg:block-labels b))
-                           #t)))
+                      (and (ormap (lambda (p) (member p address-taken)) all-labels) #t)))
     (block i (cfg:block-labels b) (cfg:block-insns b) succ (or fallthrough #f) root?)))
 
 ;; ---------------------------------------------------------------------------

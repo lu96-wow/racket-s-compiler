@@ -93,8 +93,9 @@
 ;; 两个段: 中间用 jal x0 断开, 没有 fallthrough
 ;; ---------------------------------------------------------------------------
 
-(define l2 (lay '((label main) (addi a0 a0 1) (jal x0 (cold))
-                  (label keep) (jal x0 (keep))     ; 让 jal 的目标不是紧邻下一块
+(define l2 (lay '((label main) (beq t0 t1 (keep))   ; 让 keep 可达
+                  (jal x0 (cold))                   ; 目标不是紧邻下一块
+                  (label keep) (jal x0 (keep))
                   (label cold) (addi a1 a1 1))
                 '()
                 '((segments (segment prog1     code #x100000 #x100FFF 4)
@@ -104,7 +105,8 @@
                   (place prog1 (keep) (main)))))
 
 (check-equal? (items-of-seg l2 'prog1)
-              '((offset 0 (label main)) (offset 0 (addi a0 a0 1)) (offset 4 (jal x0 (cold)))
+              '((offset 0 (label main)) (offset 0 (beq t0 t1 (keep)))
+                (offset 4 (jal x0 (cold)))
                 (offset 8 (label keep)) (offset 8 (jal x0 (keep)))))
 (check-equal? (items-of-seg l2 'prog1cold)
               '((offset 0 (label cold)) (offset 0 (addi a1 a1 1))))
@@ -120,7 +122,8 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (problems-of
-               (lay '((label a) (addi a0 a0 1) (label b) (addi a1 a1 1))
+               (lay '((label a) (addi a0 a0 1) (beq t0 t1 (a))   ; 这条把块切开
+                      (label b) (addi a1 a1 1))
                     '()
                     '((segments (segment s1 code #x1000 #x1FFF 4)
                                 (segment s2 code #x2000 #x2FFF 4))
@@ -130,7 +133,8 @@
 
 ;; 同一个段里紧挨着 -> 没问题
 (check-equal? (problems-of
-               (lay '((label a) (addi a0 a0 1) (label b) (addi a1 a1 1))
+               (lay '((label a) (addi a0 a0 1) (beq t0 t1 (a))
+                      (label b) (addi a1 a1 1))
                     '()
                     '((segments (segment s1 code #x1000 #x1FFF 4))
                       (place s1 (a) (b)))))
@@ -260,10 +264,11 @@
                                  (place s1 (main)))))
               '((undefined-target s1 0 (jal x0 (ghost)))))
 (check-equal? (problems-of (lay '((label main) (branch-indirect a0 a1 (done))
+                                  (label keep) (jal x0 (keep))   ; 让目标不是紧邻下一块
                                   (label done) (jalr x0 ra 0))
                                '()
                                '((segments (segment s1 code #x1000 #x1FFF 4))
-                                 (place s1 (main) (done)))))
+                                 (place s1 (main) (keep) (done)))))
               '((scratch-hole s1 0 (branch-indirect a0 a1 (done)))))
 
 ;; ---------------------------------------------------------------------------
@@ -319,6 +324,23 @@
               '((offset 0 (label prog1 main)) (offset 0 (lwu t0 sp 8))
                 (offset 4 (label prog1 done)) (offset 4 (add a0 a0 x0))))
 (check-equal? (problems-of pipeline) '())
+
+;; place 指的是块内的位置标记(不是块头) -> 块不能拆, 报 unmatched-place
+(define l-mid
+  (lay '((label a) (addi a0 a0 1) (label mid) (addi a0 a0 1))
+       '()
+       '((segments (segment s1 code #x1000 #x1FFF 4))
+         (place s1 (a) (mid)))))
+(check-equal? (problems-of l-mid) '((unmatched-place (mid))))
+;; 块内 label 照样有偏移(符号表里有它)
+(check-equal? (findf (lambda (r) (equal? (car r) '(mid))) (symbols-of l-mid))
+              '((mid) s1 4 #x1004))
+
+;; place 名字写错 -> 也报 unmatched-place
+(check-equal? (problems-of (lay '((label a) (addi a0 a0 1)) '()
+                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                                 (place s1 (a) (typo)))))
+              '((unmatched-place (typo))))
 
 ;; 块字段形状不对 -> 解析阶段就报(这不是跨层守卫, 是 L4 自己的输入语法)
 (check-exn exn:fail?

@@ -150,20 +150,21 @@
                       #:when (hash-ref by-name (car p) #f))
              (for/list ([c (in-list (cdr p))]) (cons c (car p))))))
 
-;; 某组 label 命中了哪些段(按规则, 精确匹配)
-(define (matching-segments labels rules)
+;; 某组 label 命中了哪些段(按规则, 精确匹配); 命中的链记到 matched 里
+(define (matching-segments labels rules matched)
   (remove-duplicates
    (for*/list ([chain (in-list labels)]
                [rule (in-list rules)]
                #:when (equal? chain (car rule)))
+     (hash-set! matched chain #t)
      (cdr rule))))
 
 ;; 代码块: 锚点 + 其后跟随的块
-(define (place-blocks blocks rules problem!)
+(define (place-blocks blocks rules matched problem!)
   (define by-seg (make-hash))                 ; 段名 -> 块列表(源顺序)
   (define current (box #f))
   (for ([b (in-list blocks)])
-    (define hits (matching-segments (block-labels b) rules))
+    (define hits (matching-segments (block-labels b) rules matched))
     (cond
       [(> (length hits) 1)
        (problem! `(ambiguous-placement ,(car (block-labels b)) ,@hits))]
@@ -177,14 +178,14 @@
   by-seg)
 
 ;; 数据游程: 精确匹配, 不跟随(数据没有顺序执行)
-(define (place-runs runs rules problem!)
+(define (place-runs runs rules matched problem!)
   (define by-seg (make-hash))
   (for ([r (in-list runs)])
     (define labels (run-labels r))
     (cond
       [(null? labels) (problem! `(unlabeled-run ,(run-items r)))]
       [else
-       (define hits (matching-segments labels rules))
+       (define hits (matching-segments labels rules matched))
        (cond
          [(null? hits) (problem! `(unplaced ,(car labels)))]
          [(> (length hits) 1) (problem! `(ambiguous-placement ,(car labels) ,@hits))]
@@ -352,8 +353,14 @@
   (define by-name (for/hash ([s (in-list segs)]) (values (segment-name s) s)))
   (define rules (rules-of places by-name problem!))
 
-  (define code-by-seg (place-blocks (blocks-of program) rules problem!))
-  (define data-by-seg (place-runs (split-runs (items-of data)) rules problem!))
+  (define matched (make-hash))             ; 用到过的 place 链
+  (define code-by-seg (place-blocks (blocks-of program) rules matched problem!))
+  (define data-by-seg (place-runs (split-runs (items-of data)) rules matched problem!))
+
+  ;; place 里的链一次都没命中: 写错名字, 或指的是块内的位置标记(块不能拆)
+  (for ([rule (in-list rules)])
+    (unless (hash-ref matched (car rule) #f)
+      (problem! `(unmatched-place ,(car rule)))))
   (ensure-segments segs code-by-seg)
   (ensure-segments segs data-by-seg)
 

@@ -46,6 +46,7 @@
 
 (define (build-cfg items)
   ;; 1. 切块: 先收集 (labels . insns) 的逆序
+  (define targets (referenced-labels items))     ; 控制转移的目标链
   (define collected '())
   (define cur-labels '())
   (define cur-insns '())
@@ -60,8 +61,14 @@
   (for ([it (in-list items)])
     (cond
       [(label-form? it)
-       (when (pair? cur-insns) (flush!))          ; label 是新的 leader
-       (set! cur-labels (cons (label-path it) cur-labels))]
+       (define path (label-path it))
+       (cond
+         ;; 块开头(还没放 item): 归块头的多个名字
+         [(null? cur-insns) (set! cur-labels (cons path cur-labels))]
+         ;; 目标是 leader: 另起一块
+         [(member path targets) (flush!) (set! cur-labels (list path))]
+         ;; 非目标 label: 位置标记, 留在块里
+         [else (set! cur-insns (cons it cur-insns))])]
       [else
        (set! cur-insns (cons it cur-insns))
        (when (ends-block? it) (flush!))]))
@@ -69,7 +76,7 @@
   (flush!)
   (define raw (reverse collected))
 
-  ;; 2. 链 -> 块下标(一条链一个 key; 同位置多个名字就多个 key)
+  ;; 2. 链 -> 块下标(目标一定在块头, 所以只登记块头)
   (define label->index (make-hash))
   (for ([entry (in-list raw)] [i (in-naturals)])
     (for ([p (in-list (car entry))])

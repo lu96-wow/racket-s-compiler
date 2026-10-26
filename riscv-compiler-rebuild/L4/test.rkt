@@ -38,11 +38,11 @@
                      (label b) (add t0 t0 t0)))
               '((label a) (la t0 (b)) (jalr x0 ra 0) (label b) (add t0 t0 t0)))
 
-;; 有间接跳转 + b 被分支直接引用 -> 保留
+;; 引用来自死代码 -> 目标照样删(ret 之后那块走不到)
 (check-equal? (dce '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
                      (label c) (add t0 t0 t0)
                      (label b) (add t1 t1 t1)))
-              '((label a) (jalr x0 ra 0) (label b) (add t1 t1 t1)))
+              '((label a) (jalr x0 ra 0)))
 
 ;; 没有间接跳转: 无名块之后的 b 走不到
 (check-equal? (dce '((label a) (add t0 t0 t0) (jal x0 a) (label b) (add t1 t1 t1)))
@@ -76,9 +76,9 @@
 (check-equal? (block-succ (by-id blocks-after 0)) '(1))
 (check-equal? (block-fallthrough (by-id blocks-after 0)) 1)
 
-;; root? 由分析算出, 消除后原样保留
+;; root? 由分析算出, 消除后原样保留(只有入口是根, 内部边不算)
 (check-true (block-root? (by-id blocks-after 0)))
-(check-true (block-root? (by-id blocks-after 1)))
+(check-false (block-root? (by-id blocks-after 1)))
 
 ;; ---------------------------------------------------------------------------
 ;; 删「跳到紧邻下一块」的转移
@@ -123,16 +123,15 @@
 (check-equal? (block-insns (first blocks-merged)) '((add t0 t0 t0)))
 (check-true (block-root? (first blocks-merged)))
 
-;; 空块本身是根(被别处引用) -> 并过去后根跟着走
+;; 空块本身是根(地址被取过 + 有 jalr) -> 并过去后根跟着走
 (define blocks-merged-root
-  (eliminate-dead (analyze '((label a) (jal ra (b))
+  (eliminate-dead (analyze '((label a) (la t0 (b)) (jalr x0 t0 0)
                              (label x) (jal x0 (x))     ; 占位: 让 a 的下一块不是 b
-                             (label b) (jal x0 (c))     ; b 会变成空块, 且被 jal 引用
+                             (label b) (jal x0 (c))     ; b 会变成空块
                              (label c) (add t0 t0 t0)))))
-(check-equal? (map block-id blocks-merged-root) '(0 1 2))
-(check-equal? (block-labels (by-id blocks-merged-root 2)) '((b) (c)))
-(check-true (block-root? (by-id blocks-merged-root 2)))
-(check-equal? (block-succ (by-id blocks-merged-root 0)) '(2 1)) ; jal 目标改指并后的块
+(check-equal? (map block-id blocks-merged-root) '(0 1))
+(check-equal? (block-labels (by-id blocks-merged-root 1)) '((b) (c)))
+(check-true (block-root? (by-id blocks-merged-root 1)))
 
 ;; 末尾的空块没有下一块 -> 原样保留(它可能是代码末尾的 label)
 ;; 用 jal ra 让 (z) 被引用(否则它会被当成死代码删掉)
