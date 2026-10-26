@@ -1,5 +1,5 @@
 #lang racket
-;;; L1/table-base.rkt
+;;; L2/table-base.rkt
 ;;;
 ;;; 基础整数伪指令(load / store / move / 缺的那一半分支)。
 ;;; 只提供 `base-rewrite-rows`, 由 table.rkt 聚合; 格式见 table.rkt 的说明。

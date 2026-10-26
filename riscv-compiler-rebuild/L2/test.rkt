@@ -1,5 +1,5 @@
 #lang racket
-;;; L1/test.rkt
+;;; L2/test.rkt
 
 (require rackunit
          "table-base.rkt"
@@ -60,9 +60,14 @@
 (check-equal? (rw '(begin (load-32 t0 sp 8) (store-64 sp 16 ra)))
               '(begin (lwu t0 sp 8) (sd ra sp 16)))
 
-;; 展开结果里的参数继续被重写
+;; 操作数是值: 嵌套写在操作数里的伪指令不展开(展平后不存在这种写法)
 (check-equal? (rw '(move t0 (load-32 t1 sp 8)))
-              '(add t0 (lwu t1 sp 8) x0))
+              '(add t0 (load-32 t1 sp 8) x0))
+
+;; 链 (a g) 也是值: 不会被当成指令 (a g) 改写
+(check-equal? (rw '(jal x0 (l8 foo))) '(jal x0 (l8 foo)))
+(check-equal? (rw '(la t0 (move mv))) '(la t0 (move mv)))
+(check-false (pseudo-leftover? '(jal x0 (l8 foo))))
 
 ;; --- quote 不进 ------------------------------------------------------------
 (check-equal? (rw '(quote (load-32 t0 sp 8)))
@@ -238,4 +243,4 @@
 (check-equal? (rules-for 42) '())
 (check-equal? (rules-for '(a b)) '())
 
-(displayln "L1 tests: ok")
+(displayln "L2 tests: ok")

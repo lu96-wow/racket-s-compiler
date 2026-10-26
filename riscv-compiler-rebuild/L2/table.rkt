@@ -1,7 +1,7 @@
 #lang racket
-;;; L1/table.rkt
+;;; L2/table.rkt
 ;;;
-;;; L1 的全部数据: 指令头 + 各扩展的替换表拼在一起。没有逻辑。
+;;; L2 的全部数据: 指令头 + 各扩展的替换表拼在一起。没有逻辑。
 ;;; 逻辑在 rewrite.rkt: 它 require 本文件, 建索引并自检。
 ;;;
 ;;; 一个扩展一个文件, 各自 provide `xxx-rewrite-rows`, 这里 append。

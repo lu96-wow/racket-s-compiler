@@ -1,7 +1,7 @@
 #lang racket
-;;; L2/insn.rkt
+;;; L3/insn.rkt
 ;;;
-;;; L1 之后代码就是 core 指令 + label + 少量指令头。这里只做分类, 不改写。
+;;; L2 之后代码就是指令 + label + 少量指令头。这里只做分类, 不改写。
 ;;;
 ;;; 分类决定 CFG 的形状:
 ;;;   - 分支        (beq a b L)   两条边: 目标 + 顺序
@@ -14,7 +14,8 @@
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
 (provide form?
-         label-form? label-name
+         name? path? normalize-path
+         label-form? label-path
          barrier-heads barrier-form?
          branch-instruction? jump-instruction? indirect-instruction?
          trap-instruction? ends-block?
@@ -24,6 +25,21 @@
 ;; 真列表(代码形状)
 (define (form? x)
   (and (pair? x) (list? x)))
+
+;; 名字: label 的链上一节(可以是 symbol / string / number)
+(define (name? x)
+  (or (symbol? x) (string? x) (number? x)))
+
+;; 链: 非空名字列表, 例如 (a g)。label 与跳转目标都用它做身份。
+(define (path? x)
+  (and (list? x) (pair? x) (andmap name? x)))
+
+;; 裸原子当单节链看: g 与 (g) 等价
+(define (normalize-path x)
+  (cond
+    [(path? x) x]
+    [(name? x) (list x)]
+    [else #f]))
 
 ;; ---------------------------------------------------------------------------
 ;; 分类表(唯一的名单, 改这里)
@@ -45,13 +61,13 @@
 (define (head-in? x heads)
   (and (form? x) (memq (car x) heads) #t))
 
+;; (label a b) 表示链 (a b); (label) 不算 label
 (define (label-form? x)
   (and (form? x)
        (eq? (car x) 'label)
-       (= 2 (length x))
-       (symbol? (cadr x))))
+       (path? (cdr x))))
 
-(define (label-name x) (cadr x))
+(define (label-path x) (cdr x))
 
 (define (barrier-form? x) (head-in? x barrier-heads))
 

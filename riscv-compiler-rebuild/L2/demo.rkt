@@ -1,5 +1,5 @@
 #lang racket
-;;; L1/demo.rkt -- 按表替换: 进 quote-list, 出 quote-list
+;;; L2/demo.rkt -- 按表替换: 进 quote-list, 出 quote-list
 
 (require "rewrite.rkt")
 

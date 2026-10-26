@@ -1,7 +1,7 @@
 #lang racket
-;;; L1/rewrite.rkt
+;;; L2/rewrite.rkt
 ;;;
-;;; L1 只做一件事: 按表替换。
+;;; L2 只做一件事: 按表替换。
 ;;;
 ;;   认识的拼写(同一行的任意一个名字) + 形状匹配  -> 按表展开
 ;;;   其他一切(不认识的头 / 形状不对 / 原子 / quote 数据) -> 原样透传, 不报错
@@ -23,7 +23,8 @@
 
 (require "table.rkt")
 
-(provide ;; 数据
+(provide rewrite-item
+         ;; 数据
          rewrite-rows
          directive-heads
          reserved-heads
@@ -185,10 +186,16 @@
                 (and b (subst (cadr r) b)))))))
 
 ;; ---------------------------------------------------------------------------
-;; 整树重写
+;; 重写: 只认「item 位置」
 ;;
-;; 只有一种走法: 先看当前节点, 命中就把结果整体再走一遍(展开链一次收敛),
-;; 没命中就继续走子节点。代码内部的 quote 是数据, 不进去。
+;; 一条 item = 一个列表, 头是助记符。item 命中规则就把结果整体再过一遍
+;; (展开链一次收敛); 没命中就原样。
+;;
+;; 操作数是**值**, 不是代码, 一律不进去:
+;;   - 链 (a g) 是值(目标/地址), 不会被当成 (a g) 这条指令
+;;   - 嵌套写在操作数里的伪指令不展开(展平后不存在这种写法)
+;;
+;; 会往下走的位置只有三种: 程序/item 列表、begin 容器、quote(数据, 屏障)。
 ;;
 ;; 表里不小心写出自环(如 (foo ?x) -> (foo ?x))时, 展开链不会收敛,
 ;; 所以链长有上限, 超了直接报错, 不会卡死。
@@ -196,40 +203,44 @@
 
 (define max-expand-steps 64)
 
-(define (rewrite-all x [tbl default-table])
-  (cond
-    [(and (pair? x) (list? x))
-     (cond
-       [(eq? (car x) 'quote) x]
-       [(rewrite-one x tbl) => (lambda (y) (rewrite-chain y tbl 1))]
-       [else (cons (rewrite-all (car x) tbl)
-                   (map (lambda (e) (rewrite-all e tbl)) (cdr x)))])]
-    [else x]))
+;; 一条 item: 展开到不再命中
+(define (rewrite-item form [tbl default-table])
+  (define y (and (form? form) (rewrite-one form tbl)))
+  (if y (rewrite-chain y tbl 1) form))
 
 ;; 命中后对结果接着重写, 直到不再命中; 走满 max-expand-steps 步就当自环报错
 (define (rewrite-chain x tbl steps)
   (cond
     [(>= steps max-expand-steps)
-     (error 'rewrite-all "expansion chain longer than ~a steps (cycle in table?): ~e"
+     (error 'rewrite-item "expansion chain longer than ~a steps (cycle in table?): ~e"
             max-expand-steps x)]
     [else
      (define y (and (form? x) (rewrite-one x tbl)))
-     (if y
-         (rewrite-chain y tbl (add1 steps))
-         (rewrite-all x tbl))]))
+     (if y (rewrite-chain y tbl (add1 steps)) x)]))
+
+;; 程序 / item 列表 / begin 容器 / 单条 item
+(define (rewrite-all x [tbl default-table])
+  (define (each items) (map (lambda (i) (rewrite-all i tbl)) items))
+  (cond
+    [(not (form? x)) x]
+    [(eq? (car x) 'quote) x]                             ; 数据, 不进去
+    [(and (eq? (car x) 'begin) (pair? (cdr x)))          ; 容器: 里面是 item 列表
+     (cons 'begin (each (cdr x)))]
+    [(pair? (car x)) (each x)]                            ; item 列表
+    [else (rewrite-item x tbl)]))
 
 ;; ---------------------------------------------------------------------------
 ;; 验证: 输出中不允许残留任何 P-asm 拼写
 ;; ---------------------------------------------------------------------------
 
 (define (pseudo-leftover? x [tbl default-table])
+  (define (any-left? items) (ormap (lambda (i) (pseudo-leftover? i tbl)) items))
   (cond
-    [(and (pair? x) (list? x))
-     (cond
-       [(eq? (car x) 'quote) #f]
-       [(pseudo-name? (car x) tbl) #t]
-       [else (ormap (lambda (e) (pseudo-leftover? e tbl)) x)])]
-    [else #f]))
+    [(not (form? x)) #f]
+    [(eq? (car x) 'quote) #f]                             ; 数据, 不进去
+    [(and (eq? (car x) 'begin) (pair? (cdr x))) (any-left? (cdr x))]
+    [(pair? (car x)) (any-left? x)]                        ; item 列表
+    [else (and (pseudo-name? (car x) tbl) #t)]))
 
 (define (fully-rewritten? x [tbl default-table])
   (not (pseudo-leftover? x tbl)))

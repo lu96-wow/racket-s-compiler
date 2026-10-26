@@ -1,10 +1,11 @@
 #lang racket
-;;; L2/test.rkt
+;;; L3/test.rkt
 
 (require rackunit
          "insn.rkt"
          "cfg.rkt"
-         "opt.rkt")
+         "opt.rkt"
+         (only-in "../L1/flatten.rkt" flatten-program))
 
 ;; ---------------------------------------------------------------------------
 ;; 指令分类
@@ -35,10 +36,28 @@
 (check-equal? (jump-target '(beq t0 t1 L)) 'L)
 (check-equal? (jump-target '(jal ra L)) 'L)
 
+;; label 的链: (label a b) 是链 (a b), 不是两个名字
 (check-true  (label-form? '(label main)))
+(check-true  (label-form? '(label a b)))
 (check-false (label-form? '(label)))
-(check-false (label-form? '(label a b)))
-(check-equal? (label-name '(label main)) 'main)
+(check-false (label-form? '(label (a b))))
+(check-false (label-form? '(label #t)))
+(check-equal? (label-path '(label main)) '(main))
+(check-equal? (label-path '(label a b)) '(a b))
+
+;; 名字/链的类型: symbol / string / number 都行
+(check-true (name? 'a))
+(check-true (name? "a"))
+(check-true (name? 1))
+(check-false (name? #t))
+(check-true (path? '(a "b" 3)))
+(check-false (path? '()))
+(check-false (path? '(a (b))))
+;; 裸原子当单节链
+(check-equal? (normalize-path 'g) '(g))
+(check-equal? (normalize-path '(a g)) '(a g))
+(check-false (normalize-path #t))
+(check-equal? (normalize-path 1.5) '(1.5))
 
 (check-true  (barrier-form? '(section text)))
 (check-true  (barrier-form? '(bytes 1 2 3)))
@@ -54,7 +73,7 @@
 (define g1 (build-cfg '((label a) (add t0 t1 t2) (beq t0 t1 c)
                         (add t1 t1 t1) (label c) (add t2 t2 t2))))
 (check-equal? (cfg-block-count g1) 3)
-(check-equal? (block-labels (vector-ref (graph-blocks g1) 0)) '(a))
+(check-equal? (block-labels (vector-ref (graph-blocks g1) 0)) '((a)))
 (check-equal? (block-insns  (vector-ref (graph-blocks g1) 0))
               '((add t0 t1 t2) (beq t0 t1 c)))
 ;; 分支: 目标 + 顺序
@@ -65,7 +84,8 @@
 ;; 连续的 label 归同一个块
 (define g2 (build-cfg '((label a) (label b) (add t0 t1 t2))))
 (check-equal? (cfg-block-count g2) 1)
-(check-equal? (block-labels (vector-ref (graph-blocks g2) 0)) '(a b))
+;; 同位置的多个名字 = 多条链, 都归这个块
+(check-equal? (block-labels (vector-ref (graph-blocks g2) 0)) '((a) (b)))
 
 ;; jal x0: 只有目标边, 没有顺序边
 (define g3 (build-cfg '((label a) (jal x0 c) (label b) (add t0 t0 t0)
@@ -98,7 +118,11 @@
 (check-equal? (block-successors (vector-ref (graph-blocks g9) 0)) '())
 
 (check-equal? (referenced-labels '((label a) (jal ra b) (beq t0 t1 c) (add t0 t1 t2)))
-              '(b c))
+              '((b) (c)))
+
+;; 目标写成链也一样(支持任意类型)
+(check-equal? (referenced-labels '((jal ra (a b)) (jal x0 "s") (jal x0 3)))
+              '((a b) ("s") (3)))
 
 ;; ---------------------------------------------------------------------------
 ;; 可达性
@@ -118,10 +142,26 @@
                  (label done) (add t0 t0 t0)))
               '(quote ((label start) (add t0 t1 t2) (label done) (add t0 t0 t0))))
 
-;; 有间接跳转时, 所有有名字的块都当可能的落点 -> 保留
+;; 有间接跳转, 但 b 既没被直接引用、地址也没被取过 -> 仍然不可达
 (check-equal? (optimize-program
                '((label a) (jalr x0 ra 0) (jal x0 a) (label b) (add t0 t0 t0)))
-              '(quote ((label a) (jalr x0 ra 0) (jal x0 a) (label b) (add t0 t0 t0))))
+              '(quote ((label a) (jalr x0 ra 0) (jal x0 a))))
+
+;; 有间接跳转 + b 的地址被取过(la) -> 可能被跳到, 保留
+(check-equal? (optimize-program
+               '((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
+                 (label b) (add t0 t0 t0)))
+              '(quote ((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
+                       (label b) (add t0 t0 t0))))
+
+;; 有间接跳转 + b 被分支直接引用 -> 保留
+(check-equal? (optimize-program
+               '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
+                 (label c) (add t0 t0 t0)
+                 (label b) (add t1 t1 t1)))
+              '(quote ((label a) (jalr x0 ra 0) (beq t0 t1 (b))
+                       (label c) (add t0 t0 t0)
+                       (label b) (add t1 t1 t1))))
 
 ;; 同样的形状, 没有间接跳转 -> 无名块之后的 b 走不到, 删掉
 (check-equal? (optimize-program
@@ -210,6 +250,37 @@
               '(quote ((label a) (frobnicate t0) (add t0 t0 t0))))
 
 ;; ---------------------------------------------------------------------------
+;; 链(label) 模型: 同位置多名 / 任意类型 / 链做跳转目标
+;; ---------------------------------------------------------------------------
+
+;; 连续 label = 同一位置, 两个名字
+(define g-names (build-cfg '((label a f) (label a g) (jal x0 (a g)))))
+(check-equal? (cfg-block-count g-names) 1)
+(check-equal? (block-labels (vector-ref (graph-blocks g-names) 0)) '((a f) (a g)))
+(check-equal? (block-successors (vector-ref (graph-blocks g-names) 0)) '(0))
+
+;; 链不同就是不同位置: (a a) 与 (a b)
+(define g-paths (build-cfg '((label a a) (jal x0 (a b)) (label a b))))
+(check-equal? (block-successors (vector-ref (graph-blocks g-paths) 0)) '(1))
+
+;; 字符串 / 数字名字
+(define g-typed (build-cfg '((label "x" 1) (jal x0 ("x" 1)))))
+(check-equal? (block-successors (vector-ref (graph-blocks g-typed) 0)) '(0))
+(define g-num (build-cfg '((label 1) (jal x0 (1)))))
+(check-equal? (block-successors (vector-ref (graph-blocks g-num) 0)) '(0))
+
+;; 目标是裸原子: 等价于单节链
+(define g-bare (build-cfg '((label g) (jal x0 g))))
+(check-equal? (block-successors (vector-ref (graph-blocks g-bare) 0)) '(0))
+
+;; L1 展平后的程序直接进 L3
+(define flat-prog (flatten-program '((module a (label f) (jal x0 (g)) (label g)))))
+(check-equal? flat-prog
+              '(quote ((label a f) (jal x0 (a g)) (label a g))))
+(check-equal? (optimize-program flat-prog)
+              '(quote ((label a f) (label a g))))
+
+;; ---------------------------------------------------------------------------
 ;; 程序容器: (begin ...) 是壳, 不是指令
 ;; ---------------------------------------------------------------------------
 
@@ -234,4 +305,4 @@
 ;; pass 名字反映功能
 (check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block))
 
-(displayln "L2 tests: ok")
+(displayln "L3 tests: ok")

@@ -1,5 +1,5 @@
 #lang racket
-;;; L2/opt.rkt
+;;; L3/opt.rkt
 ;;;
 ;;; 在 CFG 上做优化。每个 pass 都是 (items ctx -> items), 只按块做局部改动。
 ;;;
@@ -34,11 +34,12 @@
 ;; 一段连续可分析的代码
 (struct segment (items) #:transparent)
 
-;; 整程序的上下文: 跨段被引用的 label + 是否存在间接跳转
-(struct program-context (referenced indirect?) #:transparent)
+;; 整程序的上下文: 跨段被引用的链 + 地址被取过的链 + 是否存在间接跳转
+(struct program-context (referenced address-taken indirect?) #:transparent)
 
 (define (make-context items)
   (program-context (referenced-labels items)
+                   (address-taken-paths items)
                    (for/or ([it (in-list items)])
                      (indirect-instruction? it))))
 
@@ -91,8 +92,8 @@
 ;; pass 1: 删不可达块
 ;;
 ;; 根 = 本段第一块
-;;    + 名字在段外被引用的块(例如上一段 jal 过来)
-;;    + 存在 jalr 时, 所有有名字的块(间接跳转可能落到任何 label)
+;;    + 名字被直接引用的块(本段或别的段 jal/分支过来)
+;;    + 存在 jalr 时, 名字"被取过地址"的块(间接跳转只可能落到这种地方)
 ;; 走不到的块连同它的 label 一起删: 既然 walk 不到, 它的 label 也就没被引用。
 ;; ---------------------------------------------------------------------------
 
@@ -102,15 +103,16 @@
   (cond
     [(zero? (vector-length blocks)) items]
     [else
-     (define referenced (program-context-referenced ctx))
-     (define indirect? (program-context-indirect? ctx))
+     (define roots-of-interest
+       (if (program-context-indirect? ctx)
+           (append (program-context-referenced ctx)
+                   (program-context-address-taken ctx))
+           (program-context-referenced ctx)))
      (define roots
        (for/list ([b (in-vector blocks)] [i (in-naturals)]
                   #:when (or (zero? i)
-                             (and (pair? (block-labels b))
-                                  (or indirect?
-                                      (ormap (lambda (l) (memq l referenced))
-                                             (block-labels b))))))
+                             (ormap (lambda (p) (member p roots-of-interest))
+                                    (block-labels b))))
          i))
      (define keep (cfg-reachable g roots))
      (cond
@@ -118,9 +120,9 @@
        [else (append* (for/list ([i (in-list keep)])
                         (block->items (vector-ref blocks i))))])]))
 
-;; 块 -> 线性指令
+;; 块 -> 线性指令: 每条链写回一条 (label . 链)
 (define (block->items b)
-  (append (for/list ([l (in-list (block-labels b))]) (list 'label l))
+  (append (for/list ([p (in-list (block-labels b))]) (cons 'label p))
           (block-insns b)))
 
 ;; ---------------------------------------------------------------------------
@@ -144,7 +146,8 @@
         [(and next
               (or (unconditional-jump? last-insn)
                   (branch-instruction? last-insn))
-              (memq (jump-target last-insn) (block-labels next)))
+              (member (normalize-path (jump-target last-insn))
+                      (block-labels next)))
          (set! changed? #t)
          (block (block-labels b) (drop-right insns 1) (block-successors b))]
         [else b])))

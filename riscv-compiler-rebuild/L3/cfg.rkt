@@ -1,5 +1,5 @@
 #lang racket
-;;; L2/cfg.rkt
+;;; L3/cfg.rkt
 ;;;
 ;;; 线性指令 -> 基本块图。
 ;;;
@@ -30,6 +30,7 @@
          cfg-reachable
          cfg->lines
          referenced-labels
+         address-taken-paths
          labels-of)
 
 ;; 一个基本块: 头部的若干 label + 指令 + 后继(块下标)
@@ -59,7 +60,7 @@
     (cond
       [(label-form? it)
        (when (pair? cur-insns) (flush!))          ; label 是新的 leader
-       (set! cur-labels (cons (label-name it) cur-labels))]
+       (set! cur-labels (cons (label-path it) cur-labels))]
       [else
        (set! cur-insns (cons it cur-insns))
        (when (ends-block? it) (flush!))]))
@@ -67,11 +68,11 @@
   (flush!)
   (define raw (reverse collected))
 
-  ;; 2. label -> 块下标
+  ;; 2. 链 -> 块下标(一条链一个 key; 同位置多个名字就多个 key)
   (define label->index (make-hash))
   (for ([entry (in-list raw)] [i (in-naturals)])
-    (for ([l (in-list (car entry))])
-      (hash-set! label->index l i)))
+    (for ([p (in-list (car entry))])
+      (hash-set! label->index p i)))
 
   ;; 3. 算每个块的后继
   (define n (length raw))
@@ -80,8 +81,10 @@
       (define insns (cdr entry))
       (define last-insn (and (pair? insns) (last insns)))
       (define fallthrough (and (< (add1 i) n) (add1 i)))
-      (define (edge label) (hash-ref label->index label #f))
-      (define (succs . xs) (filter values xs))
+      (define (edge target)
+        (define p (normalize-path target))
+        (and p (hash-ref label->index p #f)))
+      (define (succs . xs) (remove-duplicates (filter values xs)))
       (block (car entry)
              insns
              (cond
@@ -104,19 +107,33 @@
 
 (define (cfg-block-count g) (vector-length (graph-blocks g)))
 
-;; 一个块的所有名字
+;; 一个块的所有名字(每条链一项)
 (define (labels-of b) (block-labels b))
 
 ;; ---------------------------------------------------------------------------
 ;; 分析
 ;; ---------------------------------------------------------------------------
 
-;; 整段代码里被当成跳转/分支目标出现过的 label(含跨段的)
+;; 整段代码里被当成跳转/分支目标出现过的链(含跨段的)
 (define (referenced-labels items)
   (remove-duplicates
    (for/list ([it (in-list items)]
-              #:when (or (branch-instruction? it) (jump-instruction? it)))
-     (jump-target it))))
+              #:when (or (branch-instruction? it) (jump-instruction? it))
+              #:do [(define p (normalize-path (jump-target it)))]
+              #:when p)
+     p)))
+
+;; 被当成"值"用过的链(不是控制转移目标的引用), 例如 (la t0 (b)) / (ld t0 (table))。
+;; 间接跳转的目标只能来自"取过地址"的链, 所以它们是有间接跳转时的候选落点。
+(define (address-taken-paths items)
+  (remove-duplicates
+   (append*
+    (for/list ([it (in-list items)] #:when (form? it))
+      (define operands
+        (if (or (branch-instruction? it) (jump-instruction? it))
+            (drop-right (cdr it) 1)      ; 最后一个操作数是跳转目标, 不算取值
+            (cdr it)))
+      (filter path? operands)))))
 
 ;; 从 roots 出发能走到的块下标(升序)
 (define (cfg-reachable g roots)
