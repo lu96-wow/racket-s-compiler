@@ -1,148 +1,152 @@
 #lang racket
 ;;; L4/dce.rkt
 ;;;
-;;; 死代码消除(会改控制流): block list -> block list
+;;; 死代码消除(会改控制流): program -> program
 ;;;
-;;; 输入/输出都是 L3 的块列表(Racket struct), 不是 s-exp。
+;;; program 来自 L3, 由两份平行数据组成:
+;;;   blocks : (block <头 label 链列表> item ...)
+;;;   flows  : (flow (succ id ...) (fallthrough id|#f) (root? bool))
+;;; 块的身份 = 它在 blocks 里的位置(0 起), succ/fallthrough 里的 id 就是这个位置。
 ;;;
-;;; 本层做的三件事:
-;;;   drop-unreachable             从 root? 块出发走不到的一律删掉(连 label)
+;;; 三个 pass, 每个都同时改 blocks 和 flows:
+;;;   drop-unreachable             从 root? 块走不到的一律删掉
 ;;;   drop-transfers-to-next-block 删掉"跳到紧邻下一块"的转移 -> 变成顺序落下
-;;;   merge-empty-blocks           把空块并进它的下一块(label 地址不变)
+;;;   merge-empty-blocks           空块(没有 item)并进下一块(label 地址不变)
 ;;;
-;;; 两者都会改变 succ / fallthrough, 所以每次改完都重算:
-;;;   - 删块后重新编号 id, 重映射 succ / fallthrough
-;;;   - 删转移后该块只剩顺序边: succ = (下一个块), fallthrough = 下一个块
-;;;
-;;; 不做的: 不重排块、不动指令、不认识 label 之外的东西(分析信息全在 block 里)。
+;;; 改完统一重新编号(位置即 id), succ/fallthrough 跟着重映射。
 
 (require "../L3/analyze.rkt"
          "../L3/insn.rkt")
 
 (provide passes
          pass-names
-         optimize-blocks
+         optimize-program
          eliminate-dead)
 
 ;; ---------------------------------------------------------------------------
-;; 工具
+;; 组装: 保持 blocks/flows 对齐并重新编号
 ;; ---------------------------------------------------------------------------
 
-(define (next-block blocks i)
-  (and (< (add1 i) (length blocks)) (list-ref blocks (add1 i))))
+;; kept : (listof (list 旧 id 块 流))
+(define (assemble kept)
+  (define new-of (make-hash))
+  (for ([e (in-list kept)] [new (in-naturals)])
+    (hash-set! new-of (car e) new))
+  (define (map-id id)
+    (and (hash-has-key? new-of id) (hash-ref new-of id)))
+  (program
+   (for/list ([e (in-list kept)]) (cadr e))
+   (for/list ([e (in-list kept)])
+     (define f (caddr e))
+     (make-flow (filter values (for/list ([s (in-list (flow-succ f))]) (map-id s)))
+                (and (flow-fallthrough f) (map-id (flow-fallthrough f)))
+                (flow-root? f)))))
 
-;; 重新编号: 保持顺序, id 变 0..n-1, succ/fallthrough 跟着改
-(define (reindex blocks)
-  (define new-id (make-hash))
-  (for ([b (in-list blocks)] [i (in-naturals)])
-    (hash-set! new-id (block-id b) i))
-  (for/list ([b (in-list blocks)] [i (in-naturals)])
-    (define ft (block-fallthrough b))
-    (block i
-           (block-labels b)
-           (block-insns b)
-           (for/list ([s (in-list (block-succ b))]
-                      #:when (hash-ref new-id s #f))
-             (hash-ref new-id s))
-           (cond
-             [(not ft) #f]
-             [(not (hash-ref new-id ft #f))
-              ;; 顺序后继不可能不可达(否则它就被那条边走到了), 这里只是兜底
-              (error 'reindex "fallthrough target ~a disappeared" ft)]
-             [else (hash-ref new-id ft)])
-           (block-root? b))))
+(define (zip-program prog)
+  (for/list ([b (in-list (program-blocks prog))]
+             [f (in-list (program-flows prog))]
+             [i (in-naturals)])
+    (list i b f)))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 1: 删不可达块
 ;; ---------------------------------------------------------------------------
 
-(define (drop-unreachable blocks)
-  (define by-id (for/hash ([b (in-list blocks)]) (values (block-id b) b)))
-  (define seen (make-hash))
-  (define (visit! id)
-    (unless (hash-ref seen id #f)
-      (hash-set! seen id #t)
-      (for ([s (in-list (block-succ (hash-ref by-id id)))])
-        (when (hash-ref by-id s #f) (visit! s)))))
-  (for ([b (in-list blocks)] #:when (block-root? b))
-    (visit! (block-id b)))
-  (define kept (for/list ([b (in-list blocks)]
-                          #:when (hash-ref seen (block-id b) #f))
-                 b))
-  (if (= (length kept) (length blocks)) blocks (reindex kept)))
+(define (drop-unreachable prog)
+  (define entries (zip-program prog))
+  (define n (length entries))
+  (define seen (make-vector n #f))
+  (define (visit! i)
+    (unless (vector-ref seen i)
+      (vector-set! seen i #t)
+      (for ([s (in-list (flow-succ (caddr (list-ref entries i))))])
+        (when (< s n) (visit! s)))))
+  (for ([e (in-list entries)] #:when (flow-root? (caddr e)))
+    (visit! (car e)))
+  (define kept (for/list ([e (in-list entries)] #:when (vector-ref seen (car e))) e))
+  (if (= (length kept) n) prog (assemble kept)))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 2: 转移到紧邻下一块 -> 删掉, 直接落下去
 ;; ---------------------------------------------------------------------------
 
-(define (transfer-to-next? b next)
-  (define insns (block-insns b))
-  (define last-insn (and (pair? insns) (last insns)))
-  (and next
+(define (last-item block) (and (pair? (block-items block)) (last (block-items block))))
+
+(define (transfer-to-next? block next-block)
+  (define last-insn (last-item block))
+  (and next-block
        (or (unconditional-jump? last-insn)
            (branch-instruction? last-insn))
-       (member (normalize-path (jump-target last-insn)) (block-labels next))))
+       (member (normalize-path (jump-target last-insn)) (block-head next-block))))
 
-(define (drop-transfers-to-next-block blocks)
-  (define changed? #f)
-  (define out
+(define (drop-transfers-to-next-block prog)
+  (define blocks (program-blocks prog))
+  (define flows (program-flows prog))
+  (define changed (make-vector (length blocks) #f))
+  (define new-blocks
     (for/list ([b (in-list blocks)] [i (in-naturals)])
-      (define next (next-block blocks i))
+      (define next (and (< (add1 i) (length blocks)) (list-ref blocks (add1 i))))
       (cond
         [(transfer-to-next? b next)
-         (set! changed? #t)
-         (block (block-id b)
-                (block-labels b)
-                (drop-right (block-insns b) 1)
-                (list (block-id next))
-                (block-id next)
-                (block-root? b))]
+         (vector-set! changed i #t)
+         (make-block (block-head b) (drop-right (block-items b) 1))]
         [else b])))
-  (if changed? out blocks))
+  (if (not (ormap values (vector->list changed)))
+      prog
+      (assemble
+       (for/list ([b (in-list new-blocks)] [f (in-list flows)] [i (in-naturals)])
+         (cond
+           ;; 删掉转移后只剩顺序边
+           [(vector-ref changed i)
+            (define next (and (< (add1 i) (length new-blocks)) (add1 i)))
+            (list i b (make-flow (if next (list next) '()) next (flow-root? f)))]
+           ;; 没动的块: 流原样交给 assemble 重映射
+           [else (list i b f)])))))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 3: 空块并进下一块
-;;
-;; 空块(insns 为空)的 label 和下一块的 label 指向同一个地址, 所以把 label
-;; 挪到下一块是安全的; 指向空块的 succ/fallthrough 一并改指下一块。
-;; 末尾的空块没有"下一块", 原样保留(它们可能就是代码末尾的 label)。
 ;; ---------------------------------------------------------------------------
 
-(define (merge-empty-blocks blocks)
-  (define remap (make-hash))           ; 旧 id -> 并进去的那块 id
-  (define out '())                     ; 逆序
-  (define pending '())                 ; 逆序的空块
+(define (empty-block? b) (null? (block-items b)))
 
-  (for ([b (in-list blocks)])
+(define (merge-empty-blocks prog)
+  (define pending '())            ; 逆序的空块 (list 旧 id 块 流)
+  (define out '())
+  (define redirect (make-hash))   ; 被并掉的旧 id -> 目标旧 id
+  (define changed? #f)
+
+  (for ([e (in-list (zip-program prog))])
+    (define b (cadr e))
     (cond
-      [(null? (block-insns b))
-       (set! pending (cons b pending))]
+      [(empty-block? b) (set! pending (cons e pending))]
       [else
-       (define id (block-id b))
-       (define labels* (append (append* (for/list ([p (in-list (reverse pending))])
-                                          (block-labels p)))
-                               (block-labels b)))
-       (define root?* (or (block-root? b)
-                          (ormap block-root? pending)))
-       (for ([p (in-list pending)]) (hash-set! remap (block-id p) id))
-       (set! pending '())
-       (set! out (cons (block id labels* (block-insns b) (block-succ b)
-                              (block-fallthrough b) root?*)
-                       out))]))
-
-  ;; 末尾空块: 没有下一块可并
-  (for ([p (in-list pending)]) (hash-set! remap (block-id p) (block-id p)))
+       (when (pair? pending)
+         (set! changed? #t)
+         (for ([p (in-list pending)]) (hash-set! redirect (car p) (car e)))
+         (define heads (append (append* (for/list ([p (in-list (reverse pending))])
+                                          (block-head (cadr p))))
+                               (block-head b)))
+         (define root? (or (flow-root? (caddr e))
+                           (ormap (lambda (p) (flow-root? (caddr p))) pending)))
+         (set! b (make-block heads (block-items b)))
+         (set! e (list (car e) b (make-flow (flow-succ (caddr e))
+                                            (flow-fallthrough (caddr e))
+                                            root?))))
+       (set! out (cons e out))
+       (set! pending '())]))
+  ;; 末尾空块没有下一块可并
   (define all (append (reverse out) (reverse pending)))
-
-  (define (map-id id) (hash-ref remap id id))
-  (reindex
-   (for/list ([b (in-list all)])
-     (block (block-id b)
-            (block-labels b)
-            (block-insns b)
-            (remove-duplicates (for/list ([s (in-list (block-succ b))]) (map-id s)))
-            (and (block-fallthrough b) (map-id (block-fallthrough b)))
-            (block-root? b)))))
+  (if (not changed?)
+      prog
+      (assemble
+       (for/list ([e (in-list all)])
+         (define f (caddr e))
+         (define (fix id) (hash-ref redirect id id))
+         (list (car e)
+               (cadr e)
+               (make-flow (remove-duplicates (for/list ([x (in-list (flow-succ f))]) (fix x)))
+                          (and (flow-fallthrough f) (fix (flow-fallthrough f)))
+                          (flow-root? f)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 表 + 跑法
@@ -155,18 +159,15 @@
 
 (define (pass-names) (map car passes))
 
-;; 反复跑到不再变化; 轮数有上限, 防止 pass 之间来回抖
 (define max-rounds 16)
 
-(define (optimize-blocks blocks)
-  (let loop ([blocks blocks] [round 0])
+(define (optimize-program prog)
+  (let loop ([prog prog] [round 0])
     (cond
-      [(>= round max-rounds) blocks]
+      [(>= round max-rounds) prog]
       [else
-       (define next
-         (for/fold ([acc blocks]) ([p (in-list passes)])
-           ((cdr p) acc)))
-       (if (equal? next blocks) blocks (loop next (add1 round)))])))
+       (define next (for/fold ([acc prog]) ([p (in-list passes)]) ((cdr p) acc)))
+       (if (equal? next prog) prog (loop next (add1 round)))])))
 
 ;; 本层主入口
-(define (eliminate-dead blocks) (optimize-blocks blocks))
+(define (eliminate-dead prog) (optimize-program prog))

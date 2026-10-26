@@ -3,21 +3,23 @@
 
 (require rackunit
          "dce.rkt"
-         (only-in "../L3/analyze.rkt" analyze blocks->sexp sexp->blocks
-                  block-id block-labels block-insns block-succ block-fallthrough block-root?))
+         (only-in "../L3/analyze.rkt" analyze program? program-blocks program-flows
+                  block-head block-items flow-succ flow-fallthrough flow-root?
+                  program->sexp sexp->program))
 
 ;; ---- 测试用视图 ------------------------------------------------------------
 
-;; 块列表 -> 扁平 item(语义测试只看内容)
-(define (flat blocks)
-  (append* (for/list ([b (in-list blocks)])
-             (append (for/list ([l (in-list (block-labels b))]) (cons 'label l))
-                     (block-insns b)))))
+;; 程序 -> 扁平 item(语义测试只看内容)
+(define (flat prog)
+  (append* (for/list ([b (in-list (program-blocks prog))])
+             (append (for/list ([l (in-list (block-head b))]) (cons 'label l))
+                     (block-items b)))))
 
 ;; 程序 -> 分析 -> 消除 -> 扁平视图
 (define (dce items) (flat (eliminate-dead (analyze items))))
 
-(define (by-id blocks n) (findf (lambda (b) (= n (block-id b))) blocks))
+(define (block-at prog n) (list-ref (program-blocks prog) n))
+(define (flow-at prog n) (list-ref (program-flows prog) n))
 
 ;; ---------------------------------------------------------------------------
 ;; 删不可达块
@@ -71,14 +73,14 @@
   (eliminate-dead (analyze '((label a) (add t0 t0 t0) (jal x0 (c))
                             (label dead) (add t1 t1 t1)
                             (label c) (add t2 t2 t2)))))
-(check-equal? (map block-id blocks-after) '(0 1))
-(check-equal? (block-labels (by-id blocks-after 1)) '((c)))
-(check-equal? (block-succ (by-id blocks-after 0)) '(1))
-(check-equal? (block-fallthrough (by-id blocks-after 0)) 1)
+(check-equal? (range (length (program-blocks blocks-after))) '(0 1))
+(check-equal? (block-head (block-at blocks-after 1)) '((c)))
+(check-equal? (flow-succ (flow-at blocks-after 0)) '(1))
+(check-equal? (flow-fallthrough (flow-at blocks-after 0)) 1)
 
 ;; root? 由分析算出, 消除后原样保留(只有入口是根, 内部边不算)
-(check-true (block-root? (by-id blocks-after 0)))
-(check-false (block-root? (by-id blocks-after 1)))
+(check-true (flow-root? (flow-at blocks-after 0)))
+(check-false (flow-root? (flow-at blocks-after 1)))
 
 ;; ---------------------------------------------------------------------------
 ;; 删「跳到紧邻下一块」的转移
@@ -103,9 +105,9 @@
 ;; 删转移后 succ/fallthrough 变成顺序边
 (define blocks-simple
   (eliminate-dead (analyze '((label a) (add t0 t0 t0) (jal x0 b) (label b) (add t1 t1 t1)))))
-(check-equal? (block-insns (by-id blocks-simple 0)) '((add t0 t0 t0)))
-(check-equal? (block-succ (by-id blocks-simple 0)) '(1))
-(check-equal? (block-fallthrough (by-id blocks-simple 0)) 1)
+(check-equal? (block-items (block-at blocks-simple 0)) '((add t0 t0 t0)))
+(check-equal? (flow-succ (flow-at blocks-simple 0)) '(1))
+(check-equal? (flow-fallthrough (flow-at blocks-simple 0)) 1)
 
 ;; ---------------------------------------------------------------------------
 ;; 空块并进下一块
@@ -118,10 +120,10 @@
 ;; 并完只剩一块, labels 是 (a) (b), root? 保留
 (define blocks-merged
   (eliminate-dead (analyze '((label a) (jal x0 (b)) (label b) (add t0 t0 t0)))))
-(check-equal? (map block-id blocks-merged) '(0))
-(check-equal? (block-labels (first blocks-merged)) '((a) (b)))
-(check-equal? (block-insns (first blocks-merged)) '((add t0 t0 t0)))
-(check-true (block-root? (first blocks-merged)))
+(check-equal? (range (length (program-blocks blocks-merged))) '(0))
+(check-equal? (block-head (block-at blocks-merged 0)) '((a) (b)))
+(check-equal? (block-items (block-at blocks-merged 0)) '((add t0 t0 t0)))
+(check-true (flow-root? (flow-at blocks-merged 0)))
 
 ;; 空块本身是根(地址被取过 + 有 jalr) -> 并过去后根跟着走
 (define blocks-merged-root
@@ -129,17 +131,31 @@
                              (label x) (jal x0 (x))     ; 占位: 让 a 的下一块不是 b
                              (label b) (jal x0 (c))     ; b 会变成空块
                              (label c) (add t0 t0 t0)))))
-(check-equal? (map block-id blocks-merged-root) '(0 1))
-(check-equal? (block-labels (by-id blocks-merged-root 1)) '((b) (c)))
-(check-true (block-root? (by-id blocks-merged-root 1)))
+(check-equal? (range (length (program-blocks blocks-merged-root))) '(0 1))
+(check-equal? (block-head (block-at blocks-merged-root 1)) '((b) (c)))
+(check-true (flow-root? (flow-at blocks-merged-root 1)))
+;; jalr x0 没有顺序边, 所以入口块的后继是空的
+(check-equal? (flow-succ (flow-at blocks-merged-root 0)) '())
+
+;; 前驱指向空块的边不能丢: 空块并进下一块后, 这条边要改指并后的块
+(define prog-edge (analyze '((label a) (beq t0 t1 (b)) (jal x0 (c))
+                             (label b) (jal x0 (c))
+                             (label c) (add t0 t0 t0))))
+(define after-transfers
+  ((cdr (assoc 'drop-transfers-to-next-block passes)) prog-edge))
+(define after-merge
+  ((cdr (assoc 'merge-empty-blocks passes)) after-transfers))
+(check-equal? (map block-head (program-blocks after-merge)) '(((a)) () ((b) (c))))
+(check-equal? (flow-succ (flow-at after-merge 0)) '(2 1))   ; 分支: 目标 + 顺序
+(check-equal? (flow-succ (flow-at after-merge 1)) '(2))     ; 跳向 (c) 的边改指并后的块
 
 ;; 末尾的空块没有下一块 -> 原样保留(它可能是代码末尾的 label)
 ;; 用 jal ra 让 (z) 被引用(否则它会被当成死代码删掉)
 (check-equal? (dce '((label a) (jal ra (z)) (label z)))
               '((label a) (jal ra (z)) (label z)))
 (define blocks-tail (eliminate-dead (analyze '((label a) (jal ra (z)) (label z)))))
-(check-equal? (map block-labels blocks-tail) '(((a)) ((z))))
-(check-equal? (map block-insns blocks-tail) '(((jal ra (z))) ()))
+(check-equal? (map block-head (program-blocks blocks-tail)) '(((a)) ((z))))
+(check-equal? (map block-items (program-blocks blocks-tail)) '(((jal ra (z))) ()))
 
 ;; 连续多个空块一起并
 (check-equal? (dce '((label a) (jal x0 (b))
@@ -158,10 +174,9 @@
 ;; ---------------------------------------------------------------------------
 
 ;; 输入输出都是块列表, 不是 s-exp
-(check-true (list? (eliminate-dead (analyze '((label a) (add t0 t1 t2))))))
-(check-equal? (blocks->sexp (eliminate-dead (analyze '((label a) (add t0 t1 t2)))))
-              '((block (id 0) (labels (a)) (insns (add t0 t1 t2))
-                       (succ) (fallthrough #f) (root? #t))))
+(check-true (program? (eliminate-dead (analyze '((label a) (add t0 t1 t2))))))
+(check-equal? (program->sexp (eliminate-dead (analyze '((label a) (add t0 t1 t2)))))
+              (program->sexp (analyze '((label a) (add t0 t1 t2)))))
 
 ;; 幂等
 (define once (eliminate-dead (analyze '((label a) (jal x0 c) (label b) (add t0 t0 t0)
@@ -175,10 +190,13 @@
 ;; pass 名字反映功能
 (check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block merge-empty-blocks))
 
-;; 直接喂 s-exp 块(上一版的产物)也能读: sexp->blocks 是 IR 的读入口
-(check-equal? (flat (eliminate-dead (sexp->blocks
-                                     '((block (id 0) (labels (a)) (insns (add t0 t0 t0))
-                                              (succ) (fallthrough #f) (root? #t))))))
-              '((label a) (add t0 t0 t0)))
+;; program <-> sexp 往返(测试/demo 写字面量用)
+(define prog-literal
+  (sexp->program
+   '(program
+     (blocks (block ((a)) (add t0 t0 t0)))
+     (flows (flow (succ) (fallthrough #f) (root? #t))))))
+(check-equal? (flat (eliminate-dead prog-literal)) '((label a) (add t0 t0 t0)))
+(check-equal? (sexp->program (program->sexp prog-literal)) prog-literal)
 
 (displayln "L4 tests: ok")

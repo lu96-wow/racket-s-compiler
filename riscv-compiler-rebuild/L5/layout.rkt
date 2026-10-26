@@ -5,8 +5,9 @@
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
-;;;   program : L4 输出的块列表(L3 的 block struct)
-;;;             (listof (block id labels insns succ fallthrough root?))
+;;;   program : L4 输出的 program
+;;;             blocks : ((block <头 label 链列表> item ...) ...)   ; 身份 + 程序
+;;;             flows  : ((flow (succ id ...) (fallthrough id|#f) (root? bool)) ...)
 ;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
 ;;;              (place 段名 链 ...) ...)
@@ -21,8 +22,8 @@
 ;;;   - 放完检查 fallthrough: 顺序后继必须紧挨在后面, 否则 broken-fallthrough
 
 (require "forms.rkt"
-         (only-in "../L3/analyze.rkt" block? block-id block-labels block-insns
-                  block-succ block-fallthrough block-root?))
+         (only-in "../L3/analyze.rkt" program? program-blocks program-flows
+                  block-head block-items flow-fallthrough))
 
 (provide layout-program
          items-of
@@ -109,13 +110,10 @@
 ;; ---------------------------------------------------------------------------
 
 ;; 代码: L3/L4 的块(struct)
-(define (blocks-of input)
-  (unless (list? input)
-    (error 'layout-program "program must be a list of blocks (L3/L4 output); got: ~e" input))
-  (for/list ([x (in-list input)])
-    (unless (block? x)
-      (error 'layout-program "program must be a list of blocks (L3/L4 output); got: ~e" x))
-    x))
+(define (program-parts prog)
+  (unless (program? prog)
+    (error 'layout-program "program must be L3/L4 output (program blocks flows); got: ~e" prog))
+  (values (program-blocks prog) (program-flows prog)))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item
 (struct run (labels items) #:transparent)
@@ -159,22 +157,23 @@
      (hash-set! matched chain #t)
      (cdr rule))))
 
-;; 代码块: 锚点 + 其后跟随的块
+;; 代码块: 锚点 + 其后跟随的块; 每项是 (cons 全局下标 块)
 (define (place-blocks blocks rules matched problem!)
-  (define by-seg (make-hash))                 ; 段名 -> 块列表(源顺序)
+  (define by-seg (make-hash))                 ; 段名 -> ((idx . block) ...) 源顺序
   (define current (box #f))
-  (for ([b (in-list blocks)])
-    (define hits (matching-segments (block-labels b) rules matched))
+  (for ([b (in-list blocks)] [idx (in-naturals)])
+    (define entry (cons idx b))
+    (define hits (matching-segments (block-head b) rules matched))
     (cond
       [(> (length hits) 1)
-       (problem! `(ambiguous-placement ,(car (block-labels b)) ,@hits))]
+       (problem! `(ambiguous-placement ,(car (block-head b)) ,@hits))]
       [(= (length hits) 1)
        (set-box! current (car hits))
-       (hash-update! by-seg (car hits) (lambda (l) (append l (list b))) '())]
+       (hash-update! by-seg (car hits) (lambda (l) (append l (list entry))) '())]
       [(unbox current)
-       (hash-update! by-seg (unbox current) (lambda (l) (append l (list b))) '())]
+       (hash-update! by-seg (unbox current) (lambda (l) (append l (list entry))) '())]
       [else
-       (problem! `(unplaced-block ,(block-id b) ,(block-labels b)))]))
+       (problem! `(unplaced-block ,idx ,(block-head b)))]))
   by-seg)
 
 ;; 数据游程: 精确匹配, 不跟随(数据没有顺序执行)
@@ -208,7 +207,7 @@
 
 (struct measured (segment items size blocks) #:transparent)
 ;; items  : (listof (list 'offset 偏移 item))
-;; blocks : 代码段里块的顺序 (listof block), 数据段为空
+;; blocks : 代码段里块的顺序 (listof (cons 全局下标 block)), 数据段为空
 
 (define (measure seg blks runs problem!)
   (define seg-name (segment-name seg))
@@ -235,10 +234,11 @@
        (emit! it (modulo (- n (modulo cursor n)) n))]
       [else (emit! it (item-size it))]))
 
-  (for ([b (in-list blks)])
-    (for ([chain (in-list (block-labels b))])
+  (for ([e (in-list blks)])
+    (define b (cdr e))
+    (for ([chain (in-list (block-head b))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (block-insns b))]) (emit-item! it)))
+    (for ([it (in-list (block-items b))]) (emit-item! it)))
 
   (for ([r (in-list runs)])
     (for ([chain (in-list (run-labels r))])
@@ -259,25 +259,26 @@
 ;; fallthrough 检查: 顺序后继必须紧挨着
 ;; ---------------------------------------------------------------------------
 
-(define (check-fallthrough measured-segs problem!)
-  (define where (make-hash))                    ; 块 id -> (cons 段名 序号)
-  (define labels-of (make-hash))                ; 块 id -> labels
+(define (check-fallthrough measured-segs flows problem!)
+  (define where (make-hash))                    ; 块下标 -> (cons 段名 段内序号)
+  (define labels-of (make-hash))                ; 块下标 -> 块头 labels
   (for ([m (in-list measured-segs)])
-    (for ([b (in-list (measured-blocks m))] [i (in-naturals)])
-      (hash-set! where (block-id b) (cons (segment-name (measured-segment m)) i))
-      (hash-set! labels-of (block-id b) (block-labels b))))
+    (for ([e (in-list (measured-blocks m))] [i (in-naturals)])
+      (hash-set! where (car e) (cons (segment-name (measured-segment m)) i))
+      (hash-set! labels-of (car e) (block-head (cdr e)))))
   (for ([m (in-list measured-segs)])
     (define blks (measured-blocks m))
-    (for ([b (in-list blks)] [i (in-naturals)])
-      (define ft (block-fallthrough b))
+    (for ([e (in-list blks)] [i (in-naturals)])
+      (define idx (car e))
+      (define ft (flow-fallthrough (list-ref flows idx)))
       (when ft
         (define nxt (and (< (add1 i) (length blks)) (list-ref blks (add1 i))))
         (unless (and nxt
-                     (= (block-id nxt) ft)
+                     (= (car nxt) ft)
                      (equal? (hash-ref where ft #f)
                              (cons (segment-name (measured-segment m)) (add1 i))))
-          (problem! `(broken-fallthrough ,(block-id b) ,ft
-                                         ,(block-labels b)
+          (problem! `(broken-fallthrough ,idx ,ft
+                                         ,(hash-ref labels-of idx '())
                                          ,(hash-ref labels-of ft '()))))))))
 
 ;; ---------------------------------------------------------------------------
@@ -353,8 +354,9 @@
   (define by-name (for/hash ([s (in-list segs)]) (values (segment-name s) s)))
   (define rules (rules-of places by-name problem!))
 
+  (define-values (blocks flows) (program-parts program))
   (define matched (make-hash))             ; 用到过的 place 链
-  (define code-by-seg (place-blocks (blocks-of program) rules matched problem!))
+  (define code-by-seg (place-blocks blocks rules matched problem!))
   (define data-by-seg (place-runs (split-runs (items-of data)) rules matched problem!))
 
   ;; place 里的链一次都没命中: 写错名字, 或指的是块内的位置标记(块不能拆)
@@ -365,7 +367,7 @@
   (ensure-segments segs data-by-seg)
 
   (define measured-segs (measure-all segs code-by-seg data-by-seg problem!))
-  (check-fallthrough measured-segs problem!)
+  (check-fallthrough measured-segs flows problem!)
   (define symbols (collect-symbols measured-segs))
   (verify measured-segs symbols problem!)
 

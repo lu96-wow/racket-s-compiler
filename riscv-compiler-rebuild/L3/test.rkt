@@ -7,8 +7,11 @@
          (prefix-in cfg: "cfg.rkt")
          (only-in "../L1/flatten.rkt" flatten-program))
 
-(define (block-by-id blocks n)
-  (findf (lambda (b) (= n (block-id b))) blocks))
+;; 块下标就是它在列表里的位置
+(define (block-at blocks n) (list-ref blocks n))
+(define (flow-at flows n) (list-ref flows n))
+(define (analyze-blocks items) (program-blocks (analyze items)))
+(define (analyze-flows items) (program-flows (analyze items)))
 
 ;; ---------------------------------------------------------------------------
 ;; 指令分类
@@ -142,50 +145,52 @@
 ;; 分析: 输出块列表
 ;; ---------------------------------------------------------------------------
 
-(define blocks (analyze '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+(define prog (analyze '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+(define blocks (program-blocks prog))
+(define flows (program-flows prog))
 
-(check-equal? (map block-id blocks) '(0 1 2))
-(check-equal? (block-labels (block-by-id blocks 0)) '((a)))
-(check-equal? (block-labels (block-by-id blocks 1)) '())
-(check-equal? (block-labels (block-by-id blocks 2)) '((c)))
-(check-equal? (block-insns (block-by-id blocks 0)) '((beq t0 t1 c)))
-(check-equal? (block-succ (block-by-id blocks 0)) '(2 1))    ; 分支: 目标 + 顺序
-(check-equal? (block-fallthrough (block-by-id blocks 0)) 1)
-(check-equal? (block-fallthrough (block-by-id blocks 1)) 2)
-(check-false  (block-fallthrough (block-by-id blocks 2)))    ; 末尾块
+(check-equal? (range (length blocks)) '(0 1 2))
+(check-equal? (block-head (block-at blocks 0)) '((a)))
+(check-equal? (block-head (block-at blocks 1)) '())
+(check-equal? (block-head (block-at blocks 2)) '((c)))
+(check-equal? (block-items (block-at blocks 0)) '((beq t0 t1 c)))
+(check-equal? (flow-succ (flow-at flows 0)) '(2 1))    ; 分支: 目标 + 顺序
+(check-equal? (flow-fallthrough (flow-at flows 0)) 1)
+(check-equal? (flow-fallthrough (flow-at flows 1)) 2)
+(check-false  (flow-fallthrough (flow-at flows 2)))    ; 末尾块
 
 ;; jal x0: 目标块是后继, 但不是顺序后继
 (define blocks-jump
   (analyze '((label a) (jal x0 (c)) (label b) (jal x0 (b)) (label c) (add t1 t1 t1))))
-(check-equal? (block-succ (block-by-id blocks-jump 0)) '(2))
-(check-false  (block-fallthrough (block-by-id blocks-jump 0)))
+(check-equal? (flow-succ (flow-at (program-flows blocks-jump) 0)) '(2))
+(check-false  (flow-fallthrough (flow-at (program-flows blocks-jump) 0)))
 
 ;; 调用: 目标 + 顺序(返回地址 = pc+4)
 (define blocks-call
   (analyze '((label a) (jal ra (c)) (label b) (jal x0 (b)) (label c) (add t1 t1 t1))))
-(check-equal? (block-succ (block-by-id blocks-call 0)) '(2 1))
-(check-equal? (block-fallthrough (block-by-id blocks-call 0)) 1)
+(check-equal? (flow-succ (flow-at (program-flows blocks-call) 0)) '(2 1))
+(check-equal? (flow-fallthrough (flow-at (program-flows blocks-call) 0)) 1)
 
 ;; 同一位置多个名字
 (define blocks-names (analyze '((label a) (label b) (add t0 t0 t0))))
-(check-equal? (block-labels (block-by-id blocks-names 0)) '((a) (b)))
+(check-equal? (block-head (block-at (program-blocks blocks-names) 0)) '((a) (b)))
 
 ;; root? 只有外部入口: 程序入口 / (有间接跳转时)地址被取过
 ;; 内部分支引用不算根 —— 它在 CFG 里就是边
-(check-true (block-root? (block-by-id blocks 0)))            ; 入口
-(check-false (block-root? (block-by-id blocks 2)))           ; 被 beq 引用, 但不是外部入口
-(check-false (block-root? (block-by-id blocks 1)))
+(check-true (flow-root? (flow-at flows 0)))                  ; 入口
+(check-false (flow-root? (flow-at flows 2)))                 ; 被 beq 引用, 但不是外部入口
+(check-false (flow-root? (flow-at flows 1)))
 
 (define blocks-indirect
   (analyze '((label a) (la t0 (b)) (jalr x0 t0 0) (label b) (add t0 t0 t0))))
-(check-true (block-root? (block-by-id blocks-indirect 1)))   ; 地址被取过 + 有 jalr
+(check-true (flow-root? (flow-at (program-flows blocks-indirect) 1)))   ; 地址被取过 + 有 jalr
 
 ;; 没有被取地址(也没有 jalr)时, 块头的 label 也不是外部入口
 (define blocks-no-taken
   (analyze '((label a) (ebreak) (label b) (add t0 t0 t0))))
-(check-equal? (map block-id blocks-no-taken) '(0 1))
-(check-true  (block-root? (block-by-id blocks-no-taken 0)))   ; 入口
-(check-false (block-root? (block-by-id blocks-no-taken 1)))   ; b 不是外部入口
+(check-equal? (range (length (program-blocks blocks-no-taken))) '(0 1))
+(check-true  (flow-root? (flow-at (program-flows blocks-no-taken) 0)))   ; 入口
+(check-false (flow-root? (flow-at (program-flows blocks-no-taken) 1)))   ; b 不是外部入口
 
 ;; 链(label) 模型: 同位置多名 / 任意类型 / 链做跳转目标
 (define g-names (cfg:build-cfg '((label a f) (label a g) (jal x0 (a g)))))
@@ -221,10 +226,13 @@
 (check-equal? (program-items '(add t0 t0 t0)) '((add t0 t0 t0)))
 
 ;; blocks <-> sexp 往返
-(check-equal? (sexp->blocks (blocks->sexp blocks)) blocks)
-(check-equal? (blocks->sexp (analyze '((label a) (add t0 t0 t0))))
-              '((block (id 0) (labels (a)) (insns (add t0 t0 t0))
-                       (succ) (fallthrough #f) (root? #t))))
+
+(check-equal? (program-blocks (analyze '((label a) (add t0 t0 t0))))
+              '((block ((a)) (add t0 t0 t0))))
+(check-equal? (program-flows (analyze '((label a) (add t0 t0 t0))))
+              '((flow (succ) (fallthrough #f) (root? #t))))
+;; program <-> sexp 往返
+(check-equal? (sexp->program (program->sexp prog)) prog)
 
 ;; ---------------------------------------------------------------------------
 ;; label 不切块: 只有控制流才切
@@ -232,22 +240,22 @@
 
 ;; 非目标 label 只是位置标记, 留在块里
 (define blocks-mid (analyze '((label a) (add t0 t0 t0) (label mid) (add t0 t0 t0))))
-(check-equal? (map block-id blocks-mid) '(0))
-(check-equal? (block-labels (block-by-id blocks-mid 0)) '((a)))
-(check-equal? (block-insns (block-by-id blocks-mid 0))
+(check-equal? (range (length (program-blocks blocks-mid))) '(0))
+(check-equal? (block-head (block-at (program-blocks blocks-mid) 0)) '((a)))
+(check-equal? (block-items (block-at (program-blocks blocks-mid) 0))
               '((add t0 t0 t0) (label mid) (add t0 t0 t0)))
 
 ;; 被跳转的 label 才切块
 (define blocks-target (analyze '((label a) (jal x0 (mid))
                                  (label b) (add t0 t0 t0)
                                  (label mid) (add t0 t0 t0))))
-(check-equal? (map block-id blocks-target) '(0 1 2))
-(check-equal? (block-labels (block-by-id blocks-target 1)) '((b)))
-(check-equal? (block-labels (block-by-id blocks-target 2)) '((mid)))
+(check-equal? (range (length (program-blocks blocks-target))) '(0 1 2))
+(check-equal? (block-head (block-at (program-blocks blocks-target) 1)) '((b)))
+(check-equal? (block-head (block-at (program-blocks blocks-target) 2)) '((mid)))
 
 ;; 切流指令之后也切块(即使没有 label)
 (define blocks-after-branch (analyze '((label a) (beq t0 t1 (a)) (add t0 t0 t0))))
-(check-equal? (map block-id blocks-after-branch) '(0 1))
-(check-equal? (block-labels (block-by-id blocks-after-branch 1)) '())
+(check-equal? (range (length (program-blocks blocks-after-branch))) '(0 1))
+(check-equal? (block-head (block-at (program-blocks blocks-after-branch) 1)) '())
 
 (displayln "L3 tests: ok")

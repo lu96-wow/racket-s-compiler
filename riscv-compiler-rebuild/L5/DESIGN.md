@@ -13,28 +13,32 @@ L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-e
 
 ## 1. 块列表（L3 输出、L4 输入输出、L5 输入）
 
-块是 Racket struct（`L3/analyze.rkt` 里的 `block`），不是 s-exp；
-`blocks->sexp` / `sexp->blocks` 只用于打印和写字面量。
+块是 s-exp，两部分：身份 + 程序。
 
 ```racket
-(struct block (id labels insns succ fallthrough root?) #:transparent)
+(block <头 label 链列表> item ...)      ; (block ((prog1 main)) (lwu t0 sp 8) (bge …))
 ```
+
+控制流单独一份，与块一一对应：`(flow (succ …) (fallthrough …) (root? …))`；
+`(struct program (blocks flows))` 把两份装在一起（`L3/analyze.rkt`）。
 
 
 打印出来长这样：
 
 ```racket
-((block (id 0) (labels (prog1 main)) (insns (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
-        (succ 1 3) (fallthrough 1) (root? #t))
- (block (id 1) (labels) (insns (jal x0 (prog1cold cold))) (succ 2) (fallthrough #f) (root? #f))
- ...)
+(program
+  (blocks (block ((prog1 main)) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
+          (block () (jal x0 (prog1cold cold)))
+          ...)
+  (flows  (flow (succ 1 3) (fallthrough 1) (root? #t))
+          (flow (succ 2) (fallthrough #f) (root? #f))
+          ...))
 ```
 
 | 字段 | 含义 |
 | --- | --- |
-| `id` | 块身份（L4 报错/检查用） |
-| `labels` | 块头的所有链（一个位置多名都在这里）；放置规则只认它 |
-| `insns` | 块内容 |
+| 头（第一项） | 块头的所有链（一个位置多名都在这里）；放置规则只认它 |
+| 其余项 | 程序：该块的 item（含块内的位置标记 label） |
 | `succ` | 后继块 id |
 | `fallthrough` | **物理下一条**是哪个块；`#f` 表示不以顺序方式落下去 |
 | `root?` | 外部入口（程序入口 / 有 jalr 时地址被取过的块）；内部引用不算根，它在 CFG 里就是边 |

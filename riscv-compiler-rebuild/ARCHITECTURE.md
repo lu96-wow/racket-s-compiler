@@ -5,7 +5,7 @@ source(多输入)                 每层都是纯函数, 可单独测
 ──────────────
 program list ┐
 data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ [L6 far] ─→ [L7 编码]
-layout  list ┘                       (block list)  (block list)     (layout)     (预留)      (未做)
+layout  list ┘                      (program)     (program)       (layout)     (预留)      (未做)
 ```
 
 L3 只**分析**（s-exp → block list），L4 才开始**改**（block list → block list，会改控制流）。
@@ -39,8 +39,10 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `analyze` | `(listof item)` | **`(listof block)`** |
-| `blocks->sexp` / `sexp->blocks` | 块列表 / 字面量 | 字面量 / 块列表 |
+| `analyze` | `(listof item)` | **`program`**（blocks + flows） |
+| `block-head` / `block-items` | 块 | 头 label 链列表 / 程序 item |
+| `flow-succ` / `flow-fallthrough` / `flow-root?` | flow | 值 |
+| `program->sexp` / `sexp->program` | program / 字面量 | 字面量 / program |
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
 | `build-cfg` | `(listof item)` | `graph`（CFG 内部用） |
 | `cfg-reachable` | `graph` `roots` | `(listof 块 id)` |
@@ -50,20 +52,34 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 分类：`branch-instruction?` `jump-instruction?` `indirect-instruction?` `trap-instruction?` `ends-block?` `falls-through?` `unconditional-jump?` `jump-target` `jump-register` `zero-register?` | 单条 item | 布尔 / 值 |
 | 形状：`label-form?` `label-path` `name?` `path?` `normalize-path` | 任意 | 布尔 / 值 |
 
-`block` 是 struct：`(struct block (id labels insns succ fallthrough root?) #:transparent)`。
+块是**两部分**的 s-exp：身份 + 程序。
+
+```racket
+(block <头 label 链列表> item ...)     ; 例: (block ((prog1 main)) (lwu t0 sp 8) (bge …))
+```
+
+只想要"程序"的层直接 `(cddr block)` 即可，不需要认识块的其他信息。
 
 **块边界只由控制流决定**：程序开头 / 控制转移的目标 label / 切流指令之后。
-非目标的 `label` 不是边界，它作为位置标记留在 `insns` 里（`(label …)` 可以出现在块中间）。
+非目标的 `label` 不是边界，它作为位置标记留在块的程序里。
+
+控制流信息**不在块里**，单独一份、与块一一对应：
+
+```racket
+(flow (succ <块下标> ...) (fallthrough <块下标>|#f) (root? <bool>))
+```
 
 `root?` = 外部入口：程序入口，或（有 `jalr` 时）地址被取过的块。
 内部引用不算根——它们在 CFG 里就是边，这样死代码才删得干净。
+
+两份数据装在一起：`(struct program (blocks flows))`（`L3/analyze.rkt`）。
 
 ### L4 `L4/dce.rkt` — 死代码消除（改控制流）
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `eliminate-dead` | `(listof block)` | `(listof block)` |
-| `optimize-blocks` | 同上（跑 pass 到不动点） | 同上 |
+| `eliminate-dead` | `program` | `program` |
+| `optimize-program` | 同上（跑 pass 到不动点） | 同上 |
 | `passes` / `pass-names` | — | `(drop-unreachable drop-transfers-to-next-block merge-empty-blocks)` |
 
 三个 pass 都会改 `succ` / `fallthrough`：
@@ -76,7 +92,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `layout-program` | `(listof block)` + 数据 items + layout 输入 | `(layout ...)` |
+| `layout-program` | `program` + 数据 items + layout 输入 | `(layout ...)` |
 | `layout-problems` | `(layout ...)` | `(listof problem)` |
 | `items-of` | 任意输入 | `(listof item)` |
 | 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离 / 布尔 |
@@ -92,7 +108,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 形状 | 例子 |
 | --- | --- |
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
-| 块（struct，打印） | `(block (id 0) (labels (prog1 main)) (insns (lwu …) (bge …)) (succ 1 3) (fallthrough 1) (root? #t))` |
+| 程序（块 + 流） | `(program (blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
 | layout 产物 | `(layout (segment (name prog1) … (items (offset 0 (lwu …)) …) (size 28)) (symbols …) (problems …))` |
 | build（L7） | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
@@ -111,7 +127,8 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 远形式 `branch-far` `branch-indirect` `jump-far` `call-far` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽） | 人 / L6 | L3 / L5 |
 | `(la rd 链)` | 源 | **L5/forms** 8 字节；L7 编码 | 人 | L5 |
 | `(bytes …)` `(align n)` | 数据输入 | **L5**（尺寸 / padding / kind） | 人 | L5 |
-| block（struct） | L3 → L5 | **L3** | L3 | L4 / L5 |
+| `(block <头 label> item ...)` | L3 → L5 | **L3** | L3 | L4 / L5 |
+| `(flow …)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(segments …)` `(place …)` | layout 输入 | **L5** | 人 | L5 |
 | `(offset n item)` | L5 产物 | **L5** | L5 | L7 |
 | `(layout …)` | L5 产物 | **L5** | L5 | L6 / L7 / 人 |

@@ -28,6 +28,10 @@
   (displayln (string-append "  " line)))
 
 (newline)
-(displayln ";; 分析结果: block list")
-(for ([b (in-list (analyze items))])
-  (displayln (format "  ~s" (first (blocks->sexp (list b)) ))))
+(define prog (analyze items))
+(displayln ";; 分析结果: 块(身份 + 程序) 与 流(单独一份)")
+(for ([b (in-list (program-blocks prog))]
+      [f (in-list (program-flows prog))]
+      [i (in-naturals)])
+  (displayln (format "  ~a: ~s" i b))
+  (displayln (format "      ~s" f)))
