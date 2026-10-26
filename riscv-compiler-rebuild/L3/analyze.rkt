@@ -117,15 +117,20 @@
 ;; 打印 / 读字面量
 ;; ---------------------------------------------------------------------------
 
+;; 打印成 ((blocks …) (flows …)): 顶层就是字段表, 没有额外的标签壳。
 (define (program->sexp prog)
-  (list 'program
-        (cons 'blocks (program-blocks prog))
+  (list (cons 'blocks (program-blocks prog))
         (cons 'flows (program-flows prog))))
 
-(define (sexp->program x)
-  (define fields (cdr x))
-  (define blocks (cdr (assoc 'blocks fields)))
-  (define flows (cdr (assoc 'flows fields)))
+(define (sexp->program fields)
+  (unless (and (list? fields) (andmap pair? fields))
+    (error 'sexp->program "expected ((blocks ...) (flows ...)): ~e" fields))
+  (define b (assoc 'blocks fields))
+  (define f (assoc 'flows fields))
+  (unless (and b f)
+    (error 'sexp->program "expected ((blocks ...) (flows ...)): ~e" fields))
+  (define blocks (cdr b))
+  (define flows (cdr f))
   (unless (= (length blocks) (length flows))
     (error 'sexp->program "blocks and flows must have the same length"))
   (program blocks flows))

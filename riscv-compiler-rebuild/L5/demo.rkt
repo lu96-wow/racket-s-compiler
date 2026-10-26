@@ -12,8 +12,7 @@
 
 (define prog
   (sexp->program
-   '(program
-     (blocks
+   '((blocks
       (block ((prog1 main)) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
       (block () (jal x0 (prog1cold cold)))
       (block ((prog1 done)) (la t2 (data1 table)) (add a0 a0 x0) (jalr x0 ra 0))

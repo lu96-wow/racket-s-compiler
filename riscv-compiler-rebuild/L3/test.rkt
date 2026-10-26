@@ -231,8 +231,17 @@
               '((block ((a)) (add t0 t0 t0))))
 (check-equal? (program-flows (analyze '((label a) (add t0 t0 t0))))
               '((flow (succ) (fallthrough #f) (root? #t))))
-;; program <-> sexp 往返
+;; program <-> sexp 往返; 输出就是字段表, 没有 (program ...) 壳
+(check-equal? (program->sexp prog)
+              '((blocks (block ((a)) (beq t0 t1 c))
+                        (block () (add t0 t0 t0))
+                        (block ((c)) (add t1 t1 t1)))
+                (flows (flow (succ 2 1) (fallthrough 1) (root? #t))
+                       (flow (succ 2) (fallthrough 2) (root? #f))
+                       (flow (succ) (fallthrough #f) (root? #f)))))
 (check-equal? (sexp->program (program->sexp prog)) prog)
+;; 带 (program ...) 壳的旧写法不再接受
+(check-exn exn:fail? (lambda () (sexp->program (cons 'program (program->sexp prog)))))
 
 ;; ---------------------------------------------------------------------------
 ;; label 不切块: 只有控制流才切

@@ -5,7 +5,7 @@ source(多输入)                 每层都是纯函数, 可单独测
 ──────────────
 program list ┐
 data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ [L6 far] ─→ [L7 编码]
-layout  list ┘                      (program)     (program)       (layout)     (预留)      (未做)
+layout  list ┘                      program       program         (layout)     (预留)      (未做)
 ```
 
 L3 只**分析**（s-exp → block list），L4 才开始**改**（block list → block list，会改控制流）。
@@ -127,7 +127,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 形状 | 例子 |
 | --- | --- |
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
-| 程序（块 + 流） | `(program (blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
+| 程序（块 + 流） | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
 | layout 产物 | `(layout (segment (name prog1) … (items (offset 0 (lwu …)) …) (size 28)) (symbols …) (problems …))` |
 | build（L7） | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |

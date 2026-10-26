@@ -23,16 +23,15 @@ L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-e
 `(struct program (blocks flows))` 把两份装在一起（`L3/analyze.rkt`）。
 
 
-打印出来长这样：
+打印出来长这样（顶层就是字段表，没有额外的标签壳）：
 
 ```racket
-(program
-  (blocks (block ((prog1 main)) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
-          (block () (jal x0 (prog1cold cold)))
-          ...)
-  (flows  (flow (succ 1 3) (fallthrough 1) (root? #t))
-          (flow (succ 2) (fallthrough #f) (root? #f))
-          ...))
+((blocks (block ((prog1 main)) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))
+         (block () (jal x0 (prog1cold cold)))
+         ...)
+ (flows  (flow (succ 1 3) (fallthrough 1) (root? #t))
+         (flow (succ 2) (fallthrough #f) (root? #f))
+         ...))
 ```
 
 | 字段 | 含义 |

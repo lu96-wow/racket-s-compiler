@@ -112,7 +112,7 @@
 ;; 代码: L3/L4 的块(struct)
 (define (program-parts prog)
   (unless (program? prog)
-    (error 'layout-program "program must be L3/L4 output (program blocks flows); got: ~e" prog))
+    (error 'layout-program "program must be L3/L4 output ((blocks ...) (flows ...)); got: ~e" prog))
   (values (program-blocks prog) (program-flows prog)))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item

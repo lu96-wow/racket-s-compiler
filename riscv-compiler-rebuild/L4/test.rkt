@@ -190,11 +190,10 @@
 ;; pass 名字反映功能
 (check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block merge-empty-blocks))
 
-;; program <-> sexp 往返(测试/demo 写字面量用)
+;; program <-> sexp 往返(测试/demo 写字面量用); 顶层是字段表, 没有标签壳
 (define prog-literal
   (sexp->program
-   '(program
-     (blocks (block ((a)) (add t0 t0 t0)))
+   '((blocks (block ((a)) (add t0 t0 t0)))
      (flows (flow (succ) (fallthrough #f) (root? #t))))))
 (check-equal? (flat (eliminate-dead prog-literal)) '((label a) (add t0 t0 t0)))
 (check-equal? (sexp->program (program->sexp prog-literal)) prog-literal)

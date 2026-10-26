@@ -9,8 +9,7 @@
 
 (define prog
   (sexp->program
-   '(program
-     (blocks
+   '((blocks
       (block ((main)) (lwu t0 sp 8) (bge t1 t0 (done)))
       (block () (jal x0 (done)))
       (block ((dead)) (lb t2 t0 0))
