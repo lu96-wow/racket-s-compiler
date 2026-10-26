@@ -72,7 +72,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
   指向块内位置标记的链会报 `unmatched-place`（块不能拆）。
 - **region**：命中的块是锚点；之后直到下一个锚点的块跟随它（没有身份的东西只能跟着有身份的前驱）。
 - **顺序**：段内按源顺序（程序先、数据后），`place` 行书写顺序无关。
-- **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。补指令/插跳转留给 L5，L4 只报。
+- **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。L5 只报，不补；补跳转属于 L6/L7 的修复阶段（未实现）。
 
 ## 4. 段与度量
 
@@ -104,11 +104,25 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `branch-far` | 8 |
 | `branch-indirect` | 12 |
 | `jal` | 4 |
-| `jump-far` / `call-far` / `la` | 8 |
+| `jump-far` / `call-far` | 8 |
+| `la` | 8（预留，见下） |
+| `li` | 4（兜底值，**待改**：应按常量上界预留） |
 | `c.*` | 2 |
 | 其他 | 4 |
 
-可达距离：`b*` 4096，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far`/`call-far`/`la` 不设限。
+可达距离：`b*` 4096，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far`/`call-far` 不设限（`la` 的 ±2GB 检查在 L7，由 `riscv-help` 的 `fits-auipc-pair?` 做）。
+
+### `li` / `la` 的尺寸：L5 只预留
+
+这两条是特殊伪指令，L5 **不解释**，只给字节数：
+
+| 指令 | L5 给的字节 | 真正的展开 |
+| --- | --- | --- |
+| `(la rd 链)` | 8（`auipc+addi`） | L7：`delta = 符号地址 − item 地址`，交 `riscv-help` 的 `la-pcrel` / `load-pcrel`；delta 超出 auipc 范围时 `load-pcrel` 自带 scratch |
+| `(li rd 常量)` | 应按 `li-size` 的上界预留 | L7：`expand-li`；字节数取决于常量范围 |
+
+因为两边都只能给上界，L7 展开后必须核对实际尺寸：不等就回 L5 重排，迭代到不动点。
+L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefined-target`（`verify` 只看 `control-form?`，这是待改项）。
 
 ## 5. 校验（只记 problems，不抛异常）
 
@@ -128,21 +142,24 @@ layout  : ((segments (segment 名 kind start end align) ...)
  (segment-name-duplicated (a b a))
  (segment-bad-range b)
  (undefined-target s1 0 (jal x0 (ghost)))
- (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L5
- (scratch-hole prog1 0 (branch-indirect a0 a1 (done))))  ; 留给 L5
+ (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L6
+ (scratch-hole prog1 0 (branch-indirect a0 a1 (done))))  ; 留给 L6
 ```
 
-最后两类不是错误，是远跳转层（L5）的入口。
+最后两类不是错误，是远跳转层（L6）的入口。
 
-## 6. 远跳转层（L5，预留，不实现）
+## 6. 远跳转层（L6，预留，不实现）
 
-- 契约：`annotated -> program'`，只做「超范围的 item 升成远形式」和「有洞就留着」。
+编号以 `ARCHITECTURE.md` 为准：far 是 **L6**，encode 是 **L7**。
+
+- 契约：`(layout ...) -> (layout ...)`，只做「超范围的 item 升成远形式」和「填 scratch 空槽」。
 - 空槽规则：`(branch-indirect a b L)` 少一个参数 = 洞；`(branch-indirect s a b L)` 已填。
 - 填槽方式不在本层定义。
-- 补 fallthrough 跳转、trampoline、块重排都属于这一层或更后面的层。
+- 尺寸变了（8 → 12、加跳转、填 scratch）就必须重跑 L5，迭代到不动点。
+- 补 fallthrough 跳转、trampoline、块重排也属于本层或 L7。
 
 ## 7. 与真实工具链一致的地方
 
 - 条件分支远形式 = **反向分支 + `jal`**（8 字节，无 scratch），与 gas `md_convert_frag_branch`、LLVM `expandLongCondBr` 一致。
-- 超过 ±1MB 才需要 scratch（`auipc + jalr`）；GAS 交给链接器报错，LLVM 在 machine 层用 `insertIndirectBranch` + reg scavenger。我们留给 L5，用显式空槽替代 scavenger。
+- 超过 ±1MB 才需要 scratch（`auipc + jalr`）；GAS 交给链接器报错，LLVM 在 machine 层用 `insertIndirectBranch` + reg scavenger。我们留给 L6，用显式空槽替代 scavenger。
 - 顺序执行跨段 = 必须显式跳转；真实工具链里由 `.section`/链接脚本决定，报错方式就是「这里断了」。我们用 `broken-fallthrough` 显式化。
