@@ -61,7 +61,18 @@ layout  : ((segments (segment 名 kind start end align) ...)
 
 自检：名字唯一、`start < end`、`start` 按 `align` 对齐、区间不重叠。
 
-段内单游标从 `start` 起，`label` 不占字节只记偏移，`(align n)` 向上补齐补 0，其余按形式表累加：
+段内单游标从 `start` 起，`label` 不占字节只记偏移，`(align n)` 向上补齐补 0，其余按形式表累加。
+产物里每条 item 都带偏移注解 `(offset 偏移 item)`：
+
+```racket
+(segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)
+  (items (offset 0 (label prog1 main))
+         (offset 0 (lwu t0 sp 8))
+         (offset 4 (bge t1 t0 (prog1 done)))
+         (offset 8 (jal x0 (prog1cold cold))))
+  (size 12))
+```
+
 
 | item | 字节 |
 | --- | --- |

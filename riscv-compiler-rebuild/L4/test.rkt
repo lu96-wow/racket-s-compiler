@@ -75,9 +75,9 @@
                   (place prog1 (main) (b) (c)))))
 
 (check-equal? (items-of-seg l1 'prog1)
-              '((@ 0 (label main)) (@ 0 (addi a0 a0 1)) (@ 4 (bge a0 a1 (c)))
-                (@ 8 (label b)) (@ 8 (addi a1 a1 1))
-                (@ 12 (label c)) (@ 12 (addi a2 a2 1))))
+              '((offset 0 (label main)) (offset 0 (addi a0 a0 1)) (offset 4 (bge a0 a1 (c)))
+                (offset 8 (label b)) (offset 8 (addi a1 a1 1))
+                (offset 12 (label c)) (offset 12 (addi a2 a2 1))))
 (check-equal? (size-of-seg l1 'prog1) 16)
 (check-equal? (problems-of l1) '())
 
@@ -103,10 +103,10 @@
                   (place prog1 (keep) (main)))))
 
 (check-equal? (items-of-seg l2 'prog1)
-              '((@ 0 (label main)) (@ 0 (addi a0 a0 1)) (@ 4 (jal x0 (cold)))
-                (@ 8 (label keep)) (@ 8 (jal x0 (keep)))))
+              '((offset 0 (label main)) (offset 0 (addi a0 a0 1)) (offset 4 (jal x0 (cold)))
+                (offset 8 (label keep)) (offset 8 (jal x0 (keep)))))
 (check-equal? (items-of-seg l2 'prog1cold)
-              '((@ 0 (label cold)) (@ 0 (addi a1 a1 1))))
+              '((offset 0 (label cold)) (offset 0 (addi a1 a1 1))))
 (check-equal? (size-of-seg l2 'prog1) 12)
 (check-equal? (size-of-seg l2 'prog1cold) 4)
 
@@ -158,8 +158,8 @@
                   (place s1 (a) (c)))))
 
 (check-equal? (items-of-seg l3 's1)
-              '((@ 0 (label a)) (@ 0 (beq t0 t1 (c))) (@ 4 (addi a0 a0 1))
-                (@ 8 (label c)) (@ 8 (addi a1 a1 1))))
+              '((offset 0 (label a)) (offset 0 (beq t0 t1 (c))) (offset 4 (addi a0 a0 1))
+                (offset 8 (label c)) (offset 8 (addi a1 a1 1))))
 (check-equal? (problems-of l3) '())
 
 ;; 把 (c) 放到另一个段: 无 label 的块跟着 (a) 走, 于是 fallthrough 断了
@@ -182,7 +182,7 @@
                   (place s1 (alias)))))
 
 (check-equal? (items-of-seg l4 's1)
-              '((@ 0 (label a b)) (@ 0 (label alias)) (@ 0 (addi a0 a0 1))))
+              '((offset 0 (label a b)) (offset 0 (label alias)) (offset 0 (addi a0 a0 1))))
 (check-equal? (problems-of l4) '())
 
 ;; ---------------------------------------------------------------------------
@@ -198,11 +198,11 @@
                   (place data1 (data1 table) (data1 end)))))
 
 (check-equal? (items-of-seg l5 'prog1)
-              '((@ 0 (label main)) (@ 0 (la t0 (data1 table)))
-                (@ 8 (ld t1 t0 0)) (@ 12 (jalr x0 ra 0))))
+              '((offset 0 (label main)) (offset 0 (la t0 (data1 table)))
+                (offset 8 (ld t1 t0 0)) (offset 12 (jalr x0 ra 0))))
 (check-equal? (items-of-seg l5 'data1)
-              '((@ 0 (label data1 table)) (@ 0 (bytes 1 2 3 4))
-                (@ 4 (align 8)) (@ 8 (label data1 end)) (@ 8 (bytes 0))))
+              '((offset 0 (label data1 table)) (offset 0 (bytes 1 2 3 4))
+                (offset 4 (align 8)) (offset 8 (label data1 end)) (offset 8 (bytes 0))))
 (check-equal? (size-of-seg l5 'data1) 9)
 (check-equal? (problems-of l5) '())
 
@@ -315,8 +315,8 @@
 
 ;; L3 已经删掉 dead 块和"跳到紧邻下一块"的 jal
 (check-equal? (items-of-seg pipeline 'prog1)
-              '((@ 0 (label prog1 main)) (@ 0 (lwu t0 sp 8))
-                (@ 4 (label prog1 done)) (@ 4 (add a0 a0 x0))))
+              '((offset 0 (label prog1 main)) (offset 0 (lwu t0 sp 8))
+                (offset 4 (label prog1 done)) (offset 4 (add a0 a0 x0))))
 (check-equal? (problems-of pipeline) '())
 
 (displayln "L4 tests: ok")

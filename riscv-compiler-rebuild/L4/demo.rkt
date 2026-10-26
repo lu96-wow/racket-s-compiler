@@ -64,7 +64,7 @@
                      (cadr (assoc 'end (cdr seg)))
                      (cadr (assoc 'size (cdr seg)))))
   (for ([entry (in-list (cdr (assoc 'items (cdr seg))))])
-    (displayln (format "    +~x  ~s" (cadr entry) (caddr entry)))))
+    (displayln (format "    ~s" entry))))
 
 (newline)
 (displayln ";; 符号")

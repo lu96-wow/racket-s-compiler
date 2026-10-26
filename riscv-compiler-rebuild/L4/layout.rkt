@@ -211,7 +211,7 @@
 ;; ---------------------------------------------------------------------------
 
 (struct measured (segment items size blocks) #:transparent)
-;; items  : (listof (list '@ 偏移 item))
+;; items  : (listof (list 'offset 偏移 item))
 ;; blocks : 代码段里块的顺序 (listof blk), 数据段为空
 
 (define (measure seg blks runs problem!)
@@ -227,7 +227,7 @@
        (problem! `(code-data-mixed ,seg-name ,cursor ,it))]
       [(and (eq? (item-kind it) 'code) (not (eq? seg-kind 'code)))
        (problem! `(data-code-mixed ,seg-name ,cursor ,it))])
-    (set! out (cons (list '@ cursor it) out))
+    (set! out (cons (list 'offset cursor it) out))
     (set! cursor (+ cursor sz)))
 
   (define (emit-item! it)
