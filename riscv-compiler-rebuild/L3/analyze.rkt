@@ -95,17 +95,17 @@
 
   (define blocks
     (for/list ([b (in-vector cfg-blocks)])
-      (make-block (cfg:block-labels b) (cfg:block-insns b))))
+      (make-block (cfg:basic-block-labels b) (cfg:basic-block-items b))))
 
   (define flows
     (for/list ([b (in-vector cfg-blocks)] [i (in-naturals)])
-      (define succ (cfg:block-successors b))
+      (define succ (cfg:basic-block-successors b))
       (define next (and (< (add1 i) n) (add1 i)))
       (define fallthrough (and next (memv next succ) next))
       ;; 块里所有 label(块头 + 块内位置标记)
       (define all-labels
-        (append (cfg:block-labels b)
-                (for/list ([it (in-list (cfg:block-insns b))] #:when (label-form? it))
+        (append (cfg:basic-block-labels b)
+                (for/list ([it (in-list (cfg:basic-block-items b))] #:when (label-form? it))
                   (label-path it))))
       (define root? (or (zero? i)
                         (and (ormap (lambda (p) (member p address-taken)) all-labels) #t)))
@@ -124,13 +124,13 @@
 
 (define (sexp->program fields)
   (unless (and (list? fields) (andmap pair? fields))
-    (error 'sexp->program "expected ((blocks ...) (flows ...)): ~e" fields))
+    (error 'analyze "expected ((blocks ...) (flows ...)): ~e" fields))
   (define b (assoc 'blocks fields))
   (define f (assoc 'flows fields))
   (unless (and b f)
-    (error 'sexp->program "expected ((blocks ...) (flows ...)): ~e" fields))
+    (error 'analyze "expected ((blocks ...) (flows ...)): ~e" fields))
   (define blocks (cdr b))
   (define flows (cdr f))
   (unless (= (length blocks) (length flows))
-    (error 'sexp->program "blocks and flows must have the same length"))
+    (error 'analyze "blocks and flows must have the same length"))
   (program blocks flows))

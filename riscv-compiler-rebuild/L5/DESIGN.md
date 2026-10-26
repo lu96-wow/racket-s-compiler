@@ -82,7 +82,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 自检：名字唯一、`start < end`、`start` 按 `align` 对齐、区间不重叠。
 
 段内单游标从 `start` 起，`label` 不占字节只记偏移，`(align n)` 向上补齐补 0，其余按形式表累加。
-产物里每条 item 都带偏移注解 `(offset 偏移 item)`：
+产物里每条 item 都带偏移注解 `(offset 偏移 item)`；一个段长这样（整张表在 `(segments …)` 字段里）：
 
 ```racket
 (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)
@@ -109,7 +109,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `c.*` | 2 |
 | 其他 | 4 |
 
-可达距离：`b*` 4096，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far`/`call-far` 不设限（`la` 的 ±2GB 检查在 L7，由 `riscv-help` 的 `fits-auipc-pair?` 做）。
+可达距离：`b*` 4096，`c.beqz`/`c.bnez` 256，`c.j`/`c.jal` 2048，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far`/`call-far` 不设限（`la` 的 ±2GB 检查在 L7，由 `riscv-help` 的 `fits-auipc-pair?` 做）。
 
 ### `li` / `la` 的尺寸：L5 只预留
 
@@ -151,7 +151,7 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 
 编号以 `ARCHITECTURE.md` 为准：far 是 **L6**，encode 是 **L7**。
 
-- 契约：`(layout ...) -> (layout ...)`，只做「超范围的 item 升成远形式」和「填 scratch 空槽」。
+- 契约：`layout -> layout`（`((segments …) (symbols …) (problems …))`），只做「超范围的 item 升成远形式」和「填 scratch 空槽」。
 - 空槽规则：`(branch-indirect a b L)` 少一个参数 = 洞；`(branch-indirect s a b L)` 已填。
 - 填槽方式不在本层定义。
 - 尺寸变了（8 → 12、加跳转、填 scratch）就必须重跑 L5，迭代到不动点。

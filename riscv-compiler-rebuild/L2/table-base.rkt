@@ -1,7 +1,7 @@
 #lang racket
 ;;; L2/table-base.rkt
 ;;;
-;;; 基础整数伪指令(load / store / move / 缺的那一半分支)。
+;;; 基础整数伪指令(load / store / move / nop / 缺的那一半分支)。
 ;;; 只提供 `base-rewrite-rows`, 由 table.rkt 聚合; 格式见 table.rkt 的说明。
 
 (provide base-rewrite-rows)
@@ -97,4 +97,18 @@
      ((?a ?b ?l) (bgeu ?b ?a ?l)))
 
     (branch-gtu bgtu
-     ((?a ?b ?l) (bltu ?b ?a ?l)))))
+     ((?a ?b ?l) (bltu ?b ?a ?l)))
+
+    ;; --- 空操作 ---------------------------------------------------------
+    ;; 与 GAS / LLVM 一致: nop 就是 addi x0, x0, 0 (4 字节)。
+    ;;   GAS   RISCV_NOP = RISCV_ITYPE(ADDI, 0, 0, 0)
+    ;;   LLVM  InstAlias<"nop", (ADDI X0, X0, 0)>
+    (nop
+     (() (addi x0 x0 0)))
+
+    ;; --- 压缩空操作 -----------------------------------------------------
+    ;; GAS: RVC_NOP = MATCH_C_ADDI, 即 c.addi x0, 0 (0x0001, 2 字节)。
+    ;; LLVM 把 c.nop 单独定义(C_NOP), 编码与 c.addi x0,0 相同;
+    ;; 这里展开成 c.addi, 编码层只需认一种写法。
+    (c.nop
+     (() (c.addi x0 0)))))

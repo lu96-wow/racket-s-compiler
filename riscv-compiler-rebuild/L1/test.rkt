@@ -7,6 +7,14 @@
 (define (flat x) (flatten-program x))
 
 ;; ---------------------------------------------------------------------------
+;; 空输入 / 旧壳
+;; ---------------------------------------------------------------------------
+
+(check-equal? (flat '()) '())
+(check-equal? (flat '(quote ())) '())
+(check-equal? (flat '(begin)) '())
+
+;; ---------------------------------------------------------------------------
 ;; 展平: module 只是作用域前缀
 ;; ---------------------------------------------------------------------------
 
@@ -146,9 +154,25 @@
               '((label data1 table) (bytes 1 2 3)))
 
 ;; 跨输入写短链查不到 -> 报错(必须写完整链)
+;; 跨输入写短链查不到 -> 报错(必须写完整链)
 (check-exn exn:fail?
            (lambda ()
              (flatten-inputs (list '((module prog1 (label main) (la t0 (table))))
                                    '((module data1 (label table)))))))
+
+;; ---------------------------------------------------------------------------
+;; 压缩指令: L1 不认助记符, 只改操作数里的链
+;; ---------------------------------------------------------------------------
+
+;; c.* 原样保留, 目标是链的照样解析
+(check-equal? (flat '((label a) (c.j (b)) (label b) (c.addi a0 1)))
+              '((label a) (c.j (b)) (label b) (c.addi a0 1)))
+(check-equal? (flat '((module m (label a) (c.beqz t0 (b)) (label b))))
+              '((label m a) (c.beqz t0 (m b)) (label m b)))
+;; 寄存器/立即数是裸原子, 不动
+(check-equal? (flat '((c.addi4spn a0 sp 8) (c.li a1 -1) (c.nop)))
+              '((c.addi4spn a0 sp 8) (c.li a1 -1) (c.nop)))
+;; 链不在操作数里(是链)才算引用: (c.j b) 的 b 是裸原子, 不当引用
+(check-equal? (flat '((label b) (c.j b))) '((label b) (c.j b)))
 
 (displayln "L1 tests: ok")

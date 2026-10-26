@@ -11,7 +11,9 @@
     (store-64 sp 16 t1)       ; 地址在前, 值在后
     (ble      t1 t0 L)        ; 简写分支
     (move     t0 t1)          ; 显式 move
-    (li       t2 42)          ; 真指令, 透传
+    (li       t2 42)          ; 低层伪指令, 留到 L7
+    (nop)                     ; 空操作 -> addi x0 x0 0
+    (c.nop)                   ; 压缩空操作 -> c.addi x0 0
     L))
 
 (define (show x) (format "~s" x))

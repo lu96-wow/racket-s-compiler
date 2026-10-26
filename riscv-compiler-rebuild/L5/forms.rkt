@@ -4,11 +4,11 @@
 ;;; 形式表: 每条 item 的字节数、类别、可达距离、是否需要 scratch。
 ;;; 只放数据 + 查询; 布局计算本身在 layout.rkt。
 ;;;
-;;; 不在表里的助记符: 按 RISC-V 的常识兜底 —— c.* 是 2 字节, 其余 4 字节。
+;;; 不在表里的助记符: 一律 4 字节; c.* 是显式判定的 2 字节。
 ;;; (真指令名单不在本层维护; 编不出来是后面编码层的事)
 
 (provide form? name? path? normalize-path
-         label-form? align-form? bytes-form?
+         label-form? align-form? bytes-form? compressed-form?
          item-kind item-size
          branch-form? jump-form? indirect-form? control-form? control-target
          form-range scratch-hole?
@@ -41,8 +41,12 @@
   (and (form? x) (eq? (car x) 'bytes)
        (andmap byte? (cdr x))))
 
-;; layout 输入的三个子句
-(define (items-form? x)   (and (form? x) (eq? (car x) 'items)))
+;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
+(define (compressed-form? x)
+  (and (form? x) (symbol? (car x))
+       (string-prefix? (symbol->string (car x)) "c.")))
+
+;; layout 输入的子句
 (define (segment-form? x) (and (form? x) (eq? (car x) 'segment)))
 
 (define (segment-kind? k) (memq k '(code data rodata)))
@@ -51,8 +55,8 @@
 ;; 分类
 ;; ---------------------------------------------------------------------------
 
-(define branch-mnemonics   '(beq bne blt bge bltu bgeu branch-far branch-indirect))
-(define jump-mnemonics     '(jal jump-far call-far))
+(define branch-mnemonics   '(beq bne blt bge bltu bgeu c.beqz c.bnez branch-far branch-indirect))
+(define jump-mnemonics     '(jal c.j c.jal jump-far call-far))
 
 (define (branch-form? x)   (and (form? x) (memq (car x) branch-mnemonics) #t))
 (define (jump-form? x)     (and (form? x) (memq (car x) jump-mnemonics) #t))
@@ -86,6 +90,7 @@
     [(label-form? x) 0]
     [(align-form? x) #f]              ; 由游标算
     [(bytes-form? x) (length (cdr x))]
+    [(compressed-form? x) 2]          ; c.* 必须先于 branch/jump 判, 也是 2 字节
     [(branch-form? x)
      (case (car x)
        [(branch-far) 8]
@@ -96,12 +101,7 @@
        [(jump-far call-far) 8]
        [else 4])]
     [(eq? (car x) 'la) 8]
-    [else
-     ;; 兜底: c.* 2 字节, 其余 4 字节
-     (if (and (symbol? (car x))
-              (string-prefix? (symbol->string (car x)) "c."))
-         2
-         4)]))
+    [else 4]))
 
 ;; ---------------------------------------------------------------------------
 ;; 可达距离 (字节); #f = 不设限 / 不是控制转移
@@ -113,10 +113,12 @@
      (case (car x)
        [(branch-far) 1048576]
        [(branch-indirect) #f]
+       [(c.beqz c.bnez) 256]           ; C.BEQZ/C.BNEZ: ±256 B
        [else 4096])]
     [(jump-form? x)
      (case (car x)
        [(jump-far call-far) #f]
+       [(c.j c.jal) 2048]              ; C.J/C.JAL: ±2 KiB
        [else 1048576])]
     [else #f]))
 

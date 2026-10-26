@@ -9,7 +9,7 @@
 ;; 层对外形状是普通 list:
 ;;;   输入  '((form) (form) ...)
 ;;;   输出  '((form) (form) ...)      ; 里面已按表换过
-;;; 内部的 rewrite-all 只看单个 form / 树, 代码里的 quote 当数据, 不进去。
+;;; 内部的 rewrite-tree 只看单个 form / 树, 代码里的 quote 当数据, 不进去。
 ;;;
 ;; 所以本层不需要 scratch / gensym / reloc; 每条规则只做缩短/换位,
 ;;; 从外到内走一遍即收敛(对结果再跑一次是不动点; 表里写出自环则报错)。
@@ -23,7 +23,7 @@
 
 (require "table.rkt")
 
-(provide rewrite-item
+(provide
          ;; 数据
          rewrite-rows
          directive-heads
@@ -34,15 +34,15 @@
          row-names
          row-rules
          default-table
-         pseudo-names
          rules
          ;; 查询
          pseudo-name?
          rules-for
-         validate-rows!
+         check-rows
          ;; 变换
-         rewrite-one
-         rewrite-all
+         apply-rule
+         expand-item
+         rewrite-tree
          rewrite-program
          program-items
          ;; 验证
@@ -150,11 +150,10 @@
 (define default-table (make-table rewrite-rows))
 
 ;; 视图
-(define pseudo-names (table-names default-table))
 (define rules (table-rules default-table))
 
-;; 测试/自定义时用别的表自检
-(define (validate-rows! [rows rewrite-rows])
+;; 测试/自定义表时用别的行表自检(不产生副作用)
+(define (check-rows [rows rewrite-rows])
   (make-table rows)
   (void))
 
@@ -171,13 +170,13 @@
   (hash-ref (table-rules-by-name tbl) h '()))
 
 ;; ---------------------------------------------------------------------------
-;; 单节点重写
+;; 单条规则
 ;; ---------------------------------------------------------------------------
 
 ;; 命中返回展开结果, 否则 #f。
 ;; 名字不分主次: 拿实际写的头配规则的操作数模式, 所以 l8 / load-8 走同一条规则。
 ;; 形状不匹配时返回 #f, 调用方保留**原始拼写**, 交给编码器报错。
-(define (rewrite-one form [tbl default-table])
+(define (apply-rule form [tbl default-table])
   (and (form? form)
        (let ([h (car form)])
          (and (symbol? h)
@@ -204,28 +203,28 @@
 (define max-expand-steps 64)
 
 ;; 一条 item: 展开到不再命中
-(define (rewrite-item form [tbl default-table])
-  (define y (and (form? form) (rewrite-one form tbl)))
+(define (expand-item form [tbl default-table])
+  (define y (and (form? form) (apply-rule form tbl)))
   (if y (rewrite-chain y tbl 1) form))
 
 ;; 命中后对结果接着重写, 直到不再命中; 走满 max-expand-steps 步就当自环报错
 (define (rewrite-chain x tbl steps)
   (cond
     [(>= steps max-expand-steps)
-     (error 'rewrite-item "expansion chain longer than ~a steps (cycle in table?): ~e"
+     (error 'rewrite "expansion chain longer than ~a steps (cycle in table?): ~e"
             max-expand-steps x)]
     [else
-     (define y (and (form? x) (rewrite-one x tbl)))
+     (define y (and (form? x) (apply-rule x tbl)))
      (if y (rewrite-chain y tbl (add1 steps)) x)]))
 
-;; item 列表 / 单条 item
-(define (rewrite-all x [tbl default-table])
-  (define (each items) (map (lambda (i) (rewrite-all i tbl)) items))
+;; item 列表 / 单条 item / 原子(原样)
+(define (rewrite-tree x [tbl default-table])
+  (define (each items) (map (lambda (i) (rewrite-tree i tbl)) items))
   (cond
     [(not (form? x)) x]
     [(eq? (car x) 'quote) x]                             ; 数据, 不进去
     [(pair? (car x)) (each x)]                            ; item 列表
-    [else (rewrite-item x tbl)]))
+    [else (expand-item x tbl)]))
 
 ;; ---------------------------------------------------------------------------
 ;; 验证: 输出中不允许残留任何 P-asm 拼写
@@ -251,7 +250,7 @@
 ;;   => '((lwu t0 sp 8) L)
 ;;
 ;; 旧壳 (quote ...) / (begin ...) 也收, 出口一律 plain list。
-;; 代码内部的 quote 仍然是数据, rewrite-all 不进去。
+;; 代码内部的 quote 仍然是数据, rewrite-tree 不进去。
 ;; ---------------------------------------------------------------------------
 
 ;; program-items : 去掉旧壳(quote/begin), 拿到 item 列表
@@ -267,10 +266,10 @@
       [(null? body) '()]
       [(pair? (car body)) body]        ; 头是 list -> item 列表
       [else (list body)]))             ; 单条 item
-  (if (and (form? (car items)) (eq? (caar items) 'begin) (= 1 (length items)))
+  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
       (cdar items)
       items))
 
 ;; rewrite-program : (listof item) -> (listof item)
 (define (rewrite-program prog [tbl default-table])
-  (rewrite-all (program-items prog) tbl))
+  (rewrite-tree (program-items prog) tbl))

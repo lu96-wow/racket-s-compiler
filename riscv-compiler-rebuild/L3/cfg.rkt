@@ -5,12 +5,14 @@
 ;;;
 ;;; 切块规则(leader):
 ;;;   - 程序开头
-;;;   - 每个 (label L) 之后
+;;;   - 控制转移的目标 label
 ;;;   - 每条 ends-block? 指令之后
-;;; 连续的多个 (label ...) 归同一个块(块可以有多名字)。
+;;; 连续的多个 (label ...) 归同一个块(块可以有多名字); 不是目标的 label
+;;; 不切块, 作为位置标记留在块里。
 ;;;
-;;; 边: 块的最后一条指令决定后继
-;;;;   分支        目标块 + 下一块
+;;; 边: 块的最后一条指令决定后继(压缩形式 c.j/c.jal/c.jr/c.jalr/c.beqz/c.bnez
+;;; 与对应展开形式同规则)
+;;;   分支        目标块 + 下一块
 ;;;   jal x0      目标块
 ;;;   jal ra      目标块 + 下一块(返回地址 = pc+4)
 ;;;   jalr x0     无(不回来)
@@ -19,23 +21,21 @@
 ;;;   ebreak      无
 ;;;   其他        下一块
 ;;;
-;;; 目标指向别的段(屏障之后)的 label 时, 不算本段内的边, 但该 label 会被
-;;; referenced-labels 记住, 作为可达性分析的根。
+;;; 目标 label 不存在时不加边(交给布局层报 undefined-target)。
 
 (require "insn.rkt")
 
-(provide (struct-out block)
+(provide (struct-out basic-block)
          (struct-out graph)
          build-cfg
          cfg-block-count
          cfg-reachable
          cfg->lines
          referenced-labels
-         address-taken-paths
-         labels-of)
+         address-taken-paths)
 
-;; 一个基本块: 头部的若干 label + 指令 + 后继(块下标)
-(struct block (labels insns successors) #:transparent)
+;; 一个基本块: 头部的若干 label + 程序 item + 后继(块下标)
+(struct basic-block (labels items successors) #:transparent)
 
 ;; 一张图: 块向量 + 有没有间接跳转
 (struct graph (blocks indirect?) #:transparent)
@@ -93,9 +93,9 @@
         (define p (normalize-path target))
         (and p (hash-ref label->index p #f)))
       (define (succs . xs) (remove-duplicates (filter values xs)))
-      (block (car entry)
-             insns
-             (cond
+      (basic-block (car entry)
+                   insns
+                   (cond
                [(branch-instruction? last-insn)
                 (succs (edge (jump-target last-insn)) fallthrough)]
                [(jump-instruction? last-insn)
@@ -110,9 +110,6 @@
            (indirect-instruction? it))))
 
 (define (cfg-block-count g) (vector-length (graph-blocks g)))
-
-;; 一个块的所有名字(每条链一项)
-(define (labels-of b) (block-labels b))
 
 ;; ---------------------------------------------------------------------------
 ;; 分析
@@ -146,7 +143,7 @@
   (define (visit! i)
     (unless (vector-ref seen i)
       (vector-set! seen i #t)
-      (for ([s (in-list (block-successors (vector-ref blocks i)))])
+      (for ([s (in-list (basic-block-successors (vector-ref blocks i)))])
         (visit! s))))
   (for ([r (in-list roots)])
     (when (< r (vector-length blocks)) (visit! r)))
@@ -158,4 +155,4 @@
 (define (cfg->lines g)
   (for/list ([b (in-vector (graph-blocks g))] [i (in-naturals)])
     (format "b~a labels=~s insns=~a succs=~s"
-            i (block-labels b) (length (block-insns b)) (block-successors b))))
+            i (basic-block-labels b) (length (basic-block-items b)) (basic-block-successors b))))

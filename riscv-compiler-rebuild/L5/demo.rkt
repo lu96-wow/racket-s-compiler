@@ -5,7 +5,7 @@
 ;;;   program : L4 的输出 = 块(身份 + 程序) + 流
 ;;;   data    : 扁平 item 列表
 ;;;   layout  : (segments ...) + (place ...)
-;;; 输出: (layout (segment ...) (symbols ...) (problems ...))
+;;; 输出: ((segments (segment ...) ...) (symbols ...) (problems ...))
 
 (require "layout.rkt"
          (only-in "../L3/analyze.rkt" sexp->program))
@@ -38,8 +38,7 @@
 (define laid (layout-program prog data layout-input))
 
 (displayln ";; L5 输出 (offset 注解 + 符号 + 问题)")
-(for ([seg (in-list (cdr laid))]
-      #:when (and (pair? seg) (eq? (car seg) 'segment)))
+(for ([seg (in-list (cdr (assoc 'segments laid)))])
   (define name (cadr (assoc 'name (cdr seg))))
   (define kind (cadr (assoc 'kind (cdr seg))))
   (define start (cadr (assoc 'start (cdr seg))))
@@ -50,7 +49,7 @@
 
 (newline)
 (displayln ";; 符号 (链 -> 段 偏移 绝对地址)")
-(for ([s (in-list (cdr (assoc 'symbols (cdr laid))))])
+(for ([s (in-list (cdr (assoc 'symbols laid)))])
   (displayln (format "  ~s -> ~a+~x (#x~x)" (car s) (cadr s) (caddr s) (cadddr s))))
 
 (newline)

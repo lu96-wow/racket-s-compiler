@@ -67,7 +67,7 @@
       [(null? body) '()]
       [(pair? (car body)) body]        ; 头是 list -> item 列表
       [else (list body)]))             ; 单条 item
-  (if (and (form? (car items)) (eq? (caar items) 'begin) (= 1 (length items)))
+  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
       (cdar items)
       items))
 
@@ -146,24 +146,21 @@
 ;; ---------------------------------------------------------------------------
 
 (define (emit annotated table)
-  (define out '())
-  (define previous-was-label? #f)
-  (define emitted-here '())
-  (for ([entry (in-list annotated)])
-    (define scope (car entry))
-    (define it (cdr entry))
-    (cond
-      [(label-form? it)
-       (unless previous-was-label? (set! emitted-here '()))
-       (set! previous-was-label? #t)
-       (define full (append scope (relative-path it)))
-       (unless (member full emitted-here)             ; 同位置重复名字只写一次
-         (set! emitted-here (cons full emitted-here))
-         (set! out (append out (list (cons 'label full)))))]
-      [else
-       (set! previous-was-label? #f)
-       (set! out (append out (list (rewrite-operands it scope table))))]))
-  out)
+  (define-values (rev-out _prev _here)
+    (for/fold ([rev-out '()] [previous-was-label? #f] [emitted-here '()])
+              ([entry (in-list annotated)])
+      (define scope (car entry))
+      (define it (cdr entry))
+      (cond
+        [(label-form? it)
+         (define here (if previous-was-label? emitted-here '()))
+         (define full (append scope (relative-path it)))
+         (if (member full here)
+             (values rev-out #t here)                  ; 同位置重复名字只写一次
+             (values (cons (cons 'label full) rev-out) #t (cons full here)))]
+        [else
+         (values (cons (rewrite-operands it scope table) rev-out) #f emitted-here)])))
+  (reverse rev-out))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口

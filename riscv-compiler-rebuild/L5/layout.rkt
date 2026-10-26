@@ -1,7 +1,7 @@
 #lang racket
 ;;; L5/layout.rkt
 ;;;
-;;; 布局计算: (program-blocks, data, layout) -> (layout ...)
+;;; 布局计算: program + data + layout 输入 -> ((segments ...) (symbols ...) (problems ...))
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
@@ -26,7 +26,7 @@
                   block-head block-items flow-fallthrough))
 
 (provide layout-program
-         items-of
+         program-items
          layout-problems
          (struct-out run))
 
@@ -34,7 +34,7 @@
 ;; 输入整形
 ;; ---------------------------------------------------------------------------
 
-(define (items-of input)
+(define (program-items input)
   (define body
     (cond
       [(and (form? input) (eq? (car input) 'quote) (= 2 (length input)) (list? (cadr input)))
@@ -51,7 +51,7 @@
       items))
 
 (define (clauses input key)
-  (for/list ([x (in-list (items-of input))]
+  (for/list ([x (in-list (program-items input))]
              #:when (and (form? x) (eq? (car x) key)))
     x))
 
@@ -112,7 +112,7 @@
 ;; 代码: L3/L4 的块(struct)
 (define (program-parts prog)
   (unless (program? prog)
-    (error 'layout-program "program must be L3/L4 output ((blocks ...) (flows ...)); got: ~e" prog))
+    (error 'layout "program must be L3/L4 output ((blocks ...) (flows ...)); got: ~e" prog))
   (values (program-blocks prog) (program-flows prog)))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item
@@ -325,20 +325,19 @@
 ;; ---------------------------------------------------------------------------
 
 (define (layout->sexp measured-segs symbols problems)
-  (append
-   (list 'layout)
-   (for/list ([m (in-list measured-segs)])
-     (define seg (measured-segment m))
-     (list 'segment
-           (list 'name (segment-name seg))
-           (list 'kind (segment-kind seg))
-           (list 'start (segment-start seg))
-           (list 'end (segment-end seg))
-           (list 'align (segment-align seg))
-           (cons 'items (measured-items m))
-           (list 'size (measured-size m))))
-   (list (cons 'symbols symbols)
-         (cons 'problems problems))))
+  (list (cons 'segments
+              (for/list ([m (in-list measured-segs)])
+                (define seg (measured-segment m))
+                (list 'segment
+                      (list 'name (segment-name seg))
+                      (list 'kind (segment-kind seg))
+                      (list 'start (segment-start seg))
+                      (list 'end (segment-end seg))
+                      (list 'align (segment-align seg))
+                      (cons 'items (measured-items m))
+                      (list 'size (measured-size m)))))
+        (cons 'symbols symbols)
+        (cons 'problems problems)))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口
@@ -357,7 +356,7 @@
   (define-values (blocks flows) (program-parts program))
   (define matched (make-hash))             ; 用到过的 place 链
   (define code-by-seg (place-blocks blocks rules matched problem!))
-  (define data-by-seg (place-runs (split-runs (items-of data)) rules matched problem!))
+  (define data-by-seg (place-runs (split-runs (program-items data)) rules matched problem!))
 
   ;; place 里的链一次都没命中: 写错名字, 或指的是块内的位置标记(块不能拆)
   (for ([rule (in-list rules)])
@@ -375,5 +374,5 @@
 
 ;; 只看 problems 的便捷函数(测试/上层用)
 (define (layout-problems layout)
-  (define hit (assoc 'problems (cdr layout)))
+  (define hit (assoc 'problems layout))
   (and hit (cdr hit)))

@@ -41,6 +41,34 @@
 (check-equal? (jump-target '(beq t0 t1 L)) 'L)
 (check-equal? (jump-target '(jal ra L)) 'L)
 
+;; 压缩形式: 分类与展开形式一致
+(check-true  (branch-instruction? '(c.beqz a L)))
+(check-true  (branch-instruction? '(c.bnez a L)))
+(check-false (branch-instruction? '(c.addi a 1)))
+(check-true  (jump-instruction? '(c.j L)))
+(check-true  (jump-instruction? '(c.jal L)))
+(check-true  (indirect-instruction? '(c.jr ra)))
+(check-true  (indirect-instruction? '(c.jalr ra)))
+(check-true  (trap-instruction? '(c.ebreak)))
+(check-true  (ends-block? '(c.j L)))
+(check-true  (ends-block? '(c.jr ra)))
+(check-false (ends-block? '(c.addi a 1)))
+(check-equal? (jump-target '(c.beqz a L)) 'L)
+(check-equal? (jump-target '(c.jal L)) 'L)
+
+;; c.j/c.jr 不写链接寄存器(等于 x0); c.jal/c.jalr 写 ra
+(check-equal? (jump-register '(c.j L)) 'x0)
+(check-equal? (jump-register '(c.jr ra)) 'x0)
+(check-equal? (jump-register '(c.jal L)) 'ra)
+(check-equal? (jump-register '(c.jalr ra)) 'ra)
+(check-true  (unconditional-jump? '(c.j L)))
+(check-false (unconditional-jump? '(c.jal L)))
+(check-false (falls-through? '(c.j L)))
+(check-true  (falls-through? '(c.jal L)))
+(check-false (falls-through? '(c.jr ra)))
+(check-true  (falls-through? '(c.jalr ra)))
+(check-false (falls-through? '(c.ebreak)))
+
 ;; label 的链: (label a b) 是链 (a b), 不是两个名字
 (check-true  (label-form? '(label main)))
 (check-true  (label-form? '(label a b)))
@@ -81,44 +109,67 @@
 (define g1 (cfg:build-cfg '((label a) (add t0 t1 t2) (beq t0 t1 c)
                             (add t1 t1 t1) (label c) (add t2 t2 t2))))
 (check-equal? (cfg:cfg-block-count g1) 3)
-(check-equal? (cfg:block-labels (vector-ref (cfg:graph-blocks g1) 0)) '((a)))
-(check-equal? (cfg:block-insns (vector-ref (cfg:graph-blocks g1) 0))
+(check-equal? (cfg:basic-block-labels (vector-ref (cfg:graph-blocks g1) 0)) '((a)))
+(check-equal? (cfg:basic-block-items (vector-ref (cfg:graph-blocks g1) 0))
               '((add t0 t1 t2) (beq t0 t1 c)))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g1) 0)) '(2 1))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g1) 1)) '(2))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g1) 2)) '())
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g1) 0)) '(2 1))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g1) 1)) '(2))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g1) 2)) '())
 
 ;; 连续的 label 归同一个块(多名字)
 (define g2 (cfg:build-cfg '((label a) (label b) (add t0 t1 t2))))
 (check-equal? (cfg:cfg-block-count g2) 1)
-(check-equal? (cfg:block-labels (vector-ref (cfg:graph-blocks g2) 0)) '((a) (b)))
+(check-equal? (cfg:basic-block-labels (vector-ref (cfg:graph-blocks g2) 0)) '((a) (b)))
 
 ;; jal x0: 只有目标边
 (define g3 (cfg:build-cfg '((label a) (jal x0 c) (label b) (add t0 t0 t0)
                             (label c) (add t1 t1 t1))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g3) 0)) '(2))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g3) 0)) '(2))
 (check-false (cfg:graph-indirect? g3))
 
 ;; jal ra: 调用, 目标 + 顺序
 (define g4 (cfg:build-cfg '((label a) (jal ra c) (label b) (add t0 t0 t0)
                             (label c) (add t1 t1 t1))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g4) 0)) '(2 1))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g4) 0)) '(2 1))
 
 ;; jalr ra = 间接调用: 只有顺序边, 但整张图记为"有间接跳转"
 (define g5 (cfg:build-cfg '((label a) (jalr ra ra 0) (label b) (add t0 t0 t0))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g5) 0)) '(1))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g5) 0)) '(1))
 (check-true (cfg:graph-indirect? g5))
 
 ;; jalr x0 = ret: 不回来, 没有顺序边
 (define g5b (cfg:build-cfg '((label a) (jalr x0 ra 0) (label b) (add t0 t0 t0))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g5b) 0)) '())
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g5b) 0)) '())
 (check-true (cfg:graph-indirect? g5b))
 
 ;; ecall 可能返回, ebreak 停住
 (define g6 (cfg:build-cfg '((label a) (ecall) (label b) (add t0 t0 t0))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g6) 0)) '(1))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g6) 0)) '(1))
 (define g7 (cfg:build-cfg '((label a) (ebreak) (label b) (add t0 t0 t0))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g7) 0)) '())
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g7) 0)) '())
+
+;; 压缩控制转移: 同样切块、同样有边
+(define gc1 (cfg:build-cfg '((label a) (c.beqz t0 c) (label b) (add t0 t0 t0)
+                             (label c) (add t1 t1 t1))))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks gc1) 0)) '(2 1))
+
+(define gc2 (cfg:build-cfg '((label a) (c.j c) (label b) (add t0 t0 t0)
+                            (label c) (add t1 t1 t1))))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks gc2) 0)) '(2))
+
+(define gc3 (cfg:build-cfg '((label a) (c.jr ra) (label b) (add t0 t0 t0))))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks gc3) 0)) '())
+(check-true (cfg:graph-indirect? gc3))
+
+(define gc4 (cfg:build-cfg '((label a) (c.jalr ra) (label b) (add t0 t0 t0))))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks gc4) 0)) '(1))
+
+(define gc5 (cfg:build-cfg '((label a) (c.ebreak) (label b) (add t0 t0 t0))))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks gc5) 0)) '())
+
+;; 压缩分支目标也算引用
+(check-equal? (cfg:referenced-labels '((c.j (c)) (c.beqz t0 (d))))
+              '((c) (d)))
 
 ;; 不认识的指令: 普通指令, 不切块
 (define g8 (cfg:build-cfg '((label a) (frobnicate t0) (add t0 t0 t0))))
@@ -126,7 +177,7 @@
 
 ;; 目标 label 不存在时不加边(留给布局层报)
 (define g9 (cfg:build-cfg '((label a) (jal x0 nowhere))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g9) 0)) '())
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g9) 0)) '())
 
 (check-equal? (cfg:referenced-labels '((label a) (jal ra b) (beq t0 t1 c) (add t0 t1 t2)))
               '((b) (c)))
@@ -194,20 +245,20 @@
 
 ;; 链(label) 模型: 同位置多名 / 任意类型 / 链做跳转目标
 (define g-names (cfg:build-cfg '((label a f) (label a g) (jal x0 (a g)))))
-(check-equal? (cfg:block-labels (vector-ref (cfg:graph-blocks g-names) 0)) '((a f) (a g)))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g-names) 0)) '(0))
+(check-equal? (cfg:basic-block-labels (vector-ref (cfg:graph-blocks g-names) 0)) '((a f) (a g)))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g-names) 0)) '(0))
 
 (define g-paths (cfg:build-cfg '((label a a) (jal x0 (a b)) (label a b))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g-paths) 0)) '(1))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g-paths) 0)) '(1))
 
 (define g-typed (cfg:build-cfg '((label "x" 1) (jal x0 ("x" 1)))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g-typed) 0)) '(0))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g-typed) 0)) '(0))
 (define g-num (cfg:build-cfg '((label 1) (jal x0 (1)))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g-num) 0)) '(0))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g-num) 0)) '(0))
 
 ;; 裸原子当单节链
 (define g-bare (cfg:build-cfg '((label g) (jal x0 g))))
-(check-equal? (cfg:block-successors (vector-ref (cfg:graph-blocks g-bare) 0)) '(0))
+(check-equal? (cfg:basic-block-successors (vector-ref (cfg:graph-blocks g-bare) 0)) '(0))
 
 ;; L1 展平后的程序直接进 L3
 (check-equal? (analyze (flatten-program '((module a (label f) (jal x0 (g)) (label g)))))

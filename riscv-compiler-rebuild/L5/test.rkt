@@ -1,6 +1,6 @@
 #lang racket
-;;; L4/test.rkt
-;;; L4 吃 L3 的块列表: 放置以块为单位, place 行精确匹配 label 链,
+;;; L5/test.rkt
+;;; L5 吃 L3/L4 的块列表: 放置以块为单位, place 行精确匹配 label 链,
 ;;; 放完检查 fallthrough 是否被剪断。
 
 (require rackunit
@@ -46,6 +46,22 @@
 (check-equal? (item-kind '(bytes 1)) 'data)
 (check-equal? (item-kind '(addi a0 a0 1)) 'code)
 
+;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
+(check-true  (compressed-form? '(c.addi a0 1)))
+(check-true  (compressed-form? '(c.j (l))))
+(check-false (compressed-form? '(addi a0 a0 1)))
+(check-equal? (item-size '(c.nop)) 2)
+(check-equal? (item-size '(c.addi a0 1)) 2)
+(check-equal? (item-size '(c.j (l))) 2)
+(check-equal? (item-size '(c.jal (l))) 2)
+(check-equal? (item-size '(c.beqz a (l))) 2)
+(check-equal? (item-kind '(c.addi a0 1)) 'code)
+(check-equal? (form-range '(c.j (l))) 2048)
+(check-equal? (form-range '(c.jal (l))) 2048)
+(check-equal? (form-range '(c.beqz a (l))) 256)
+(check-equal? (form-range '(c.bnez a (l))) 256)
+(check-false  (form-range '(c.addi a0 1)))
+
 ;; ---------------------------------------------------------------------------
 ;; 小工具: 程序 -> L3 块 -> L4 布局
 ;; ---------------------------------------------------------------------------
@@ -53,16 +69,13 @@
 (define (lay prog data layout)
   (layout-program (eliminate-dead (analyze prog)) data layout))
 
-(define (segments-of layout)
-  (for/list ([x (in-list (cdr layout))]
-             #:when (and (pair? x) (eq? (car x) 'segment)))
-    x))
+(define (segments-of layout) (cdr (assoc 'segments layout)))
 (define (seg-of layout name)
   (findf (lambda (s) (equal? (cadr (assoc 'name (cdr s))) name)) (segments-of layout)))
 (define (items-of-seg layout name) (cdr (assoc 'items (cdr (seg-of layout name)))))
 (define (size-of-seg layout name) (cadr (assoc 'size (cdr (seg-of layout name)))))
-(define (symbols-of layout) (cdr (assoc 'symbols (cdr layout))))
-(define (problems-of layout) (cdr (assoc 'problems (cdr layout))))
+(define (symbols-of layout) (cdr (assoc 'symbols layout)))
+(define (problems-of layout) (cdr (assoc 'problems layout)))
 
 ;; ---------------------------------------------------------------------------
 ;; 一个段: 按块顺序摆放, 累加字节
@@ -75,6 +88,7 @@
                 '((segments (segment prog1 code #x100000 #x100FFF 16))
                   (place prog1 (main) (b) (c)))))
 
+(check-equal? (map car l1) '(segments symbols problems))   ; 顶层是字段表, 无标签
 (check-equal? (items-of-seg l1 'prog1)
               '((offset 0 (label main)) (offset 0 (addi a0 a0 1)) (offset 4 (bge a0 a1 (c)))
                 (offset 8 (label b)) (offset 8 (addi a1 a1 1))
@@ -88,6 +102,41 @@
               '((b) prog1 8 #x100008))
 (check-equal? (findf (lambda (s) (equal? (car s) '(c))) (symbols-of l1))
               '((c) prog1 12 #x10000c))
+
+;; 压缩分支/跳转: 同理占 2 字节, 目标照查
+;; (目标故意不指向物理下一块, 否则会被 L4 当冗余转移删掉)
+(define lc (lay '((label a) (c.beqz t0 (c))
+                  (label b) (c.j (d))
+                  (label c) (c.addi a0 1)
+                  (label d) (c.addi a1 1))
+                '()
+                '((segments (segment s1 code #x100000 #x1000FF 4))
+                  (place s1 (a) (b) (c) (d)))))
+(check-equal? (items-of-seg lc 's1)
+              '((offset 0 (label a)) (offset 0 (c.beqz t0 (c)))
+                (offset 2 (label b)) (offset 2 (c.j (d)))
+                (offset 4 (label c)) (offset 4 (c.addi a0 1))
+                (offset 6 (label d)) (offset 6 (c.addi a1 1))))
+(check-equal? (size-of-seg lc 's1) 8)
+(check-equal? (problems-of lc) '())
+
+;; 压缩跳转超出 ±2 KiB -> needs-far (c.jal 会落下, 中间块可达)
+(check-equal? (problems-of
+               (lay '((label a) (c.jal (far))
+                      (label mid) (align 4096) (addi a0 a0 1)
+                      (label far) (addi a1 a1 1))
+                    '()
+                    '((segments (segment s1 code #x100000 #x101FFF 4096))
+                      (place s1 (a) (mid) (far)))))
+              '((needs-far s1 0 (c.jal (far)) 4100)))
+
+;; 压缩分支目标不存在 -> undefined-target
+(check-equal? (problems-of
+               (lay '((label a) (c.beqz t0 (ghost)) (label b) (addi a0 a0 1))
+                    '()
+                    '((segments (segment s1 code #x100000 #x1000FF 4))
+                      (place s1 (a) (b)))))
+              '((undefined-target s1 0 (c.beqz t0 (ghost)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 两个段: 中间用 jal x0 断开, 没有 fallthrough

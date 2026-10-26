@@ -6,7 +6,7 @@
          "table.rkt"
          "rewrite.rkt")
 
-(define (rw x) (rewrite-all x))
+(define (rw x) (rewrite-tree x))
 
 ;; --- 显式 / 简写等价 -------------------------------------------------------
 (check-equal? (rw '(load-32 t0 sp 8)) '(lwu t0 sp 8))
@@ -91,6 +91,11 @@
               '((lwu t0 sp 8) (sd ra sp 16) L))
 (check-equal? (rewrite-program '(l8 t0 a)) '((lbu t0 a 0)))
 
+;; 空输入/旧壳空体不崩, 出口仍是 list
+(check-equal? (rewrite-program '()) '())
+(check-equal? (rewrite-program '(quote ())) '())
+(check-equal? (rewrite-program '(begin)) '())
+
 ;; 旧壳 (quote ...) / (begin ...) 也收, 出口一律 plain list
 (check-equal? (rewrite-program '(quote ((l8 t0 a)))) '((lbu t0 a 0)))
 (check-equal? (rewrite-program '(begin (l8 t0 a)))   '((lbu t0 a 0)))
@@ -105,6 +110,23 @@
 ;; 代码内部的 quote 仍是数据, 不进去
 (check-equal? (rewrite-program '((quote (load-32 t0 sp 8))))
               '((quote (load-32 t0 sp 8))))
+
+;; 这份表只做缩短/换位, 不碰布局: 不含 li/la, 也不含需要自定义算法的伪指令。
+
+;; --- nop / c.nop -----------------------------------------------------------
+;; 和 GAS/LLVM 一致: nop = addi x0, x0, 0; c.nop = c.addi x0, 0
+(check-equal? (rw '(nop)) '(addi x0 x0 0))
+(check-equal? (rw '(c.nop)) '(c.addi x0 0))
+(check-true  (pseudo-name? 'nop))
+(check-true  (pseudo-name? 'c.nop))
+(check-true  (pseudo-leftover? '(nop)))
+(check-true  (pseudo-leftover? '(c.nop)))
+(check-equal? (rewrite-program '((nop) (c.nop))) '((addi x0 x0 0) (c.addi x0 0)))
+;; 两条都没有别名, 所以各自只有 1 个名字
+(check-equal? (row-names '(nop (() (addi x0 x0 0)))) '(nop))
+(check-equal? (row-names '(c.nop (() (c.addi x0 0)))) '(c.nop))
+;; 带立即数的 c.nop 是 Zca 的 hint, 不是零操作数形式, 不吞
+(check-equal? (rw '(c.nop 3)) '(c.nop 3))
 
 ;; --- 多命名: 同级 ------------------------------------------------------------
 (check-true  (pseudo-name? 'l8))
@@ -122,7 +144,7 @@
 (for ([row (in-list rewrite-rows)])
   (define names (row-names row))
   (define rs (row-rules row))
-  (check-true (>= (length names) 2) (format "~a: rows should have >=2 names" names))
+  (check-true (>= (length names) 1) (format "~a: rows should have >=1 name" names))
   (for ([s (in-list names)])
     (check-true (pseudo-name? s))
     (check-equal? (rules-for s) rs)))
@@ -135,27 +157,27 @@
 ;; --- 建表自检 ---------------------------------------------------------------
 ;; 同一行里名字重复
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((load-8 load-8 ((?d ?a) (lbu ?d ?a 0)))))))
+           (lambda () (check-rows '((load-8 load-8 ((?d ?a) (lbu ?d ?a 0)))))))
 ;; 名字被两行占
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((a x ((?d) (a ?d)))
+           (lambda () (check-rows '((a x ((?d) (a ?d)))
                                       (b x ((?d) (b ?d)))))))
 ;; 占用指令头保留字
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((load-8 quote ((?d ?a) (lb ?d ?a 0)))))))
+           (lambda () (check-rows '((load-8 quote ((?d ?a) (lb ?d ?a 0)))))))
 ;; 操作数模式不是列表
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((load-8 l8 (?d (lbu ?d x x)))))))
+           (lambda () (check-rows '((load-8 l8 (?d (lbu ?d x x)))))))
 ;; 模板不是 form
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((load-8 l8 ((?d ?a) foo))))))
+           (lambda () (check-rows '((load-8 l8 ((?d ?a) foo))))))
 ;; 但模板写什么后端指令本层不管(扩展太多, 由后端报错)
-(validate-rows! '((load-8 l8 ((?d ?a) (foo ?d ?a)))))
+(check-rows '((load-8 l8 ((?d ?a) (foo ?d ?a)))))
 ;; 名字也可以和真指令同名, 只要不是指令头
-(validate-rows! '((load-8 lbu ((?d ?a) (lbu ?d ?a 0)))))
+(check-rows '((load-8 lbu ((?d ?a) (lbu ?d ?a 0)))))
 ;; 行只有名字没规则
 (check-exn exn:fail?
-           (lambda () (validate-rows! '((load-8 l8)))))
+           (lambda () (check-rows '((load-8 l8)))))
 
 ;; --- 表按扩展拆文件, 由 table.rkt 聚合 -------------------------------------
 (check-true (list? rewrite-rows))
@@ -171,12 +193,12 @@
   (make-table (append '((v1 v2 ((?d) (lb ?d x0 0))))     ; 假装是 table-vector.rkt
                       '((w1 w2 ((?d) (lh ?d x0 0)))))))  ; 假装是另一个扩展
 (check-equal? (table-names t-two-files) '(v1 v2 w1 w2))
-(check-equal? (rewrite-one '(v2 t0) t-two-files) '(lb t0 x0 0))
-(check-equal? (rewrite-one '(w1 t0) t-two-files) '(lh t0 x0 0))
+(check-equal? (apply-rule '(v2 t0) t-two-files) '(lb t0 x0 0))
+(check-equal? (apply-rule '(w1 t0) t-two-files) '(lh t0 x0 0))
 
 ;; 跨文件重名会被聚合后的自检抓住
 (check-exn exn:fail?
-           (lambda () (validate-rows! (append '((v1 ((?d) (lb ?d x0 0))))
+           (lambda () (check-rows (append '((v1 ((?d) (lb ?d x0 0))))
                                               '((v1 ((?d) (lh ?d x0 0))))))))
 
 ;; --- 别名的个数不定 ---------------------------------------------------------
@@ -194,13 +216,13 @@
 (for ([n (in-list (table-names t-var))])
   (check-true (pseudo-name? n t-var)))
 (for ([n (in-list '(two t2 tw))])
-  (check-equal? (rewrite-one (list n 't0 'a) t-var) '(lh t0 a 0)))
+  (check-equal? (apply-rule (list n 't0 'a) t-var) '(lh t0 a 0)))
 (for ([n (in-list '(four f4 fo4 fou4 foe4))])
-  (check-equal? (rewrite-all (list n 't0 'a) t-var) '(ld t0 a 0)))
+  (check-equal? (rewrite-tree (list n 't0 'a) t-var) '(ld t0 a 0)))
 
 ;; 自定义表不影响默认表
 (check-false (pseudo-name? 'tw))
-(check-false (rewrite-one '(tw t0 a)))
+(check-false (apply-rule '(tw t0 a)))
 (check-equal? (rules-for 'one) '())
 
 ;; 自定义表也能走整层入口, 出口仍是 quote-list
@@ -212,23 +234,23 @@
   (make-table '((a1 a2 a3 a4 a5 ((?d ?a) (lb ?d ?a 0))))))
 (check-equal? (table-names t-many) '(a1 a2 a3 a4 a5))
 (for ([n (in-list '(a1 a2 a3 a4 a5))])
-  (check-equal? (rewrite-one (list n 't0 'a) t-many) '(lb t0 a 0)))
+  (check-equal? (apply-rule (list n 't0 'a) t-many) '(lb t0 a 0)))
 
 ;; --- 展开链自环保护 ---------------------------------------------------------
 ;; 表里写出一行自己展开成自己, 不能卡死
 (define t-loop (make-table '((loop ((?d) (loop ?d))))))
-(check-exn exn:fail? (lambda () (rewrite-all '(loop t0) t-loop)))
+(check-exn exn:fail? (lambda () (rewrite-tree '(loop t0) t-loop)))
 
 ;; 两行互相展开也算自环
 (define t-pingpong (make-table '((ping ((?d) (pong ?d)))
                                  (pong ((?d) (ping ?d))))))
-(check-exn exn:fail? (lambda () (rewrite-all '(ping t0) t-pingpong)))
+(check-exn exn:fail? (lambda () (rewrite-tree '(ping t0) t-pingpong)))
 
 ;; 正常的多步展开(链长 < 上限)不受影响
 (define t-chain (make-table '((step1 ((?d) (step2 ?d)))
                               (step2 ((?d) (step3 ?d)))
                               (step3 ((?d) (add ?d x0 x0))))))
-(check-equal? (rewrite-all '(step1 t0) t-chain) '(add t0 x0 x0))
+(check-equal? (rewrite-tree '(step1 t0) t-chain) '(add t0 x0 x0))
 
 ;; rules-for 对不认识的输入统一返回 '()
 (check-equal? (rules-for 'nope) '())
