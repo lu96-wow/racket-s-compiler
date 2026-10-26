@@ -5,9 +5,10 @@
 ;;;
 ;;; 输入/输出都是 L3 的块列表(Racket struct), 不是 s-exp。
 ;;;
-;;; 本层做的两件事:
+;;; 本层做的三件事:
 ;;;   drop-unreachable             从 root? 块出发走不到的一律删掉(连 label)
 ;;;   drop-transfers-to-next-block 删掉"跳到紧邻下一块"的转移 -> 变成顺序落下
+;;;   merge-empty-blocks           把空块并进它的下一块(label 地址不变)
 ;;;
 ;;; 两者都会改变 succ / fallthrough, 所以每次改完都重算:
 ;;;   - 删块后重新编号 id, 重映射 succ / fallthrough
@@ -100,12 +101,57 @@
   (if changed? out blocks))
 
 ;; ---------------------------------------------------------------------------
+;; pass 3: 空块并进下一块
+;;
+;; 空块(insns 为空)的 label 和下一块的 label 指向同一个地址, 所以把 label
+;; 挪到下一块是安全的; 指向空块的 succ/fallthrough 一并改指下一块。
+;; 末尾的空块没有"下一块", 原样保留(它们可能就是代码末尾的 label)。
+;; ---------------------------------------------------------------------------
+
+(define (merge-empty-blocks blocks)
+  (define remap (make-hash))           ; 旧 id -> 并进去的那块 id
+  (define out '())                     ; 逆序
+  (define pending '())                 ; 逆序的空块
+
+  (for ([b (in-list blocks)])
+    (cond
+      [(null? (block-insns b))
+       (set! pending (cons b pending))]
+      [else
+       (define id (block-id b))
+       (define labels* (append (append* (for/list ([p (in-list (reverse pending))])
+                                          (block-labels p)))
+                               (block-labels b)))
+       (define root?* (or (block-root? b)
+                          (ormap block-root? pending)))
+       (for ([p (in-list pending)]) (hash-set! remap (block-id p) id))
+       (set! pending '())
+       (set! out (cons (block id labels* (block-insns b) (block-succ b)
+                              (block-fallthrough b) root?*)
+                       out))]))
+
+  ;; 末尾空块: 没有下一块可并
+  (for ([p (in-list pending)]) (hash-set! remap (block-id p) (block-id p)))
+  (define all (append (reverse out) (reverse pending)))
+
+  (define (map-id id) (hash-ref remap id id))
+  (reindex
+   (for/list ([b (in-list all)])
+     (block (block-id b)
+            (block-labels b)
+            (block-insns b)
+            (remove-duplicates (for/list ([s (in-list (block-succ b))]) (map-id s)))
+            (and (block-fallthrough b) (map-id (block-fallthrough b)))
+            (block-root? b)))))
+
+;; ---------------------------------------------------------------------------
 ;; pass 表 + 跑法
 ;; ---------------------------------------------------------------------------
 
 (define passes
   (list (cons 'drop-unreachable              drop-unreachable)
-        (cons 'drop-transfers-to-next-block  drop-transfers-to-next-block)))
+        (cons 'drop-transfers-to-next-block  drop-transfers-to-next-block)
+        (cons 'merge-empty-blocks            merge-empty-blocks)))
 
 (define (pass-names) (map car passes))
 

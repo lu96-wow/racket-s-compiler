@@ -28,7 +28,7 @@
 (define out (eliminate-dead blocks))
 
 (newline)
-(displayln ";; L4 输出 (dead 删掉, 跳到紧邻下一块的 jal 也删掉, id 重编)")
+(displayln ";; L4 输出 (dead 删掉; 空块并入下一块; 于是 done 紧邻, 那条 bge 也变成多余的)")
 (show out)
 
 (newline)

@@ -59,9 +59,13 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | --- | --- | --- |
 | `eliminate-dead` | `(listof block)` | `(listof block)` |
 | `optimize-blocks` | 同上（跑 pass 到不动点） | 同上 |
-| `passes` / `pass-names` | — | `(drop-unreachable drop-transfers-to-next-block)` |
+| `passes` / `pass-names` | — | `(drop-unreachable drop-transfers-to-next-block merge-empty-blocks)` |
 
-两个 pass 都会改 `succ` / `fallthrough`：删块后重新编号并重映射；删转移后该块只剩顺序边。
+三个 pass 都会改 `succ` / `fallthrough`：
+
+- `drop-unreachable`：删从 `root?` 走不到的块，重新编号并重映射
+- `drop-transfers-to-next-block`：删掉跳到紧邻下一块的转移，该块只剩顺序边
+- `merge-empty-blocks`：空块的 label 与下一块同址，并进下一块（末尾空块保留）
 
 ### L5 `L5/forms.rkt` `L5/layout.rkt` — 布局计算
 

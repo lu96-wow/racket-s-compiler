@@ -7,6 +7,9 @@ label 不等于块：块由 **leader**（label、`ends-block?` 指令之后、�
 所以：**L3 只做分析并输出块列表（不改程序），L4 做死代码消除（会改控制流），
 L5 按块放置并检查 fallthrough 没被剪断。**
 
+L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-empty-blocks`，
+每个都同步修 `succ` / `fallthrough`，跑到不动点。
+
 ## 1. 块列表（L3 输出、L4 输入输出、L5 输入）
 
 块是 Racket struct（`L3/analyze.rkt` 里的 `block`），不是 s-exp；

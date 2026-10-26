@@ -108,6 +108,53 @@
 (check-equal? (block-fallthrough (by-id blocks-simple 0)) 1)
 
 ;; ---------------------------------------------------------------------------
+;; 空块并进下一块
+;; ---------------------------------------------------------------------------
+
+;; 空块的 label 与下一块同址, 所以并过去(地址不变)
+(check-equal? (dce '((label a) (jal x0 (b)) (label b) (add t0 t0 t0)))
+              '((label a) (label b) (add t0 t0 t0)))
+
+;; 并完只剩一块, labels 是 (a) (b), root? 保留
+(define blocks-merged
+  (eliminate-dead (analyze '((label a) (jal x0 (b)) (label b) (add t0 t0 t0)))))
+(check-equal? (map block-id blocks-merged) '(0))
+(check-equal? (block-labels (first blocks-merged)) '((a) (b)))
+(check-equal? (block-insns (first blocks-merged)) '((add t0 t0 t0)))
+(check-true (block-root? (first blocks-merged)))
+
+;; 空块本身是根(被别处引用) -> 并过去后根跟着走
+(define blocks-merged-root
+  (eliminate-dead (analyze '((label a) (jal ra (b))
+                             (label x) (jal x0 (x))     ; 占位: 让 a 的下一块不是 b
+                             (label b) (jal x0 (c))     ; b 会变成空块, 且被 jal 引用
+                             (label c) (add t0 t0 t0)))))
+(check-equal? (map block-id blocks-merged-root) '(0 1 2))
+(check-equal? (block-labels (by-id blocks-merged-root 2)) '((b) (c)))
+(check-true (block-root? (by-id blocks-merged-root 2)))
+(check-equal? (block-succ (by-id blocks-merged-root 0)) '(2 1)) ; jal 目标改指并后的块
+
+;; 末尾的空块没有下一块 -> 原样保留(它可能是代码末尾的 label)
+;; 用 jal ra 让 (z) 被引用(否则它会被当成死代码删掉)
+(check-equal? (dce '((label a) (jal ra (z)) (label z)))
+              '((label a) (jal ra (z)) (label z)))
+(define blocks-tail (eliminate-dead (analyze '((label a) (jal ra (z)) (label z)))))
+(check-equal? (map block-labels blocks-tail) '(((a)) ((z))))
+(check-equal? (map block-insns blocks-tail) '(((jal ra (z))) ()))
+
+;; 连续多个空块一起并
+(check-equal? (dce '((label a) (jal x0 (b))
+                     (label b) (jal x0 (c))
+                     (label c) (add t0 t0 t0)))
+              '((label a) (label b) (label c) (add t0 t0 t0)))
+
+;; 分支/跳转目标是紧邻下一块时, 删掉后前一块也变成空块 -> 继续并
+(check-equal? (dce '((label a) (beq t0 t1 (b))
+                     (label b) (jal x0 (c))
+                     (label c) (add t0 t0 t0)))
+              '((label a) (label b) (label c) (add t0 t0 t0)))
+
+;; ---------------------------------------------------------------------------
 ;; 形状 / 幂等 / pass 名
 ;; ---------------------------------------------------------------------------
 
@@ -127,7 +174,7 @@
               '((label a) (frobnicate t0) (add t0 t0 t0)))
 
 ;; pass 名字反映功能
-(check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block))
+(check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block merge-empty-blocks))
 
 ;; 直接喂 s-exp 块(上一版的产物)也能读: sexp->blocks 是 IR 的读入口
 (check-equal? (flat (eliminate-dead (sexp->blocks
