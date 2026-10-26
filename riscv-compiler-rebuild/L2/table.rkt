@@ -22,7 +22,7 @@
 ;; 指令头(不是助记符, 但也不能被名字占用)
 ;; 这里只写 L1 自己有语义的几种; 真指令名单不在本层维护。
 (define directive-heads
-  '(label section global bytes reserve align quote))
+  '(label global bytes reserve align quote))
 
 ;; 表的顺序 = 下面 append 的顺序; 各扩展内部保持自己的书写顺序。
 (define rewrite-rows

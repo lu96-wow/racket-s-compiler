@@ -25,12 +25,14 @@
 ;;;   (label a f)
 ;;;   (label a g)      ; 同一位置, 两个链 = 两个名字
 ;;;
-;;; 输出: quote-list; label 的链带上完整作用域前缀, 引用改写成完整链。
+;;; 输入/输出都是普通 list: '((label ...) (insn ...) ...)
+;;; 输出里 label 的链带上完整作用域前缀, 引用改写成完整链。
 ;;; 链 -> id / 偏移 是布局层的事, 本层不碰。
 
 (provide name?
          path?
          flatten-program
+         flatten-inputs
          flatten-items)
 
 ;; ---------------------------------------------------------------------------
@@ -52,21 +54,22 @@
 ;; (label b c) 里的 (b c) 是相对当前作用域的链
 (define (relative-path x) (cdr x))
 
-;; 程序体: 允许整体多包一层 (begin ...) 当容器
-(define (quote-list? x)
-  (and (form? x)
-       (eq? (car x) 'quote)
-       (pair? (cdr x))
-       (null? (cddr x))
-       (list? (cadr x))))
-
-(define (program-parts prog)
-  (define body (cond [(quote-list? prog) (cadr prog)]
-                     [(list? prog) prog]
-                     [else (list prog)]))
-  (if (and (form? body) (eq? (car body) 'begin))
-      (values (cdr body) #t)
-      (values body #f)))
+;; 程序 = 普通 list. 旧写法 (quote ...) / (begin ...) 也收, 但出口一律是 plain list.
+(define (program-items prog)
+  (define body
+    (cond
+      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
+       (cadr prog)]
+      [(list? prog) prog]
+      [else (list prog)]))
+  (define items
+    (cond
+      [(null? body) '()]
+      [(pair? (car body)) body]        ; 头是 list -> item 列表
+      [else (list body)]))             ; 单条 item
+  (if (and (form? (car items)) (eq? (caar items) 'begin) (= 1 (length items)))
+      (cdar items)
+      items))
 
 ;; ---------------------------------------------------------------------------
 ;; 第 1 步: 展平模块结构, 给每个 item 标注它的作用域链
@@ -94,22 +97,24 @@
 ;; 同一条链出现在两个不同位置 => 报错。
 ;; ---------------------------------------------------------------------------
 
-(define (build-table! annotated)
+;; runs = 多个输入各自的 annotated; 相邻性在输入边界处重置
+(define (build-table! runs)
   (define table (make-hash))
   (define slot -1)
-  (define previous-was-label? #f)
-  (for ([entry (in-list annotated)])
-    (define it (cdr entry))
-    (cond
-      [(label-form? it)
-       (unless previous-was-label? (set! slot (add1 slot)))
-       (set! previous-was-label? #t)
-       (define full (append (car entry) (relative-path it)))
-       (cond
-         [(not (hash-has-key? table full)) (hash-set! table full slot)]
-         [(= (hash-ref table full) slot) (void)]        ; 同位置重复写同一个名字: 忽略
-         [else (error 'flatten "label ~s is defined in two places" full)])]
-      [else (set! previous-was-label? #f)]))
+  (for ([annotated (in-list runs)])
+    (define previous-was-label? #f)
+    (for ([entry (in-list annotated)])
+      (define it (cdr entry))
+      (cond
+        [(label-form? it)
+         (unless previous-was-label? (set! slot (add1 slot)))
+         (set! previous-was-label? #t)
+         (define full (append (car entry) (relative-path it)))
+         (cond
+           [(not (hash-has-key? table full)) (hash-set! table full slot)]
+           [(= (hash-ref table full) slot) (void)]      ; 同位置重复写同一个名字: 忽略
+           [else (error 'flatten "label ~s is defined in two places" full)])]
+        [else (set! previous-was-label? #f)])))
   table)
 
 ;; ---------------------------------------------------------------------------
@@ -166,12 +171,18 @@
 
 ;; flatten-items : 程序体 -> (values 扁平 item 列表 名字表)
 (define (flatten-items items)
-  (define annotated (annotate items '()))
-  (define table (build-table! annotated))
-  (values (emit annotated table) table))
+  (flatten-inputs (list items)))
 
-;; flatten-program : quote-list | (listof item) -> quote-list
+;; flatten-inputs : (listof 输入) -> (values (listof 扁平 input) 名字表)
+;;   第一个返回值与输入一一对应, 顺序不变
+;; 多个输入(程序 + 数据)共享同一张名字表, 所以跨输入引用(a.b 这种完整链)能查到;
+;; 每个输入各自从空作用域开始展平。
+(define (flatten-inputs inputs)
+  (define runs (for/list ([in (in-list inputs)]) (annotate (program-items in) '())))
+  (define table (build-table! runs))
+  (values (for/list ([run (in-list runs)]) (emit run table)) table))
+
+;; flatten-program : (listof item) -> (listof item)   ; 单个输入
 (define (flatten-program prog)
-  (define-values (items with-begin?) (program-parts prog))
-  (define-values (flat _) (flatten-items items))
-  (list 'quote (if with-begin? (cons 'begin flat) flat)))
+  (define-values (outs _) (flatten-inputs (list prog)))
+  (car outs))

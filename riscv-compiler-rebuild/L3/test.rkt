@@ -59,8 +59,8 @@
 (check-false (normalize-path #t))
 (check-equal? (normalize-path 1.5) '(1.5))
 
-(check-true  (barrier-form? '(section text)))
 (check-true  (barrier-form? '(bytes 1 2 3)))
+(check-false (barrier-form? '(section text)))   ; section 不再是指令头
 (check-true  (barrier-form? '(align 8)))
 (check-false (barrier-form? '(label main)))
 (check-false (barrier-form? '(add t0 t1 t2)))
@@ -140,53 +140,53 @@
                '((label start) (add t0 t1 t2) (jal x0 done)
                  (label dead) (add t3 t4 t5)
                  (label done) (add t0 t0 t0)))
-              '(quote ((label start) (add t0 t1 t2) (label done) (add t0 t0 t0))))
+              '((label start) (add t0 t1 t2) (label done) (add t0 t0 t0)))
 
 ;; 有间接跳转, 但 b 既没被直接引用、地址也没被取过 -> 仍然不可达
 (check-equal? (optimize-program
                '((label a) (jalr x0 ra 0) (jal x0 a) (label b) (add t0 t0 t0)))
-              '(quote ((label a) (jalr x0 ra 0) (jal x0 a))))
+              '((label a) (jalr x0 ra 0) (jal x0 a)))
 
 ;; 有间接跳转 + b 的地址被取过(la) -> 可能被跳到, 保留
 (check-equal? (optimize-program
                '((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
                  (label b) (add t0 t0 t0)))
-              '(quote ((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
-                       (label b) (add t0 t0 t0))))
+              '((label a) (la t0 (b)) (jalr x0 ra 0) (jal x0 a)
+                       (label b) (add t0 t0 t0)))
 
 ;; 有间接跳转 + b 被分支直接引用 -> 保留
 (check-equal? (optimize-program
                '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
                  (label c) (add t0 t0 t0)
                  (label b) (add t1 t1 t1)))
-              '(quote ((label a) (jalr x0 ra 0) (beq t0 t1 (b))
+              '((label a) (jalr x0 ra 0) (beq t0 t1 (b))
                        (label c) (add t0 t0 t0)
-                       (label b) (add t1 t1 t1))))
+                       (label b) (add t1 t1 t1)))
 
 ;; 同样的形状, 没有间接跳转 -> 无名块之后的 b 走不到, 删掉
 (check-equal? (optimize-program
                '((label a) (add t0 t0 t0) (jal x0 a) (label b) (add t1 t1 t1)))
-              '(quote ((label a) (add t0 t0 t0) (jal x0 a))))
+              '((label a) (add t0 t0 t0) (jal x0 a)))
 
 ;; 调用会回来, jal ra 之后的代码保留
 (check-equal? (optimize-program
                '((label a) (jal ra f) (add t0 t0 t0)))
-              '(quote ((label a) (jal ra f) (add t0 t0 t0))))
+              '((label a) (jal ra f) (add t0 t0 t0)))
 
 ;; ebreak 之后到不了
 (check-equal? (optimize-program '((label a) (ebreak) (add t0 t0 t0)))
-              '(quote ((label a) (ebreak))))
+              '((label a) (ebreak)))
 
 ;; ecall 之后可能回来, 保留
 (check-equal? (optimize-program '((label a) (ecall) (add t0 t0 t0)))
-              '(quote ((label a) (ecall) (add t0 t0 t0))))
+              '((label a) (ecall) (add t0 t0 t0)))
 
 ;; 回边不会误删循环体
 (check-equal? (optimize-program
                '((label top) (addi t0 t0 1) (blt t0 t1 top)
                  (label end) (add t1 t1 t1)))
-              '(quote ((label top) (addi t0 t0 1) (blt t0 t1 top)
-                       (label end) (add t1 t1 t1))))
+              '((label top) (addi t0 t0 1) (blt t0 t1 top)
+                       (label end) (add t1 t1 t1)))
 
 ;; ---------------------------------------------------------------------------
 ;; 优化: 转移到紧邻下一块
@@ -194,20 +194,20 @@
 
 ;; jal x0 到下一块的 label -> 删跳转
 (check-equal? (optimize-program '((label a) (add t0 t0 t0) (jal x0 b) (label b) (add t1 t1 t1)))
-              '(quote ((label a) (add t0 t0 t0) (label b) (add t1 t1 t1))))
+              '((label a) (add t0 t0 t0) (label b) (add t1 t1 t1)))
 
 ;; 分支到下一块的 label -> 两种走向一样, 删分支
 (check-equal? (optimize-program '((label a) (beq t0 t1 b) (label b) (add t0 t0 t0)))
-              '(quote ((label a) (label b) (add t0 t0 t0))))
+              '((label a) (label b) (add t0 t0 t0)))
 
 ;; 目标不是紧邻下一块 -> 不动
 (check-equal? (optimize-program
                '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
-              '(quote ((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+              '((label a) (beq t0 t1 c) (add t0 t0 t0) (label c) (add t1 t1 t1)))
 
 ;; 调用 (jal ra) 即使目标是下一块也不能删: 它还承担"把返回地址写进 ra"
 (check-equal? (optimize-program '((label a) (jal ra b) (label b) (add t0 t0 t0)))
-              '(quote ((label a) (jal ra b) (label b) (add t0 t0 t0))))
+              '((label a) (jal ra b) (label b) (add t0 t0 t0)))
 
 ;; ---------------------------------------------------------------------------
 ;; 屏障: 不跨过它搬代码
@@ -215,30 +215,29 @@
 
 ;; 跳过数据段的跳转必须保留, 数据原样
 (check-equal? (optimize-program
-               '((label a) (jal x0 b) (section .rodata) (bytes 1 2 3)
+               '((label a) (jal x0 b) (bytes 1 2 3)
                  (label b) (add t0 t0 t0)))
-              '(quote ((label a) (jal x0 b) (section .rodata) (bytes 1 2 3)
-                       (label b) (add t0 t0 t0))))
+              '((label a) (jal x0 b) (bytes 1 2 3)
+                       (label b) (add t0 t0 t0)))
 
 ;; 跨段被引用的 label 是根: 即使本段开头走不到, 也不删
 (check-equal? (optimize-program
                '((label f) (jal x0 z)
                  (label y) (add t0 t0 t0)        ; 没人引用 -> 删
-                 (section .text)
+                 (bytes 9)
                  (label z) (add t1 t1 t1)))
-              '(quote ((label f) (jal x0 z)
-                       (section .text)
-                       (label z) (add t1 t1 t1))))
+              '((label f) (jal x0 z)
+                       (bytes 9)
+                       (label z) (add t1 t1 t1)))
 
 ;; ---------------------------------------------------------------------------
 ;; 形状 / 幂等 / 透传
 ;; ---------------------------------------------------------------------------
 
-;; 进 quote-list, 出也一定是 quote-list
-(check-true (and (pair? (optimize-program '((label a) (add t0 t1 t2))))
-                 (eq? (car (optimize-program '((label a) (add t0 t1 t2)))) 'quote)))
-(check-equal? (optimize-program '(quote ((label a) (add t0 t1 t2))))
-              '(quote ((label a) (add t0 t1 t2))))
+;; 进 list, 出也一定是 list (而且不再是 quote/begin 壳)
+(check-true (list? (optimize-program '((label a) (add t0 t1 t2)))))
+(check-equal? (optimize-program '((label a) (add t0 t1 t2)))
+              '((label a) (add t0 t1 t2)))
 
 ;; 幂等
 (define once (optimize-program '((label a) (jal x0 c) (label b) (add t0 t0 t0)
@@ -247,7 +246,7 @@
 
 ;; 不认识的指令原样保留, 不影响分析
 (check-equal? (optimize-program '((label a) (frobnicate t0) (add t0 t0 t0)))
-              '(quote ((label a) (frobnicate t0) (add t0 t0 t0))))
+              '((label a) (frobnicate t0) (add t0 t0 t0)))
 
 ;; ---------------------------------------------------------------------------
 ;; 链(label) 模型: 同位置多名 / 任意类型 / 链做跳转目标
@@ -276,31 +275,34 @@
 ;; L1 展平后的程序直接进 L3
 (define flat-prog (flatten-program '((module a (label f) (jal x0 (g)) (label g)))))
 (check-equal? flat-prog
-              '(quote ((label a f) (jal x0 (a g)) (label a g))))
+              '((label a f) (jal x0 (a g)) (label a g)))
 (check-equal? (optimize-program flat-prog)
-              '(quote ((label a f) (label a g))))
+              '((label a f) (label a g)))
 
 ;; ---------------------------------------------------------------------------
-;; 程序容器: (begin ...) 是壳, 不是指令
+;; 程序形状: 普通 list, 旧壳 (quote ...)/(begin ...) 也收
 ;; ---------------------------------------------------------------------------
 
-(define-values (body has-begin?) (program-parts '(quote (begin (label a) (add t0 t0 t0)))))
-(check-equal? body '((label a) (add t0 t0 t0)))
-(check-true has-begin?)
+(check-equal? (program-items '((label a) (add t0 t0 t0)))
+              '((label a) (add t0 t0 t0)))
+(check-equal? (program-items '(quote ((label a) (add t0 t0 t0))))
+              '((label a) (add t0 t0 t0)))
+(check-equal? (program-items '(begin (label a) (add t0 t0 t0)))
+              '((label a) (add t0 t0 t0)))
+(check-equal? (program-items '(add t0 t0 t0)) '((add t0 t0 t0)))
 
-;; 带 begin 进 -> 带 begin 出
-(check-equal? (optimize-program '(quote (begin (label a) (jal x0 b) (label b))))
-              '(quote (begin (label a) (label b))))
+;; 出口一律 plain list
+(check-equal? (optimize-program '((label a) (jal x0 b) (label b)))
+              '((label a) (label b)))
 
 ;; begin 不当指令: 一块, 只有 1 条指令
-(define-values (begin-items _) (program-parts '(begin (label a) (add t0 t0 t0))))
-(define g-begin (build-cfg begin-items))
+(define g-begin (build-cfg (program-items '(begin (label a) (add t0 t0 t0)))))
 (check-equal? (cfg-block-count g-begin) 1)
 (check-equal? (block-insns (vector-ref (graph-blocks g-begin) 0)) '((add t0 t0 t0)))
 
 ;; 不带 begin 的裸列表: 出去也不带
 (check-equal? (optimize-program '((label a) (add t0 t0 t0)))
-              '(quote ((label a) (add t0 t0 t0))))
+              '((label a) (add t0 t0 t0)))
 
 ;; pass 名字反映功能
 (check-equal? (pass-names) '(drop-unreachable drop-transfers-to-next-block))

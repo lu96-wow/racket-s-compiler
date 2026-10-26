@@ -6,9 +6,9 @@
 ;;   认识的拼写(同一行的任意一个名字) + 形状匹配  -> 按表展开
 ;;;   其他一切(不认识的头 / 形状不对 / 原子 / quote 数据) -> 原样透传, 不报错
 ;;;
-;;; 层对外形状是 quote-list:
-;;;   输入  '(form ...)      ; 程序整体就是一个被 quote 的列表
-;;;   输出  '(form' ...)     ; 仍然被 quote, 里面已按表换过
+;; 层对外形状是普通 list:
+;;;   输入  '((form) (form) ...)
+;;;   输出  '((form) (form) ...)      ; 里面已按表换过
 ;;; 内部的 rewrite-all 只看单个 form / 树, 代码里的 quote 当数据, 不进去。
 ;;;
 ;; 所以本层不需要 scratch / gensym / reloc; 每条规则只做缩短/换位,
@@ -44,7 +44,7 @@
          rewrite-one
          rewrite-all
          rewrite-program
-         quote-list?
+         program-items
          ;; 验证
          pseudo-leftover?
          fully-rewritten?
@@ -195,7 +195,7 @@
 ;;   - 链 (a g) 是值(目标/地址), 不会被当成 (a g) 这条指令
 ;;   - 嵌套写在操作数里的伪指令不展开(展平后不存在这种写法)
 ;;
-;; 会往下走的位置只有三种: 程序/item 列表、begin 容器、quote(数据, 屏障)。
+;; 会往下走的位置只有两种: item 列表、quote(数据, 屏障)。
 ;;
 ;; 表里不小心写出自环(如 (foo ?x) -> (foo ?x))时, 展开链不会收敛,
 ;; 所以链长有上限, 超了直接报错, 不会卡死。
@@ -218,14 +218,12 @@
      (define y (and (form? x) (rewrite-one x tbl)))
      (if y (rewrite-chain y tbl (add1 steps)) x)]))
 
-;; 程序 / item 列表 / begin 容器 / 单条 item
+;; item 列表 / 单条 item
 (define (rewrite-all x [tbl default-table])
   (define (each items) (map (lambda (i) (rewrite-all i tbl)) items))
   (cond
     [(not (form? x)) x]
     [(eq? (car x) 'quote) x]                             ; 数据, 不进去
-    [(and (eq? (car x) 'begin) (pair? (cdr x)))          ; 容器: 里面是 item 列表
-     (cons 'begin (each (cdr x)))]
     [(pair? (car x)) (each x)]                            ; item 列表
     [else (rewrite-item x tbl)]))
 
@@ -238,7 +236,6 @@
   (cond
     [(not (form? x)) #f]
     [(eq? (car x) 'quote) #f]                             ; 数据, 不进去
-    [(and (eq? (car x) 'begin) (pair? (cdr x))) (any-left? (cdr x))]
     [(pair? (car x)) (any-left? x)]                        ; item 列表
     [else (and (pseudo-name? (car x) tbl) #t)]))
 
@@ -248,25 +245,32 @@
 ;; ---------------------------------------------------------------------------
 ;; 层入口
 ;;
-;; 程序的统一形状是 quote-list。输出**总是** quote-list:
+;; 程序是普通 list:
 ;;
-;;   (rewrite-program '(begin (load-32 t0 sp 8) L))
-;;   => '(begin (lwu t0 sp 8) L)
+;;   (rewrite-program '((load-32 t0 sp 8) L))
+;;   => '((lwu t0 sp 8) L)
 ;;
-;; 输入可以是裸的 (listof form) 或单个 form, 方便测试。
-;; 外层 quote 是"程序壳", 进来时剥掉、出去时补上;
-;; 里层(代码内部的) quote 仍然是数据, rewrite-all 不进去。
+;; 旧壳 (quote ...) / (begin ...) 也收, 出口一律 plain list。
+;; 代码内部的 quote 仍然是数据, rewrite-all 不进去。
 ;; ---------------------------------------------------------------------------
 
-;; (quote (form ...)) 整体且只有一段
-(define (quote-list? x)
-  (and (form? x)
-       (eq? (car x) 'quote)
-       (pair? (cdr x))
-       (null? (cddr x))
-       (list? (cadr x))))
+;; program-items : 去掉旧壳(quote/begin), 拿到 item 列表
+(define (program-items prog)
+  (define body
+    (cond
+      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
+       (cadr prog)]
+      [(list? prog) prog]
+      [else (list prog)]))
+  (define items
+    (cond
+      [(null? body) '()]
+      [(pair? (car body)) body]        ; 头是 list -> item 列表
+      [else (list body)]))             ; 单条 item
+  (if (and (form? (car items)) (eq? (caar items) 'begin) (= 1 (length items)))
+      (cdar items)
+      items))
 
-;; rewrite-program : quote-list | (listof sexp) | sexp -> quote-list
+;; rewrite-program : (listof item) -> (listof item)
 (define (rewrite-program prog [tbl default-table])
-  (define body (if (quote-list? prog) (cadr prog) prog))
-  (list 'quote (rewrite-all body tbl)))
+  (rewrite-all (program-items prog) tbl))

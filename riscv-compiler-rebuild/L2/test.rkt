@@ -54,11 +54,11 @@
 (check-equal? (rw '(load-32 t0))           '(load-32 t0))
 (check-equal? (rw '(l8 t0 a 0 extra))      '(l8 t0 a 0 extra))
 
-;; --- 嵌套 ------------------------------------------------------------------
+;; --- item 列表 --------------------------------------------------------------
 (check-equal? (rw '(label L))
               '(label L))
-(check-equal? (rw '(begin (load-32 t0 sp 8) (store-64 sp 16 ra)))
-              '(begin (lwu t0 sp 8) (sd ra sp 16)))
+(check-equal? (rw '((load-32 t0 sp 8) (store-64 sp 16 ra)))
+              '((lwu t0 sp 8) (sd ra sp 16)))
 
 ;; 操作数是值: 嵌套写在操作数里的伪指令不展开(展平后不存在这种写法)
 (check-equal? (rw '(move t0 (load-32 t1 sp 8)))
@@ -74,7 +74,7 @@
               '(quote (load-32 t0 sp 8)))
 
 ;; --- 验证器 ----------------------------------------------------------------
-(check-false (pseudo-leftover? (rw '(begin (load-32 t0 sp 8) (store-64 sp 16 ra)))))
+(check-false (pseudo-leftover? (rw '((load-32 t0 sp 8) (store-64 sp 16 ra)))))
 (check-true  (pseudo-leftover? '(load-32 t0 sp 8)))
 (check-false (pseudo-leftover? '(lwu t0 sp 8)))
 (check-true  (fully-rewritten? '(lwu t0 sp 8)))
@@ -83,36 +83,28 @@
 (check-true  (fully-rewritten? '(quote (load-32 t0 sp 8))))
 
 ;; 幂等
-(check-equal? (rw (rw '(begin (l8 t0 a) (ble a b L))))
-              (rw '(begin (l8 t0 a) (ble a b L))))
+(check-equal? (rw (rw '((l8 t0 a) (ble a b L))))
+              (rw '((l8 t0 a) (ble a b L))))
 
-;; --- 层入口: 进 quote-list, 出也一定是 quote-list ----------------------------
-(check-true  (quote-list? '(quote (begin (load-32 t0 sp 8)))))
-(check-false (quote-list? '(begin (load-32 t0 sp 8))))
+;; --- 层入口: 进 list, 出也一定是 list ---------------------------------------
+(check-equal? (rewrite-program '((load-32 t0 sp 8) (store-64 sp 16 ra) L))
+              '((lwu t0 sp 8) (sd ra sp 16) L))
+(check-equal? (rewrite-program '(l8 t0 a)) '((lbu t0 a 0)))
 
-(check-equal? (rewrite-program '(begin (load-32 t0 sp 8) (store-64 sp 16 ra) L))
-              '(quote (begin (lwu t0 sp 8) (sd ra sp 16) L)))
-(check-equal? (rewrite-program '(l8 t0 a)) '(quote (lbu t0 a 0)))
-
-;; 已经是 quote-list 的进来 -> 还是 quote-list 出去(不多套一层)
-(check-equal? (rewrite-program '(quote (begin (l8 t0 a)))) '(quote (begin (lbu t0 a 0))))
-
-;; 裸列表 / 单个 form 也收, 包成 quote-list 再出
-(check-equal? (rewrite-program '((l8 t0 a) (ble a b L)))
-              '(quote ((lbu t0 a 0) (bge b a L))))
-(check-equal? (rewrite-program '(add t0 t1 t2)) '(quote (add t0 t1 t2)))
+;; 旧壳 (quote ...) / (begin ...) 也收, 出口一律 plain list
+(check-equal? (rewrite-program '(quote ((l8 t0 a)))) '((lbu t0 a 0)))
+(check-equal? (rewrite-program '(begin (l8 t0 a)))   '((lbu t0 a 0)))
 
 ;; 出口里不再有 P-asm 拼写
-(define out (rewrite-program '(begin (ls8 t1 t0) (ble t1 t0 L) (mv t0 t1))))
-(check-true  (quote-list? out))
-(check-false (pseudo-leftover? (cadr out)))
+(define out (rewrite-program '((ls8 t1 t0) (ble t1 t0 L) (mv t0 t1))))
+(check-false (pseudo-leftover? out))
 
 ;; 幂等: 结果再跑一次不变
 (check-equal? (rewrite-program out) out)
 
 ;; 代码内部的 quote 仍是数据, 不进去
-(check-equal? (rewrite-program '(begin (quote (load-32 t0 sp 8))))
-              '(quote (begin (quote (load-32 t0 sp 8)))))
+(check-equal? (rewrite-program '((quote (load-32 t0 sp 8))))
+              '((quote (load-32 t0 sp 8))))
 
 ;; --- 多命名: 同级 ------------------------------------------------------------
 (check-true  (pseudo-name? 'l8))
@@ -212,8 +204,8 @@
 (check-equal? (rules-for 'one) '())
 
 ;; 自定义表也能走整层入口, 出口仍是 quote-list
-(check-equal? (rewrite-program '(begin (tw t0 a) (fo4 t1 a)) t-var)
-              '(quote (begin (lh t0 a 0) (ld t1 a 0))))
+(check-equal? (rewrite-program '((tw t0 a) (fo4 t1 a)) t-var)
+              '((lh t0 a 0) (ld t1 a 0)))
 
 ;; 5 个名字也行(个数没有上限)
 (define t-many

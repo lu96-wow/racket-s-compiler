@@ -3,10 +3,9 @@
 ;;;
 ;;; 在 CFG 上做优化。每个 pass 都是 (items ctx -> items), 只按块做局部改动。
 ;;;
-;; 程序体允许整体多包一层 (begin form ...) 当容器: 进来剥掉、出去补上,
-;;; 这样 L1 的 '(begin ...) 直接喂进来不会被当成一条叫 begin 的指令。
+;;; 程序是普通 list: '((item) (item) ...)
 ;;
-;;; 段(segment): 屏障((section ...) / 数据 ...)把程序切成若干段。
+;; 段(segment): 屏障((bytes ...) 等数据形式)把程序切成若干段。
 ;;; 屏障不跨: 每段单独建图、单独优化, 屏障本身原样保留。
 ;;; 跨段只会通过 label 引用发生, 所以可达性分析的根要包含
 ;;; "在本段之外被引用的 label"(见 program-context)。
@@ -27,8 +26,7 @@
          passes
          pass-names
          optimize-segment
-         program-parts
-         program-body
+         program-items
          optimize-program)
 
 ;; 一段连续可分析的代码
@@ -47,31 +45,22 @@
 ;; 程序 <-> 段
 ;; ---------------------------------------------------------------------------
 
-;; (quote (begin form ...)) -> 剥成 form 列表; 返回 (values items 容器?)
-(define (quote-list? x)
-  (and (form? x)
-       (eq? (car x) 'quote)
-       (pair? (cdr x))
-       (null? (cddr x))
-       (list? (cadr x))))
-
-(define (begin-container? x)
-  (and (form? x) (eq? (car x) 'begin)))
-
-(define (program-body prog)
-  (cond
-    [(quote-list? prog) (cadr prog)]
-    [(list? prog) prog]
-    [else (list prog)]))
-
-(define (program-parts prog)
-  (define body (program-body prog))
-  (cond
-    [(begin-container? body) (values (cdr body) #t)]
-    [else (values body #f)]))
-
-(define (wrap-program items with-begin?)
-  (list 'quote (if with-begin? (cons 'begin items) items)))
+;; 程序 = 普通 list; 旧壳 (quote ...) / (begin ...) 也收
+(define (program-items prog)
+  (define body
+    (cond
+      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
+       (cadr prog)]
+      [(list? prog) prog]
+      [else (list prog)]))
+  (define items
+    (cond
+      [(null? body) '()]
+      [(pair? (car body)) body]        ; 头是 list -> item 列表
+      [else (list body)]))             ; 单条 item
+  (if (and (form? (car items)) (eq? (caar items) 'begin) (= 1 (length items)))
+      (cdar items)
+      items))
 
 ;; 按屏障切段; 屏障本身留在结果里占位
 (define (split-into-segments items)
@@ -181,13 +170,13 @@
            items
            (loop next (add1 round)))])))
 
-;; 全程序: 切段 -> 逐段优化 -> 按原顺序拼回 -> 包回 quote-list
+;; 全程序: 切段 -> 逐段优化 -> 按原顺序拼回
 (define (optimize-program prog)
-  (define-values (items with-begin?) (program-parts prog))
+  (define items (program-items prog))
   (define ctx (make-context items))
   (define optimized
     (for/list ([piece (in-list (split-into-segments items))])
       (cond
         [(segment? piece) (optimize-segment (segment-items piece) ctx)]
         [else (list piece)])))
-  (wrap-program (append* optimized) with-begin?))
+  (append* optimized))
