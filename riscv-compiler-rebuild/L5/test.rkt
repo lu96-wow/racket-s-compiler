@@ -20,9 +20,13 @@
 (check-equal? (item-size '(branch-indirect a b (l))) 12)
 (check-equal? (item-size '(branch-indirect t0 a b (l))) 12)
 (check-equal? (item-size '(jal x0 (l))) 4)
-(check-equal? (item-size '(jump-far (l))) 8)
-(check-equal? (item-size '(call-far (l))) 8)
+(check-equal? (item-size '(jump-far x0 (l))) 8)
+(check-equal? (item-size '(jump-far x0 t0 (l))) 8)
+(check-equal? (item-size '(jump-far ra (l))) 8)
+;; call-far 已删: 它就是 (jump-far ra L)
+(check-false (jump-form? '(call-far (l))))
 (check-equal? (item-size '(la t0 (l))) 8)
+(check-equal? (item-size '(la t0 tmp (l))) 8)
 (check-equal? (item-size '(label l)) 0)
 (check-equal? (item-size '(bytes 1 2 3)) 3)
 (check-equal? (item-size '(addi a0 a0 1)) 4)
@@ -32,14 +36,37 @@
 (check-equal? (form-range '(branch-far a b (l))) 1048576)
 (check-false  (form-range '(branch-indirect a b (l))))
 (check-equal? (form-range '(jal x0 (l))) 1048576)
-(check-false  (form-range '(call-far (l))))
+(check-false  (form-range '(jump-far x0 (l))))
+(check-false  (form-range '(jump-far ra (l))))
 (check-false  (form-range '(addi a0 a0 1)))
 
 (check-true  (scratch-hole? '(branch-indirect a b (l))))
 (check-false (scratch-hole? '(branch-indirect t0 a b (l))))
-(check-true  (scratch-hole? '(jump-far (l))))
-(check-false (scratch-hole? '(jump-far t0 (l))))
+;; jump-far 要不要 scratch 是 link 的函数, 不是"少一项"的函数
+(check-true  (scratch-hole? '(jump-far x0 (l))))
+(check-true  (scratch-hole? '(jump-far zero (l))))
+(check-true  (scratch-hole? '(jump-far 0 (l))))
+(check-false (scratch-hole? '(jump-far ra (l))))       ; link 自己就是 base
+(check-false (scratch-hole? '(jump-far x0 t0 (l))))
+(check-false (scratch-hole? '(jump-far ra t0 (l))))
+(check-equal? (jump-far-link '(jump-far ra t0 (l))) 'ra)
+(check-equal? (jump-far-scratch '(jump-far x0 t0 (l))) 't0)
+(check-false (jump-far-scratch '(jump-far ra (l))))
+(check-true  (jump-far-form? '(jump-far x0 (l))))
+(check-false (jump-far-form? '(jump-far)))
+(check-false (jump-far-form? '(jump-far x0 t0 t1 (l))))
 (check-false (scratch-hole? '(bge a b (l))))
+
+;; la 的 scratch 是可选槽, 不是空槽: 缺省不是缺陷, 不要求 L6 填
+(check-true  (la-form? '(la t0 (l))))
+(check-true  (la-form? '(la t0 tmp (l))))
+(check-true  (la-form? '(la t0 (a b))))
+(check-true  (la-form? '(la t0 l)))
+(check-false (la-form? '(la t0)))
+(check-true  (la-form? '(la t0 tmp)))      ; 3 项时最后一项就是链(裸原子)
+(check-false (la-scratch '(la t0 (l))))
+(check-equal? (la-scratch '(la t0 tmp (l))) 'tmp)
+(check-false (scratch-hole? '(la t0 (l))))
 
 (check-equal? (item-kind '(label a)) 'marker)
 (check-equal? (item-kind '(align 8)) 'both)
@@ -68,6 +95,10 @@
 
 (define (lay prog data layout)
   (layout-program (eliminate-dead (analyze prog)) data layout))
+
+;; 只跑 L3 + L5: 不让 L4 把"跳到紧邻下一块"的转移删掉, 才能看见 scratch 空槽
+(define (lay0 prog data layout)
+  (layout-program (analyze prog) data layout))
 
 (define (segments-of layout) (cdr (assoc 'segments layout)))
 (define (seg-of layout name)
@@ -240,6 +271,38 @@
 (check-equal? (problems-of l4) '())
 
 ;; ---------------------------------------------------------------------------
+;; align 按**绝对地址**对齐 (start + cursor), 不是段内 cursor
+;; ---------------------------------------------------------------------------
+
+;; 数据: 段 start = #x2002, 先放 1 字节 => 绝对 #x2003;
+;; align 8 => 补到 #x2008 (= 偏移 6), 不是补到偏移 8
+(define l-abs-align
+  (lay '((label main) (addi a0 a0 1))
+       '((label d1) (bytes 1) (align 8) (bytes 2))
+       '((segments (segment s1 code #x1004 #x10FF 4)
+                   (segment d1 data #x2002 #x20FF 2))
+         (place s1 (main)) (place d1 (d1)))))
+
+(check-equal? (items-of-seg l-abs-align 'd1)
+              '((offset 0 (label d1)) (offset 0 (bytes 1))
+                (offset 1 (align 8)) (offset 6 (bytes 2))))
+(check-equal? (size-of-seg l-abs-align 'd1) 7)
+(check-equal? (problems-of l-abs-align) '())
+
+;; 代码同构: 段 start = #x1004 (4 对齐但不 16 对齐), align 16 => 补到 #x1010
+(define l-abs-align-code
+  (lay '((label main) (align 16) (addi a0 a0 1))
+       '()
+       '((segments (segment s1 code #x1004 #x10FF 4))
+         (place s1 (main)))))
+
+(check-equal? (items-of-seg l-abs-align-code 's1)
+              '((offset 0 (label main)) (offset 0 (align 16))
+                (offset 12 (addi a0 a0 1))))
+(check-equal? (size-of-seg l-abs-align-code 's1) 16)
+(check-equal? (problems-of l-abs-align-code) '())
+
+;; ---------------------------------------------------------------------------
 ;; data 段: bytes / align / label
 ;; ---------------------------------------------------------------------------
 
@@ -319,6 +382,36 @@
                                '((segments (segment s1 code #x1000 #x1FFF 4))
                                  (place s1 (main) (keep) (done)))))
               '((scratch-hole s1 0 (branch-indirect a0 a1 (done)))))
+
+;; jump-far: 要不要 scratch 由 link 决定, 不是由"少一项"决定
+(check-equal? (problems-of (lay0 '((label main) (jump-far x0 (done))
+                                   (label done) (jalr x0 ra 0))
+                                '()
+                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                  (place s1 (main) (done)))))
+              '((scratch-hole s1 0 (jump-far x0 (done)))))
+(check-equal? (problems-of (lay0 '((label main) (jump-far x0 t0 (done))
+                                   (label done) (jalr x0 ra 0))
+                                '()
+                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                  (place s1 (main) (done)))))
+              '())
+;; link = ra: 是调用, 自己就是 auipc 的落点, 不需要 scratch
+(check-equal? (problems-of (lay0 '((label main) (jump-far ra (done))
+                                   (label done) (jalr x0 ra 0))
+                                '()
+                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                  (place s1 (main) (done)))))
+              '())
+;; L4 眼里它已经是真转移了: 跳到紧邻下一块会被删掉(变成顺序落下)
+(check-equal? (items-of-seg (lay '((label main) (jump-far x0 (done))
+                                   (label done) (jalr x0 ra 0))
+                                '()
+                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                  (place s1 (main) (done))))
+                             's1)
+              '((offset 0 (label main)) (offset 0 (label done))
+                (offset 0 (jalr x0 ra 0))))
 
 ;; ---------------------------------------------------------------------------
 ;; 段表问题

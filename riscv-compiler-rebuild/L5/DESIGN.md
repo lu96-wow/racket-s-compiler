@@ -82,6 +82,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 自检：名字唯一、`start < end`、`start` 按 `align` 对齐、区间不重叠。
 
 段内单游标从 `start` 起，`label` 不占字节只记偏移，`(align n)` 向上补齐补 0，其余按形式表累加。
+`align` 对齐的是**绝对地址** `start + cursor`，不是段内偏移：段 start 不一定被某个 item 的 `n` 整除（例如段 start 4 对齐、数据要 `align 16`），只按 cursor 算会算错。
+产物里 `(offset k (align n))` 记的是**补齐前**的偏移，补齐后的偏移看下一条。
 产物里每条 item 都带偏移注解 `(offset 偏移 item)`；一个段长这样（整张表在 `(segments …)` 字段里）：
 
 ```racket
@@ -98,18 +100,18 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | --- | --- |
 | `label` | 0 |
 | `bytes` | 元素个数 |
-| `align n` | 由游标算 |
+| `align n` | 由游标算（按绝对地址 `start + cursor` 对齐） |
 | `b*` | 4 |
 | `branch-far` | 8 |
 | `branch-indirect` | 12 |
 | `jal` | 4 |
-| `jump-far` / `call-far` | 8 |
+| `jump-far` | 8 |
 | `la` | 8（预留，见下） |
 | `li` | 4（兜底值，**待改**：应按常量上界预留） |
 | `c.*` | 2 |
 | 其他 | 4 |
 
-可达距离：`b*` 4096，`c.beqz`/`c.bnez` 256，`c.j`/`c.jal` 2048，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far`/`call-far` 不设限（`la` 的 ±2GB 检查在 L7，由 `riscv-help` 的 `fits-auipc-pair?` 做）。
+可达距离：`b*` 4096，`c.beqz`/`c.bnez` 256，`c.j`/`c.jal` 2048，`jal`/`branch-far` 1048576，`branch-indirect`/`jump-far` 不设限（`la` 的 ±2GB 检查在 L7，由 `riscv-help` 的 `fits-auipc-pair?` 做）。
 
 ### `li` / `la` 的尺寸：L5 只预留
 
@@ -118,10 +120,48 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | 指令 | L5 给的字节 | 真正的展开 |
 | --- | --- | --- |
 | `(la rd 链)` | 8（`auipc+addi`） | L7：`delta = 符号地址 − item 地址`，交 `riscv-help` 的 `la-pcrel` / `load-pcrel`；delta 超出 auipc 范围时 `load-pcrel` 自带 scratch |
+| `(la rd tmp 链)` | 8（同上） | 同上，但 scratch 用 `tmp`。形状与尺寸都不变，只是把隐式 scratch 变成显式，给以后的 frame / regalloc 层用 |
 | `(li rd 常量)` | 应按 `li-size` 的上界预留 | L7：`expand-li`；字节数取决于常量范围 |
 
 因为两边都只能给上界，L7 展开后必须核对实际尺寸：不等就回 L5 重排，迭代到不动点。
 L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefined-target`（`verify` 只看 `control-form?`，这是待改项）。
+
+### 远形式：寄存器全部显式
+
+远形式**不许从助记符里猜寄存器**。`jump-far` 的 link、scratch 都是操作数：
+
+```racket
+(branch-far      a  b  L)        ; 条件分支, 8B, 无 scratch
+(branch-indirect a  b  L)        ; 条件分支的 auipc+jalr 版, 12B, 空槽
+(branch-indirect s  a  b  L)     ; 已填
+(jump-far        link  L)        ; 跳/调用, 8B, link = x0 时空槽
+(jump-far        link  s  L)     ; 已填
+```
+
+- **没有 `call-far`**：它就是 `(jump-far ra L)`。两个名字表达同一条指令，就是在制造
+  "两个合法拼写"——L5 和 L3 都必须靠 link 判断"落不落下"，所以 link 必须显式。
+- `branch-indirect` 没有 link：条件分支不写链接寄存器。
+- 有 link 之后 L3 才能回答 `jump-register` / `falls-through?` / `unconditional-jump?`，
+  于是 L4 的"删掉跳到紧邻下一块的转移"也能作用到远形式。
+
+### scratch: 两种槽, 不要混
+
+| 形式 | 缺省表示 | 报 `scratch-hole` 吗 |
+| --- | --- | --- |
+| `(branch-indirect a b L)` | 条件分支远形式的 base 还没给 | 会（留给 L6 填） |
+| `(jump-far x0 L)` / `(jump-far zero L)` / `(jump-far 0 L)` | link 是零寄存器，auipc 没有落点 | 会（留给 L6 填） |
+| `(jump-far ra L)` | link 自己就是 base，**本来就不需要** scratch | 不会 |
+| `(la rd 链)` | 短形式不需要 scratch，远形式由 L7 自己挑 | 不会（缺省不是缺陷） |
+| `(la rd tmp 链)` | scratch 已指定 | 不会 |
+
+所以 `scratch-hole?` 必须**读操作数**：要不要 scratch 是 link / 形式的函数，
+不是"比满长度少一项"的函数。`jump-far` 的 link 判定用 `L3/insn.rkt` 的
+`zero-register?`（`x0` / `zero` / `0` 都算），不在 L5 里重新维护一份拼写表。
+
+`la` 的 scratch 是**可选槽**，所以它不进 `scratch-hole?`（`L5/forms.rkt` 的
+`la-form?` / `la-scratch`）：否则程序里每个 `la` 都会报一条空槽。
+
+相关查询：`jump-far-form?` / `jump-far-link` / `jump-far-scratch` / `la-form?` / `la-scratch`。
 
 ## 5. 校验（只记 problems，不抛异常）
 
@@ -142,7 +182,8 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
  (segment-bad-range b)
  (undefined-target s1 0 (jal x0 (ghost)))
  (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L6
- (scratch-hole prog1 0 (branch-indirect a0 a1 (done))))  ; 留给 L6
+ (scratch-hole prog1 0 (branch-indirect a0 a1 (done)))   ; 留给 L6
+ (scratch-hole prog1 0 (jump-far x0 (done))))            ; link=x0 才需要 base
 ```
 
 最后两类不是错误，是远跳转层（L6）的入口。
@@ -153,6 +194,7 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 
 - 契约：`layout -> layout`（`((segments …) (symbols …) (problems …))`），只做「超范围的 item 升成远形式」和「填 scratch 空槽」。
 - 空槽规则：`(branch-indirect a b L)` 少一个参数 = 洞；`(branch-indirect s a b L)` 已填。
+  `(jump-far x0 L)` 的 link 是零寄存器时同样缺 base；`(jump-far ra L)` 不缺。
 - 填槽方式不在本层定义。
 - 尺寸变了（8 → 12、加跳转、填 scratch）就必须重跑 L5，迭代到不动点。
 - 补 fallthrough 跳转、trampoline、块重排也属于本层或 L7。

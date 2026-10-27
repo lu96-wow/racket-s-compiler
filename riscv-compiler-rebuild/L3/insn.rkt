@@ -44,8 +44,9 @@
 ;; 分类表(唯一的名单, 改这里)
 ;; ---------------------------------------------------------------------------
 
-(define branch-mnemonics   '(beq bne blt bge bltu bgeu c.beqz c.bnez))
-(define jump-mnemonics     '(jal c.j c.jal))
+(define branch-mnemonics   '(beq bne blt bge bltu bgeu c.beqz c.bnez
+                            branch-far branch-indirect))
+(define jump-mnemonics     '(jal c.j c.jal jump-far))
 (define indirect-mnemonics '(jalr c.jr c.jalr))
 (define trap-mnemonics     '(ecall ebreak c.ebreak))
 ;; ---------------------------------------------------------------------------
@@ -89,17 +90,19 @@
       (trap-instruction? x)))
 
 ;; 这条指令写哪个链接寄存器? 它决定会不会顺序落下, 也决定是不是无条件跳转。
-;;   jal / jalr 有显式 rd; (jal L) 省略 rd 时按 ra 算
+;;   jal / jalr / jump-far 有显式 rd; (jal L) 省略 rd 时按 ra 算
+;;   jump-far 的 link 必须显式写(不猜), 否则这里没法回答
 ;;   压缩形式没有显式 rd: c.j / c.jr 不写(x0), c.jal / c.jalr 写 ra
 (define (jump-register x)
   (and (form? x)
        (case (car x)
-         [(jal)    (if (= 3 (length x)) (cadr x) 'ra)]
-         [(jalr)   (cadr x)]
-         [(c.j)    'x0]
-         [(c.jal)  'ra]
-         [(c.jr)   'x0]
-         [(c.jalr) 'ra]
+         [(jal)      (if (= 3 (length x)) (cadr x) 'ra)]
+         [(jalr)     (cadr x)]
+         [(jump-far) (cadr x)]
+         [(c.j)      'x0]
+         [(c.jal)    'ra]
+         [(c.jr)     'x0]
+         [(c.jalr)   'ra]
          [else #f])))
 
 ;; (jal [rd] L) / (beq a b L) / (c.beqz a L) / (c.j L): 目标都在最后

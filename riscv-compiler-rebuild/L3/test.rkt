@@ -41,6 +41,29 @@
 (check-equal? (jump-target '(beq t0 t1 L)) 'L)
 (check-equal? (jump-target '(jal ra L)) 'L)
 
+;; 远形式也在控制流里: link 显式写出来, 所以"落不落下"可算
+(check-true  (branch-instruction? '(branch-far t0 t1 L)))
+(check-true  (branch-instruction? '(branch-indirect s t0 t1 L)))
+(check-true  (branch-instruction? '(branch-indirect t0 t1 L)))     ; 空槽也算分支
+(check-false (branch-instruction? '(add t0 t1 t2)))
+(check-true  (jump-instruction? '(jump-far ra L)))
+(check-false (jump-instruction? '(call-far (L))))                  ; 已删: 就是 jump-far ra
+(check-true  (ends-block? '(jump-far x0 L)))
+(check-true  (ends-block? '(branch-far t0 t1 L)))
+(check-equal? (jump-register '(jump-far ra L)) 'ra)
+(check-equal? (jump-register '(jump-far x0 L)) 'x0)
+(check-equal? (jump-register '(jump-far 0 L)) 0)
+(check-true  (falls-through? '(jump-far ra L)))     ; 调用: 返回地址 = pc+4
+(check-false (falls-through? '(jump-far x0 L)))     ; 跳转: 不回来
+(check-false (falls-through? '(jump-far zero L)))
+(check-true  (unconditional-jump? '(jump-far x0 L)))
+(check-false (unconditional-jump? '(jump-far ra L)))
+(check-true  (falls-through? '(branch-far t0 t1 L)))
+(check-true  (falls-through? '(branch-indirect s t0 t1 L)))
+(check-equal? (jump-target '(branch-far t0 t1 L)) 'L)
+(check-equal? (jump-target '(jump-far ra L)) 'L)
+(check-equal? (jump-target '(branch-indirect s t0 t1 L)) 'L)
+
 ;; 压缩形式: 分类与展开形式一致
 (check-true  (branch-instruction? '(c.beqz a L)))
 (check-true  (branch-instruction? '(c.bnez a L)))
@@ -221,6 +244,19 @@
   (analyze '((label a) (jal ra (c)) (label b) (jal x0 (b)) (label c) (add t1 t1 t1))))
 (check-equal? (flow-succ (flow-at (program-flows blocks-call) 0)) '(2 1))
 (check-equal? (flow-fallthrough (flow-at (program-flows blocks-call) 0)) 1)
+
+;; 远跳转的块边界: (jump-far x0 L) 之后开新块, 且没有顺序边
+(define blocks-far-jump
+  (analyze '((label a) (jump-far x0 (c)) (label b) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+(check-equal? (map block-head (program-blocks blocks-far-jump)) '(((a)) ((b)) ((c))))
+(check-equal? (flow-succ (flow-at (program-flows blocks-far-jump) 0)) '(2))
+(check-false  (flow-fallthrough (flow-at (program-flows blocks-far-jump) 0)))
+
+;; (jump-far ra L) 是调用: 目标 + 顺序
+(define blocks-far-call
+  (analyze '((label a) (jump-far ra (c)) (label b) (add t0 t0 t0) (label c) (add t1 t1 t1))))
+(check-equal? (flow-succ (flow-at (program-flows blocks-far-call) 0)) '(2 1))
+(check-equal? (flow-fallthrough (flow-at (program-flows blocks-far-call) 0)) 1)
 
 ;; 同一位置多个名字
 (define blocks-names (analyze '((label a) (label b) (add t0 t0 t0))))

@@ -231,7 +231,9 @@
        (define n (cadr it))
        (when (and (eq? seg-kind 'code) (not (zero? (modulo n 4))))
          (problem! `(code-align-not-4 ,seg-name ,cursor ,n)))
-       (emit! it (modulo (- n (modulo cursor n)) n))]
+       ;; align 是**绝对地址**对齐: 段 start 不一定被 item 的 n 整除,
+       ;; 所以用 (start + cursor) 算, 不能只用段内 cursor。
+       (emit! it (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))]
       [else (emit! it (item-size it))]))
 
   (for ([e (in-list blks)])

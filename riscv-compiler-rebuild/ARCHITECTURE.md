@@ -102,6 +102,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
 | 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离 / 布尔 |
 | 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `compressed-form?` | 单条 item | 布尔 / 值 |
+| 显式寄存器：`jump-far-form?` `jump-far-link` `jump-far-scratch` `la-form?` `la-scratch` | 单条 item | 布尔 / 寄存器 |
 
 ### L6 `far`（预留）、L7 `encode`（未做）
 
@@ -116,6 +117,11 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 - `(la rd 链)` 要 `delta = 符号地址 − 当前 item 地址`，两个地址都只有 L5 之后才有。
   L7 用 `la-pcrel`（已知 delta）或 `load-pcrel`（自动选近/远形式，远形式自带 scratch）。
+  短形式不需要 scratch，所以 `la` 的 scratch 是**可选槽**：`(la rd 链)` 由 L7 自己挑，
+  `(la rd tmp 链)` 显式指定（给以后的 frame / regalloc 用）。两者尺寸相同，都不报 `scratch-hole`
+  （只有 `branch-indirect` 那种**必填却缺失**的才算空槽；`jump-far` 要不要 scratch
+  取决于它的 link：`(jump-far x0 L)` 缺 base 要报，`(jump-far ra L)` 自己就是 base）。
+  远形式的寄存器全部显式，见 `L5/DESIGN.md`「远形式：寄存器全部显式」。
 - `(li rd 常量)` 与布局无关，但它和 `la` 是同一类「一条源 item 变成多条指令」的伪指令，
   放在同一处展开；用 `expand-li`，字节数可以问 `li-size`。
 - 两者的展开字节数都**不是常量**（`li` 看值的范围，`la` 看距离），所以 L5 只能按**上界预留**。
@@ -144,9 +150,9 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `(quote ...)` / `(begin ...)` | 源 | 无（旧壳） | 人 | L1/L2/L3/L5 入口 |
 | 伪指令 `(load-32 …)` `(l8 …)` `(move …)` `(ble …)` | 源 → L2 前 | **L2** 的表 | 人 | L2 |
 | 真指令 `(lwu …)` `(bge …)` `(jal …)` `(jalr …)` `(c.beqz …)` `(c.j …)` | L2 起 | **L2** 产出；**L3** 分类；**L5** 定尺寸 | L2 | L3 / L5 |
-| 远形式 `branch-far` `branch-indirect` `jump-far` `call-far` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽） | 人 / L6 | L3 / L5 |
+| 远形式 `(branch-far a b L)` `(branch-indirect [s] a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
 | `(li rd 常量)` | 源 → L7 | **L7**（`riscv-help` 的 `expand-li` / `li-size`） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
-| `(la rd 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
+| `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(bytes …)` `(align n)` | 数据输入 | **L5**（尺寸 / padding / kind） | 人 | L5 |
 | `(block <头 label> item ...)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(flow …)` | L3 → L5 | **L3** | L3 | L4 / L5 |
@@ -192,7 +198,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 表 | 位置 | 管什么 |
 | --- | --- | --- |
 | 替换表 | `L2/table-base.rkt` … `L2/table.rkt` | 伪指令 → 真指令（**不含 `li` / `la`**） |
-| 指令分类表 | `L3/insn.rkt` | 分支 / 跳转 / 间接 / 陷阱 / 是否顺序落下（含 `c.*`） |
+| 指令分类表 | `L3/insn.rkt` | 分支 / 跳转 / 间接 / 陷阱 / 是否顺序落下（含 `c.*` 与远形式） |
 | 形式表 | `L5/forms.rkt` | 字节数 / 可达距离 / 是否需要 scratch |
 | 展开器（外部） | `../riscv-help`：`li` `la-pcrel` `load-pcrel` `branch-long` `jump-*` | `li` / `la` / 远分支 / 远跳转的最终展开；本仓不重复实现 |
 
@@ -206,6 +212,7 @@ L7 只负责「把地址算好、传进去、把结果接回来」。
 | L2 | 伪指令表只覆盖 load/store/move/nop/c.nop/4 条换位分支 | 可加行；`li` / `la` 不进表 |
 | L5 | `li` 走 `item-size` 兜底 4 字节，应按常量上界预留 | 待改（形式表） |
 | L5 | `(la rd 链)` 不查 `undefined-target`、不查 ±2GB（`form-range` 返回 `#f`） | 待改（`verify`） |
+| L5 | `li` / `la` 预留的 4 / 8 字节是**下界**，不是上界（`li-general64` 最坏约 32B、`la` 远形式 `li-size + 8`） | 待改（尺寸契约） |
 | L5 | 符号重名不报（`collect-symbols` 用 `assoc` 取第一个） | 待改 |
 | L5 | 只报 `broken-fallthrough`，不补跳转 | 修复属于 L6/L7 |
 | L6 | 目录不存在：`needs-far` / `scratch-hole` 只产不销 | 未做 |
