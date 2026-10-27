@@ -57,9 +57,10 @@
 (define (label-form? x)
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
 
-;; (module 名 item...) 是**结构壳**: 名字前缀是 flatten 的事, 本层不解释它,
-;; 只是递归进去把数据展开, 壳原样留着。
+;; (module 名 item...) 是**结构壳**: 名字前缀/可见性是 flatten 的事, 本层不解释它,
+;; 只是递归进去把数据展开, 壳原样留着。它的子句 (provide …) / (require …) 同理。
 (define (module-form? x) (and (form? x) (eq? (car x) 'module)))
+(define (module-clause? x) (and (form? x) (memq (car x) '(provide require))))
 
 (define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
 
@@ -216,7 +217,7 @@
                  (cons (cadr it)
                        (append* (for/list ([sub (in-list (cddr it))])
                                   (expand-item sub))))))]
-    [(label-form? it) (list it)]
+    [(or (module-clause? it) (label-form? it)) (list it)]
     [(bytes-form? it) (list it)]
     [(fill-item? it) (list it)]
     [(value-form? it) (list it)]

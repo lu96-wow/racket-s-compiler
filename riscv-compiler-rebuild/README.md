@@ -12,6 +12,8 @@ data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─�
 layout  list ┘                items          program    program  layout   bytes
 ```
 
+`flatten` 是模块系统（`module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out`，默认私有）。
+
 层名就是目录名。**跑哪些层、什么顺序，由 `flow` 的一个列表决定**：
 
 ```racket

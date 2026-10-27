@@ -40,7 +40,7 @@
 | stage | requires | provides |
 | --- | --- | --- |
 | `expand-data` | `rich-data` | `data-items` |
-| `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
+| `flatten` | `program-items` `data-items` | `program-items` `data-items` `names`（模块系统：provide/require 在这里解析） |
 | `expand-pseudo` | `program-items` | `program-items` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |

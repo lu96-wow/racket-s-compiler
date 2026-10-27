@@ -102,6 +102,10 @@
 ;; 壳里的地址字照常归一
 (check-equal? (ex '((module m (b64 (label- (d t) 8)))))
               '((module m (value 8 (label+ (d t) -8)))))
+;; 模块子句 provide/require 原样透传(名字解析是 flatten 的事)
+(check-equal? (ex '((module m (provide t) (require d) (label d t))))
+              '((module m (provide t) (require d) (label d t))))
+
 ;; 壳里出现不认识的形式 -> 照样报错
 (check-exn exn:fail? (lambda () (ex '((module m (word 1))))))
 (check-exn exn:fail? (lambda () (ex '((module)))))          ; 没名字

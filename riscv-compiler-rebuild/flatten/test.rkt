@@ -83,10 +83,14 @@
                       (module a (label h) (jal x0 (h)))))
               '((label h) (add t0 t1 t2) (label a h) (jal x0 (a h))))
 
-;; 引用别的模块: 写完整链
-(check-equal? (flat '((module a (label f))
-                      (module b (label g) (jal ra (a f)))))
+;; 引用别的模块: 必须 provide + require（默认私有）
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require a) (label g) (jal ra (f)))))
               '((label a f) (label b g) (jal ra (a f))))
+;; 没有 provide 的内部 label, 写完整链也引用不到
+(check-exn exn:fail?
+           (lambda () (flat '((module a (label f))
+                               (module b (label g) (jal ra (a f)))))))
 
 ;; 跨层的相对链: 在 (a b) 里写 (b f) 也会按 a.b.f 试
 (check-equal? (flat '((module a (module b (label f) (jal x0 (f))))))
@@ -107,7 +111,7 @@
 ;; 容器 / 幂等
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (flat '((module a (label f)) (jal x0 (a f))))
+(check-equal? (flat '((module a (provide f) (label f)) (require a) (jal x0 (f))))
               '((label a f) (jal x0 (a f))))
 
 ;; 旧壳 (quote ...)/(begin ...) 也收, 出口一律 plain list
@@ -141,23 +145,25 @@
 
 (define-values (ins _names)
   (flatten-inputs (list '((module prog1
-                                        (label main)
-                                        (la t0 (data1 table))))
+                                   (require data1)
+                                   (label main)
+                                   (la t0 (table)))
+                          (label root))
                          '((module data1
-                                        (label table)
-                                        (bytes 1 2 3))))))
+                                   (provide table)
+                                   (label table)
+                                   (bytes 1 2 3))))))
 
-;; 两个输入各自展平, 跨输入的完整链能查到
+;; 两个输入各自展平, 跨输入的模块照样能 require
 (check-equal? (list-ref ins 0)
-              '((label prog1 main) (la t0 (data1 table))))
+              '((label prog1 main) (la t0 (data1 table)) (label root)))
 (check-equal? (list-ref ins 1)
               '((label data1 table) (bytes 1 2 3)))
 
-;; 跨输入写短链查不到 -> 报错(必须写完整链)
-;; 跨输入写短链查不到 -> 报错(必须写完整链)
+;; 没有 provide 的模块, 写完整链也引用不到
 (check-exn exn:fail?
            (lambda ()
-             (flatten-inputs (list '((module prog1 (label main) (la t0 (table))))
+             (flatten-inputs (list '((module prog1 (label main) (la t0 (data1 table))))
                                    '((module data1 (label table)))))))
 
 ;; ---------------------------------------------------------------------------
@@ -203,5 +209,87 @@
 ;; 地址表达式里的链查不到 -> 报错(不是静默留短链)
 (check-exn exn:fail?
            (lambda () (flat '((module m (label f) (value 4 (label+ (nope) 0)))))))
+
+;; ---------------------------------------------------------------------------
+;; 模块系统: provide / require / prefix-in / rename-in / rename-out
+;; ---------------------------------------------------------------------------
+
+;; 默认私有: 外部写完整链也找不到
+(check-exn exn:fail?
+           (lambda () (flat '((module a (label f)) (module b (la t0 (a f)))))))
+
+;; provide + require: 用短名, 输出仍是完整链
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require a) (la t0 (f)))))
+              '((label a f) (la t0 (a f))))
+
+;; 多层链的 label 也能导出/导入
+(check-equal? (flat '((module a (provide (d table)) (label d table))
+                      (module b (require a) (la t0 (d table)))))
+              '((label a d table) (la t0 (a d table))))
+
+;; prefix-in: 绑成 p:名字
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require (prefix-in dt: a)) (la t0 (dt:f)))))
+              '((label a f) (la t0 (a f))))
+
+;; rename-in: 导入时改名
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require (rename-in a ((f) tbl))) (la t0 (tbl)))))
+              '((label a f) (la t0 (a f))))
+
+;; rename-out: 导出时改名（内部名仍叫 f, 外部叫 fn）
+(check-equal? (flat '((module a (provide (rename-out ((f) fn))) (label f))
+                      (module b (require a) (la t0 (fn)))))
+              '((label a f) (la t0 (a f))))
+
+;; (provide *) 导出本模块直接定义的 label, 用它们的本地链
+(check-equal? (flat '((module a (provide *) (label d table) (label g))
+                      (module b (require a) (la t0 (d table)))))
+              '((label a d table) (label a g) (la t0 (a d table))))
+
+;; re-export: b 把 require 进来的再 provide 出去
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require a) (provide (rename-out ((f) ff))))
+                      (module c (require b) (la t0 (ff)))))
+              '((label a f) (la t0 (a f))))
+
+;; 多个 require 子句可以叠加
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (provide g) (label g))
+                      (module c (require a) (require b)
+                                (la t0 (f)) (la t1 (g)))))
+              '((label a f) (label b g) (la t0 (a f)) (la t1 (b g))))
+
+;; 冲突: require 进来的名字和本模块 label 同名 -> 报错
+(check-exn exn:fail?
+           (lambda () (flat '((module a (provide f) (label f))
+                               (module b (require a) (label f))))))
+;; 冲突: 两个 require 给同一个短名, 指向不同目标 -> 报错
+(check-exn exn:fail?
+           (lambda () (flat '((module a (provide f) (label f))
+                               (module b (provide f) (label f))
+                               (module c (require a) (require b) (la t0 (f)))))))
+;; 循环 require 是**允许**的（地址引用不涉及初始化顺序）: 数据 <-> 代码 就是这样
+(check-equal? (flat '((module a (provide fa) (require b)
+                                 (label fa) (b64 (label+ (fb) 0)))
+                      (module b (provide fb) (require a)
+                                 (label fb) (b64 (label+ (fa) 0)))))
+              '((label a fa) (b64 (label+ (b fb) 0))       ; rich 数据本层不展开
+                (label b fb) (b64 (label+ (a fa) 0))))
+;; 环里没有 base(全靠 re-export) -> 解不出来, 报错
+(check-exn exn:fail?
+           (lambda () (flat '((module a (provide fa) (require b))
+                               (module b (provide fb) (require a))))))
+;; provide 了不存在的东西 -> 报错（不用等别人 require）
+(check-exn exn:fail? (lambda () (flat '((module a (provide nope) (label f))))))
+;; require 不存在的模块 -> 报错
+(check-exn exn:fail? (lambda () (flat '((module a (require ghost) (label f))))))
+;; 模块不能重名
+(check-exn exn:fail? (lambda () (flat '((module a (label f)) (module a (label g))))))
+;; 同一模块里 label 与 require 绑定同名, 但引用的还是本模块的
+(check-equal? (flat '((module a (provide f) (label f))
+                      (module b (require a) (label f2) (la t0 (f)))))
+              '((label a f) (label b f2) (la t0 (a f))))
 
 (displayln "flatten tests: ok")

@@ -40,7 +40,7 @@ layout  list ┘                items          program    program  layout   byte
 | stage | 文件 | 一句话 | 读 | 写 | 细节 |
 | --- | --- | --- | --- | --- | --- |
 | `expand-data` | `expand-data/expand.rkt` | 数据定义 | `rich-data` | `data-items` | [`expand-data/DESIGN.md`](expand-data/DESIGN.md) |
-| `flatten` | `flatten/flatten.rkt` | 模块展平 + 链式查表 | `program-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
+| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `program-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
 | `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `program-items` | `program-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
 | `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `program-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
 | `dce` | `dce/dce.rkt` | 死代码消除 | `program` | `program` | [`dce/DESIGN.md`](dce/DESIGN.md) |
@@ -75,7 +75,7 @@ layout  list ┘                items          program    program  layout   byte
 | 层 | 自己认识的 item | 其余怎么办 |
 | --- | --- | --- |
 | expand-data | rich 数据（`b8/b16/b32/b64`、`bN-array`、`utf-string`、`label`、`bytes`、`fill`、`align`） | 不认识就 `error`（它是数据入口） |
-| flatten | `module`、`label` 链 | 透传（不认识任何助记符） |
+| flatten | `module` / `provide` / `require`（含 `prefix-in` / `rename-in` / `rename-out`）、`label` 链 | 透传（不认识任何助记符） |
 | expand-pseudo | 替换表里的伪指令名 | 透传（原子 / `quote` 当数据） |
 | analyze / dce | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
 | layout | 数据 `label` / `bytes` / `fill` / `value` / `align`（输入）+ `pad`（产物）；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
@@ -106,9 +106,11 @@ layout  list ┘                items          program    program  layout   byte
 8. **中间层不写合法性检查**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
    都属于 encode（实际是 `riscv-asm`）。flatten–relax 只判自己模型里的东西。
 9. **label 链是身份**：`(label a f)` 是一个位置多个名字；跳转目标是链；`place` 按精确链匹配。
-10. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
+10. **模块边界只由 provide/require 决定**：默认私有，跨模块引用必须 require，
+    写全名不是后门；`provide`/`require` 可以成环（只是名字解析，没有初始化顺序）。
+11. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
-11. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
+12. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
     `(align n)` → `(pad 字节数)`（layout）、`label` → `(offset k …)`（layout）、
     `(value w 值)` → 字节（encode）、`li`/`la` → 指令（encode）。
 
@@ -126,7 +128,8 @@ layout  list ┘                items          program    program  layout   byte
 
 | 形式 | 谁定义 | 谁产生 | 谁消费 |
 | --- | --- | --- | --- |
-| `(module 名 item...)` | flatten 定名字；expand-data 只把**数据侧**的壳递归展开、壳原样留着 | 人 | expand-data / flatten |
+| `(module 名 item...)` | flatten（完整链 + 可见性）；expand-data 只把**数据侧**的壳递归展开、壳原样留着 | 人 | expand-data / flatten |
+| `(provide …)` `(require …)` `prefix-in` `rename-in` `rename-out` | flatten（模块系统；编译期纯名字解析） | 人 | expand-data（透传）/ flatten |
 | `(label 链...)` | flatten 定链 / analyze 定块头 / layout 定偏移 | flatten / layout | 全部 |
 | 伪指令 `(load-32 …)` `(move …)` `(ble …)` | expand-pseudo 的表 | 人 | expand-pseudo |
 | 真指令 `(lwu …)` `(bge …)` `(jalr …)` `(c.j …)` | expand-pseudo 产出；analyze 分类；layout 定尺寸；encode 编码 | expand-pseudo / 人 | analyze / dce / layout / relax / encode |

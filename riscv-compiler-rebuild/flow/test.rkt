@@ -176,8 +176,9 @@
 
 (define mmod-src
   '((module prog
+      (require data)                         ; 用短名 table
       (label main)
-      (la t0 (data d table))      ; 跨模块引用要写完整链
+      (la t0 (table))
       (ld t1 t0 0)
       (jalr ra t1 0)
       (jalr x0 ra 0)
@@ -185,9 +186,23 @@
 
 (define mmod-rich
   '((module data
+      (provide (rename-out ((d table) table)))  ; 内部叫 (d table), 对外叫 table
+      (require prog)                         ; 数据侧也要 require 才能引用 (prog f)
       (label d table)
-      (b64 (label+ (prog f) 0))   ; 数据里指向程序模块的函数
+      (b64 (label+ (f) 0))                   ; 数据里指向程序模块的函数: 用短名
       (utf-stringz "hi"))))
+
+;; 程序侧 f 也要能被 data 引用
+(define mmod-src2
+  '((module prog
+      (provide f)
+      (require data)
+      (label main)
+      (la t0 (table))
+      (ld t1 t0 0)
+      (jalr ra t1 0)
+      (jalr x0 ra 0)
+      (label f) (addi a0 a0 1) (jalr x0 ra 0))))
 
 (define mmod-spec
   '((segments (segment c code #x100000 #x100FFF 16)
@@ -197,7 +212,7 @@
 
 (define mmod (run-flow default-flow
                        (list (cons 'rich-data mmod-rich)
-                             (cons 'program-items mmod-src)
+                             (cons 'program-items mmod-src2)
                              (cons 'layout-spec mmod-spec))))
 
 ;; 名字表里三条链都带了模块前缀
