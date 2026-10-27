@@ -59,9 +59,9 @@ layout  list ┘                      program       program         (layout)    
 | L1 | `module`、`label` 链 | 透传（不认识任何助记符） |
 | L2 | 替换表里的伪指令名 | 透传（原子 / `quote` 当数据） |
 | L3 / L4 | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
-| L5 | 数据 `label` / `bytes` / `fill` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
+| L5 | 数据 `label` / `bytes` / `fill` / `value` / `align`（输入）+ `pad`（产物）；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
 | L6 | `needs-far` 提到的那些 control 形式 | 其余 item 不碰 |
-| L7 | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序 | 交给 `riscv-asm` 编码 |
+| L7 | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序、**填充策略** | 交给 `riscv-asm` 编码 |
 
 推论：
 
@@ -88,6 +88,9 @@ layout  list ┘                      program       program         (layout)    
 9. **label 链是身份**：`(label a f)` 是一个位置多个名字；跳转目标是链；`place` 按精确链匹配。
 10. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
+11. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
+    `(align n)` → `(pad 字节数)`（L5）、`label` → `(offset k …)`（L5）、
+    `(value w 值)` → 字节（L7）、`li`/`la` → 指令（L7）。
 
 ## 4. IO 形状速查
 
@@ -96,7 +99,7 @@ layout  list ┘                      program       program         (layout)    
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
 | 块 + 流 | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
-| layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) …) (size 28)) …) (symbols …) (problems …))` |
+| layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))` |
 | build | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
 
 ## 5. 形式归属
@@ -112,6 +115,7 @@ layout  list ┘                      program       program         (layout)    
 | `(la rd [tmp] 链)` | L5 量尺寸 + 判 `fits-auipc-pair?`、L7 展开（`load-pcrel`） | 人 | L3 / L5 / L7 |
 | rich 数据 `b8` `b16` `bN-array` `utf-string` | D1 | 人 | D1 |
 | `(bytes …)` `(fill n b)` `(align n)` | L5（尺寸/类别）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 / L7 |
+| `(pad n)` | L5 把 `(align n)` 换算成的事实 | L5 | L7 |
 | `(value 宽度 值)` | D1 出宽度+值；L5 量尺寸 + 查地址范围；L3 用它算 root；L7 定端序落字节 | D1 | L3 / L5 / L7 |
 | `(label+ 链 加数)` | D1 归一；L3 当取地址；L5 解析范围；L7 落值 | 人 / D1 | L3 / L5 / L7 |
 | `(block …)` `(flow …)` `(program …)` | L3 | L3 / L4 | L4 / L5 / L6 |
@@ -168,6 +172,7 @@ segment d start=#x200000 size=11
 | 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |
 | `fence` / `fence.tso` 的操作数语法 | 没定义 | L7 报 "no operand syntax" |
 | `.bss` / `ascii` 等数据指令 | 没做 | `fill` / `bytes` 够用 |
+| 填充策略的"非 nop"选项（ebreak / 0xFF / trap） | 没做 | 只改 `L7/target.rkt` 的表 |
 
 ## 9. 文档规范
 

@@ -15,7 +15,7 @@
          (only-in "../../riscv-help/main.rkt" li-size))
 
 (provide form? name? path? normalize-path
-         label-form? align-form? bytes-form? fill-form? value-form? compressed-form?
+         label-form? align-form? pad-form? bytes-form? fill-form? value-form? compressed-form?
          value-width value-payload
          label-expr? label-expr-chain label-expr-addend
          la-form? la-scratch
@@ -45,6 +45,12 @@
 (define (align-form? x)
   (and (form? x) (eq? (car x) 'align) (= 2 (length x))
        (exact-positive-integer? (cadr x))))
+
+;; (pad n): "这里要补 n 个字节" —— 是**事实**, 不是要求。
+;; `align` 是输入侧的请求, 本层度量时把它换算成 pad 写进产物。
+(define (pad-form? x)
+  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
+       (exact-nonnegative-integer? (cadr x))))
 
 (define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
 
@@ -108,7 +114,7 @@
 ;; ---------------------------------------------------------------------------
 ;; item 的类别: 决定它能落进哪种段 (P7)
 ;;   marker = label(不占字节, 两种段都行)
-;;   both   = align(两种段都行)
+;;   both   = align(请求) / pad(事实), 两种段都行
 ;;   code   = 指令
 ;;   data   = bytes / fill / value
 ;; ---------------------------------------------------------------------------
@@ -116,7 +122,7 @@
 (define (item-kind x)
   (cond
     [(label-form? x) 'marker]
-    [(align-form? x) 'both]
+    [(or (align-form? x) (pad-form? x)) 'both]
     [(or (bytes-form? x) (fill-form? x) (value-form? x)) 'data]
     [else 'code]))                    ; 其余一律当成不透明的代码 item
 
@@ -127,7 +133,8 @@
 (define (item-size x)
   (cond
     [(label-form? x) 0]
-    [(align-form? x) #f]              ; 由游标算
+    [(align-form? x) #f]              ; 由游标算(度量时换算成 pad)
+    [(pad-form? x) (cadr x)]          ; 补多少个字节
     [(bytes-form? x) (length (cdr x))]
     [(fill-form? x) (cadr x)]         ; 字节数 = 重复次数
     [(value-form? x) (value-width x)] ; 尺寸 = 宽度, 值等 L7

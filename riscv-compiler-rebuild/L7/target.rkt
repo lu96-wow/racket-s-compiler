@@ -10,7 +10,7 @@
          target-endianness
          target-extensions
          integer->bytes
-         code-padding-bytes)
+         padding-bytes)
 
 (define target-word-size 64)
 
@@ -36,10 +36,33 @@
     [(eq? target-endianness 'big) (reverse bs)]
     [else (error 'integer->bytes "unknown endianness: ~a" target-endianness)]))
 
-;; code 段里对齐补出来的字节必须是合法指令(会顺着落下来执行),
-;; 所以 code 用 nop 平铺, 其余用 0。
+;; ---------------------------------------------------------------------------
+;; 填充策略（这就是"芯片相关"的那部分：补什么字节）
+;;
+;;   data 段: 0
+;;   code 段: 合法指令 —— 会顺着落下来执行, 不能留 0
+;;            4 字节优先用 nop(addi x0,x0,0), 余 2 用 c.nop(c.addi x0,0)
+;;            奇数字节 >>> 编不出来(没有任何 1 字节指令), 报错
+;;
+;; 换目标(比如用 ebreak 填空、或不允许压缩指令)只改这里。
+;; ---------------------------------------------------------------------------
+
+(define nop-word     #x00000013)   ; addi x0, x0, 0    (4 字节)
+(define c-nop-word   #x0001)       ; c.addi x0, 0      (2 字节, C 扩展)
+
+(define (padding-bytes kind n)
+  (case kind
+    [(code) (code-padding-bytes n)]
+    [else (make-list n 0)]))
+
 (define (code-padding-bytes n)
-  (unless (zero? (modulo n 4))
-    (error 'code-padding-bytes
-           "code 段里的对齐补出了 ~a 字节(不是 4 的倍数), 编不出来" n))
-  (append* (for/list ([_ (in-range (quotient n 4))]) (integer->bytes 4 #x00000013))))
+  (define quads (quotient n 4))
+  (define rest (remainder n 4))
+  (append
+   (append* (for/list ([_ (in-range quads)]) (integer->bytes 4 nop-word)))
+   (case rest
+     [(0) '()]
+     [(2) (integer->bytes 2 c-nop-word)]
+     [else (error 'padding-bytes
+                  "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"
+                  n rest)])))

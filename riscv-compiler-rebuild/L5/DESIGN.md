@@ -57,7 +57,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `bytes b...` | 元素个数 | 已定序字节 |
 | `fill 字节数 b` | 重复次数 | 与端序无关 |
 | `value 宽度 值` | 宽度 | 值是什么由 L7 解释 |
-| `align n` | 由游标算 | 按**绝对地址** `start + cursor` 对齐 |
+| `align n` | 由游标算 | **输入侧的请求**；度量时换算成 `(pad …)` |
+| `pad n` | `n` | **产物侧的事实**："这里补 n 个字节"（输出现已只剩这个） |
 
 **其余 item 一律当成不透明代码**：4 字节（`c.*` 2 字节）。不查拼写、不查操作数 ——
 那是编码层的事。所以 `item-size` / `item-kind` 的兜底 `4` / `'code` **是设计，不是漏检**。
@@ -72,9 +73,19 @@ layout  : ((segments (segment 名 kind start end align) ...)
 
 ### 4.3 度量
 
-段内一个游标从 `start` 起；`label` 不占字节只记偏移；`align` 向上补齐
-（**绝对地址**对齐，不是段内偏移）；其余按 `item-size` 累加。
-产物里 `(offset k item)` 记的是**补齐前**的偏移，补齐后的位置看下一条。
+段内一个游标从 `start` 起；`label` 不占字节只记偏移；其余按 `item-size` 累加。
+
+`align` 在**这里**换算成事实：
+
+```racket
+(align n)  ->  (pad (modulo (- n (modulo (+ start cursor) n)) n))
+```
+
+对齐依据是**绝对地址** `start + cursor`（段 start 不一定被 `n` 整除），不是段内偏移。
+绝对地址公式只在这一处出现 —— 产物里直接写"要补几个字节"，L7 只需要决定填什么。
+
+产物里 `(offset k item)` 记的是该 item **开始**的偏移，`align` 的 `(pad n)` 记在
+补齐**前**的位置（下一条的偏移自然会 +n）。
 
 ### 4.4 尺寸表
 
@@ -83,7 +94,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `label` | 0 |
 | `bytes` / `fill` | 元素个数 / 重复次数 |
 | `value 宽度 值` | 宽度 |
-| `align n` | 由游标算 |
+| `align n` | 由游标算（度量时换算成 `(pad …)`） |
+| `pad n` | `n` |
 | `li` | **由常量精确决定**：`li-size` ∈ {4, 8, 12, 16, …, 32} |
 | `la` | 8（近形式 `auipc+addi`） |
 | `b*` / `jal` / `jalr` / 其他 | 4 |

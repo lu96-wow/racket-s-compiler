@@ -47,9 +47,6 @@
     (error 'encode "undefined symbol: ~s" chain))
   (+ (cadddr row) addend))
 
-(define (padding-bytes kind n)
-  (if (eq? kind 'code) (code-padding-bytes n) (make-list n 0)))
-
 (define (value->bytes w v symbols)
   (define n
     (cond
@@ -162,9 +159,9 @@
              name at cursor it))
     (cond
       [(label-form? it) (void)]
-      [(align-form? it)
-       (define n (cadr it))
-       (emit! (padding-bytes kind (modulo (- n (modulo here n)) n)))]
+      ;; (pad n): L5 已经把"对齐请求"换算成"要补多少个字节"
+      [(pad-form? it)
+       (emit! (padding-bytes kind (cadr it)))]
       [(bytes-form? it) (emit! (cdr it))]
       [(fill-form? it) (emit! (make-list (cadr it) (caddr it)))]
       [(value-form? it) (emit! (value->bytes (value-width it) (value-payload it) symbols))]

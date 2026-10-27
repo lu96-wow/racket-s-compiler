@@ -136,6 +136,26 @@
 ;; 0x8003 -> 0x8008: 5 字节 0
 (check-equal? (build-bytes align-build 'd) '(1 0 0 0 0 0 2))
 
+;; code 段补 2 字节时用 c.nop（4 字节对齐够不到的地方）
+(define pad2-out
+  (layout-program (eliminate-dead (analyze '((label main) (c.addi a0 1)
+                                             (align 4) (ret))))
+                  '()
+                  '((segments (segment s code #x1000 #x1FFF 4))
+                    (place s (main)))))
+(check-equal? (seg-problems pad2-out) '())
+;; c.addi a0,1 (2B) + c.nop (2B) + ret (4B)
+(check-equal? (build-bytes (encode-layout pad2-out) 's)
+              '(#x05 #x05  #x01 #x00  #x67 #x80 #x00 #x00))
+
+;; 填充策略本身
+(check-equal? (padding-bytes 'code 0) '())
+(check-equal? (padding-bytes 'code 2) '(#x01 #x00))                       ; c.nop
+(check-equal? (padding-bytes 'code 4) '(#x13 #x00 #x00 #x00))             ; nop
+(check-equal? (padding-bytes 'code 6) '(#x13 #x00 #x00 #x00 #x01 #x00))   ; 4 + 2
+(check-equal? (padding-bytes 'data 3) '(0 0 0))
+(check-exn exn:fail? (lambda () (padding-bytes 'code 3)))                 ; 奇数字节编不出来
+
 ;; ---------------------------------------------------------------------------
 ;; 远形式: L6 的产物也要能编
 ;; ---------------------------------------------------------------------------

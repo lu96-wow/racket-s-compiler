@@ -240,7 +240,11 @@
        ;; "code 段的 align 必须是 4 的倍数"是 ISA 合法性, 不归本层: 只对齐, 不判。
        ;; align 是**绝对地址**对齐: 段 start 不一定被 item 的 n 整除,
        ;; 所以用 (start + cursor) 算, 不能只用段内 cursor。
-       (emit! it (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n) origin)]
+       ;;
+       ;; 产物里写**事实**不写请求: (align 8) -> (pad 补出来的字节数)。
+       ;; 这样 L7 不需要再算一遍对齐公式, 只需要决定这 n 个字节填什么。
+       (define pad (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))
+       (emit! (list 'pad pad) pad origin)]
       [else (emit! it (item-size it) origin)]))
 
   (for ([e (in-list blks)])

@@ -99,6 +99,12 @@
 
 (check-equal? (item-kind '(label a)) 'marker)
 (check-equal? (item-kind '(align 8)) 'both)
+;; (pad n) 是产物侧的事实: 尺寸就是 n
+(check-equal? (item-kind '(pad 5)) 'both)
+(check-equal? (item-size '(pad 5)) 5)
+(check-true  (pad-form? '(pad 0)))
+(check-false (pad-form? '(pad -1)))
+(check-false (pad-form? '(pad)))
 (check-equal? (item-kind '(bytes 1)) 'data)
 (check-equal? (item-kind '(fill 4 0)) 'data)
 (check-equal? (item-kind '(value 8 (label+ (d t) 0))) 'data)
@@ -316,7 +322,7 @@
 
 (check-equal? (items-of-seg l-abs-align 'd1)
               '((offset 0 (label d1)) (offset 0 (bytes 1))
-                (offset 1 (align 8)) (offset 6 (bytes 2))))
+                (offset 1 (pad 5)) (offset 6 (bytes 2))))
 (check-equal? (size-of-seg l-abs-align 'd1) 7)
 (check-equal? (problems-of l-abs-align) '())
 
@@ -328,7 +334,7 @@
          (place s1 (main)))))
 
 (check-equal? (items-of-seg l-abs-align-code 's1)
-              '((offset 0 (label main)) (offset 0 (align 16))
+              '((offset 0 (label main)) (offset 0 (pad 12))
                 (offset 12 (addi a0 a0 1))))
 (check-equal? (size-of-seg l-abs-align-code 's1) 16)
 (check-equal? (problems-of l-abs-align-code) '())
@@ -363,7 +369,7 @@
                 (offset 8 (ld t1 t0 0)) (offset 12 (jalr x0 ra 0))))
 (check-equal? (items-of-seg l5 'data1)
               '((offset 0 (label data1 table)) (offset 0 (bytes 1 2 3 4))
-                (offset 4 (align 8)) (offset 8 (label data1 end)) (offset 8 (bytes 0))))
+                (offset 4 (pad 4)) (offset 8 (label data1 end)) (offset 8 (bytes 0))))
 (check-equal? (size-of-seg l5 'data1) 9)
 (check-equal? (problems-of l5) '())
 
@@ -556,7 +562,7 @@
                 (offset 15 (value 8 (label+ (d t) 8)))
                 (offset 23 (bytes 97 98 99))
                 (offset 26 (fill 4096 0))
-                (offset 4122 (align 8))))
+                (offset 4122 (pad 6))))
 (check-equal? (size-of-seg d1-laid 'd) 4128)
 
 ;; 数据里的地址字: 值由 L7 落, 但 L5 已经能查"链在不在"和"放不放得下"

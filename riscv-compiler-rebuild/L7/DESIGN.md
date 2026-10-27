@@ -26,7 +26,7 @@ layout : L6 产物（segments + symbols + problems）
 
 | 文件 | API |
 | --- | --- |
-| `target.rkt` | `target-word-size` `target-endianness` `target-extensions` `integer->bytes` `code-padding-bytes` |
+| `target.rkt` | `target-word-size` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes`（**填充策略**） |
 | `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl` |
 | `encode.rkt` | `encode-layout` |
 
@@ -88,23 +88,34 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 | item | 字节 |
 | --- | --- |
 | `label` | 无 |
-| `align n` | 补到**绝对地址**对齐；`code` 段补 `nop`（会顺着执行），其余补 0 |
+| `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
 | `bytes` / `fill` | 原样 |
 | `value w 值` | `w` 字节按目标端序；整数直接写，`(label+ 链 加数)` 用符号表求值 |
 | 真指令 | `riscv-asm` 编码（`width/8` 字节） |
 | 远形式 | `riscv-help` 展开后再编码 |
 | `li` / `la` | `riscv-help` 展开后再编码 |
 
-`code` 段的 padding 用 `nop`（`0x00000013`）：对齐补出来的字节可能真的会被执行到。
+### 4.5 填充策略（芯片相关的那一部分）
 
-### 4.5 两条断言
+`(pad n)` 到 L7 已经是"要补 n 个字节"的事实（L5 换算好了），这里只决定**填什么**：
+
+| 段 | 填什么 |
+| --- | --- |
+| `data` | `0` |
+| `code` | 合法指令：4 字节优先 `nop`(`0x00000013`)，余 2 用 `c.nop`(`0x0001`) |
+| `code`，余 1 / 余 3 | 报错 —— 没有任何 1 字节指令，这种对齐编不出来 |
+
+`code` 段必须填指令：对齐补出来的字节可能真的会被执行到。
+换目标（比如用 `ebreak` 填、或不允许压缩指令）只改 `L7/target.rkt` 的这张表。
+
+### 4.6 两条断言
 
 1. **`(offset k item)` 是断言**：写出的字节数必须正好让它落在 `k`，
    否则说明 L5 与 L7 对尺寸的理解不一致 → 报错。
 2. **layout 里还有任何 problem 就拒绝出产物**（`needs-far` / `scratch-hole` /
    `undefined-target` / `la-too-far` …）。
 
-### 4.6 li / la
+### 4.7 li / la
 
 ```racket
 (li rd 常量)      ; 尺寸由 L5 用 li-size 精确算（4…32），这里用同一个展开器

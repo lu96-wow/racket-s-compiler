@@ -24,7 +24,7 @@ rich item                        核心 item（输出的全部词汇）
 (label 链...)                     (label 链...)
 (bytes b...)                     (bytes b...)
 (fill 字节数 b)                   (fill 字节数 b)          ; 透传（幂等）
-(align n)                        (align n)
+(align n)                        (align n)                 ; L5 会换算成 (pad n)
 (b64 (label+ 链 加数))            (value 8 (label+ 链 加数))
 (b64 (label- 链 加数))            (value 8 (label+ 链 (- 加数)))
 ```
