@@ -34,7 +34,7 @@
 
 | 文件 | API |
 | --- | --- |
-| `analyze.rkt` | `analyze` `program?` `program-blocks` `program-flows` `block-head` `block-items` `make-block` `flow-succ` `flow-fallthrough` `flow-root?` `make-flow` `program->sexp` `sexp->program` `program-items` |
+| `analyze.rkt` | `analyze` `program?` `program-blocks` `program-flows` `block-head` `block-items` `make-block` `flow-succ` `flow-fallthrough` `flow-root?` `make-flow` `program->sexp` `sexp->program` `as-items` |
 | `cfg.rkt` | `build-cfg` `cfg->lines` `cfg-reachable` `referenced-labels` `address-taken-paths` `basic-block` `graph` |
 | `insn.rkt` | `branch-instruction?` `jump-instruction?` `indirect-instruction?` `trap-instruction?` `ends-block?` `falls-through?` `unconditional-jump?` `jump-target` `jump-register` `zero-register?` `label-form?` `label-path` `normalize-path` |
 

@@ -74,6 +74,7 @@
 | `require` 不存在的模块 | `undefined module (ghost) (known: …)` |
 | 模块重名 | `module (a) is defined twice` |
 | 同一条链在两个位置 | `label (a f) is defined in two places` |
+| require 环里没有 base，`provide` 解不出来 | `module (a) provides (fa), but it is not defined there` |
 
 `provide` 的校验是**主动**的：不用等别人 require 到它才发现。
 
@@ -81,10 +82,10 @@
 
 | 步 | 做什么 |
 | --- | --- |
-| 1 `walk` | 递归模块，给每个 item 标 scope，登记模块（provides/requires/own）与 label|
-| 2 `build-labels!` | 完整链 → `(slot . 声明模块)`；slot = 连续 label 组 |
-| 3 `resolve-modules!` | 不动点：`env` 由对方 `provides` 算，`provides` 又可能依赖自己的 `env`（re-export）；然后校验 |
-| 4 `resolve-ref` | 由内到外查 `require` 绑定、再查本地 label（要求声明模块是当前模块的祖先） |
+| 1 `annotate` | 递归模块，给每个 item 标 scope，登记模块（provides / requires / own-labels） |
+| 2 `index-labels!` | 完整链 → `(slot . 声明模块)`；slot = 连续 label 组；顺便记下"哪些 label 属于哪个模块" |
+| 3 `resolve-modules!` | 不动点：`imports` 由对方 `provides` 算，`provides` 又可能依赖自己的 `imports`（re-export）；收敛后统一校验 |
+| 4 `resolve-items` | 把每个 item 的引用换成完整链（label 也换） |
 
 同一个位置可以有多个名字：连续写多条 `(label a f)` / `(label a g)`。
 
@@ -99,7 +100,7 @@
 
 嵌套与遮蔽、跨输入共享、`provide` / `require` / `prefix-in` / `rename-in` / `rename-out` /
 `(provide *)` / re-export、多 require 叠加、私有性、七类报错、循环 require（合法与无 base）、
-地址表达式里的链、压缩指令不动、幂等。
+地址表达式（`(label+ 链 加数)`，形状判定在 `sexp.rkt`）里的链、压缩指令不动、幂等。
 
 ## 9. 已知缺口
 

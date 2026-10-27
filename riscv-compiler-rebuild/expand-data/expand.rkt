@@ -40,7 +40,7 @@
 
 (provide expand-data
          expand-item
-         program-items
+         as-items
          width-form?
          width-of)
 
@@ -102,19 +102,6 @@
 ;;
 ;; 本层只检查形状, 不求值: 链的绝对地址要等布局(layout)才定, 字节要等 encode 才落。
 ;; ---------------------------------------------------------------------------
-
-(define (label-expr? v)
-  (and (form? v)
-       (memq (car v) '(label+ label-))
-       (let ([args (cdr v)])
-         (and (memq (length args) '(1 2))
-              (path? (car args))
-              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
-
-;; 归一: (label- 链 n) => (label+ 链 -n); 加数一定写出来(字段固定)
-(define (normalize-label-expr v)
-  (define a (if (= 3 (length v)) (caddr v) 0))
-  (list 'label+ (cadr v) (if (eq? (car v) 'label-) (- a) a)))
 
 ;; 整数: 值域检查, 原样返回
 (define (check-value w v)
@@ -237,4 +224,4 @@
 
 
 (define (expand-data input)
-  (append* (for/list ([it (in-list (program-items input))]) (expand-item it))))
+  (append* (for/list ([it (in-list (as-items input))]) (expand-item it))))

@@ -25,7 +25,7 @@
 ;;;   * require 绑定在**本模块及其子模块**里可见(同样由内到外)。
 ;;;   * 解析顺序: require 绑定(由内到外) -> 本地 label(由内到外)。
 ;;;   * 同名冲突(两个 require / require 与本模块 label) -> 报错。
-;;;   * 循环 require -> 报错。
+;;;   * 循环 require **允许**(只是名字解析, 没有初始化顺序)；环里要有 base 才解得出来。
 ;;;   * 可以 re-export: provide 的名字可以是 require 进来的。
 ;;;
 ;;; 一个位置可以有多个名字: 连续写多条 label 即可。
@@ -40,7 +40,7 @@
 ;;; 之后的层看到的全是完整链, 不知道模块存在。链 -> 偏移 是 layout 的事。
 
 (require (only-in "../sexp.rkt"
-                  form? name? path? normalize-path program-items))
+                  form? name? path? normalize-path as-items label-expr?))
 
 (provide name?
          path?
@@ -52,19 +52,19 @@
 ;; 模块声明
 ;; ---------------------------------------------------------------------------
 
-;; provides : (listof (cons 本地链 外部链)) —— 本地链 #f 表示 "*"(全部自有 label)
-;;            (本地链 . #f) 也用它表示 "*"
-;; requires : (listof require-decl)
-;; own      : (listof 本地链)  本模块直接定义的 label
-(struct mod (name provides requires own) #:mutable)
+;; 一个模块的声明。
+;;   provides    : (listof (cons 本地链 外部链))；`(cons #f #f)` 表示 (provide *)
+;;   requires    : (listof require-decl)
+;;   own-labels  : (listof 本地链)  直接定义在这个模块里的 label（逆序，见 reverse）
+(struct mod (name provides requires own-labels) #:mutable)
 
 ;; target: 模块完整链; prefix: symbol|#f; renames: (listof (cons 外部链 本地链))
 (struct require-decl (target prefix renames) #:transparent)
 
 ;; 一次 flatten 用到的全局状态
-(struct state (labels   ; hash 完整链 -> (cons slot 声明模块)
-               mods     ; hash 完整链 -> mod
-               envs)    ; hash 模块链 -> (listof (cons 本地链 绝对链))
+(struct state (label-index   ; 完整链 -> (cons slot 声明模块)
+               modules       ; 模块完整链 -> mod
+               imports)      ; 模块链 -> (listof (cons 本地链 绝对链))  require 绑定
   #:mutable)
 
 ;; ---------------------------------------------------------------------------
@@ -86,11 +86,12 @@
 ;; 第 1 步: 走一遍, 给每个 item 标 scope, 顺便登记模块和 label
 ;; ---------------------------------------------------------------------------
 
-(define (root-or-module! st scope)
-  (define m (hash-ref (state-mods st) scope #f))
+;; 按 scope 取模块，没有就建一个。根作用域 () 也走这里（顶点也是一个模块）。
+(define (ensure-module! st scope)
+  (define m (hash-ref (state-modules st) scope #f))
   (or m
       (let ([m (mod scope '() '() '())])
-        (hash-set! (state-mods st) scope m)
+        (hash-set! (state-modules st) scope m)
         m)))
 
 ;; (provide spec ...) -> (listof (cons 本地链 外部链))
@@ -127,7 +128,7 @@
       [else (require-decl (chain-of 'require r) #f '())])))
 
 ;; 返回这一层的 annotated item 列表: (cons scope item)
-(define (walk items scope st)
+(define (annotate items scope st)
   (append*
    (for/list ([it (in-list items)])
      (cond
@@ -135,19 +136,19 @@
         (unless (and (>= (length it) 2) (name? (cadr it)))
           (error 'flatten "module needs a name: ~e" it))
         (define full (append scope (list (cadr it))))
-        (when (hash-has-key? (state-mods st) full)
+        (when (hash-has-key? (state-modules st) full)
           (error 'flatten "module ~s is defined twice" full))
         (define m (mod full '() '() '()))
-        (hash-set! (state-mods st) full m)
-        (walk (cddr it) full st)]
+        (hash-set! (state-modules st) full m)
+        (annotate (cddr it) full st)]
 
        [(clause-form? it 'provide)
-        (define m (root-or-module! st scope))
+        (define m (ensure-module! st scope))
         (set-mod-provides! m (append (mod-provides m) (parse-provide-clause it)))
         '()]
 
        [(clause-form? it 'require)
-        (define m (root-or-module! st scope))
+        (define m (ensure-module! st scope))
         (set-mod-requires! m (append (mod-requires m) (parse-require-clause it)))
         '()]
 
@@ -165,7 +166,7 @@
 ;; 同一条链出现在两个不同位置 => 报错。
 ;; ---------------------------------------------------------------------------
 
-(define (build-labels! runs st)
+(define (index-labels! runs st)
   (define slot -1)
   (for ([annotated (in-list runs)])
     (define previous-was-label? #f)
@@ -177,45 +178,47 @@
          (unless previous-was-label? (set! slot (add1 slot)))
          (set! previous-was-label? #t)
          (define full (append scope (relative-path it)))
-         (define known (hash-ref (state-labels st) full #f))
+         (define known (hash-ref (state-label-index st) full #f))
          (cond
            [(not known)
-            (hash-set! (state-labels st) full (cons slot scope))
-            (define m (root-or-module! st scope))
-            (set-mod-own! m (cons (drop-left (length scope) full) (mod-own m)))]
+            (hash-set! (state-label-index st) full (cons slot scope))
+            (define m (ensure-module! st scope))
+            (set-mod-own-labels! m (cons (strip-prefix scope full) (mod-own-labels m)))]
            [(= (car known) slot) (void)]      ; 同位置重复写同一个名字: 忽略
            [else (error 'flatten "label ~s is defined in two places" full)])]
         [else (set! previous-was-label? #f)]))))
 
-(define (drop-left n lst) (list-tail lst n))
+(define (strip-prefix prefix lst) (list-tail lst (length prefix)))
 
 ;; ---------------------------------------------------------------------------
 ;; 第 3 步: 解析模块
-;;   env(模块)      = require 绑定的 (本地链 . 绝对链)
-;;   provides(模块) = 导出名  (外部链 . 绝对链)
-;; 顺序: 按 require 依赖做拓扑, 顺便查循环。
+;;   imports(模块)  = require 绑定的 (本地链 . 绝对链)
+;;   provides(模块) = 导出名      (外部链 . 绝对链)
+;; 两者互相依赖(provide 可以 re-export require 进来的东西), 所以用**不动点**:
+;; 反复用对方的 provides 重算自己的 imports, 再重算自己的 provides, 直到不再变化。
+;; 解不出来的条目在收敛后统一报错。
 ;; ---------------------------------------------------------------------------
 
-(define (module-of! st name)
-  (or (hash-ref (state-mods st) name #f)
+(define (must-module st name)
+  (or (hash-ref (state-modules st) name #f)
       (error 'flatten "undefined module ~s (known: ~a)"
-             name (sort (hash-keys (state-mods st)) chain<?))))
+             name (sort (hash-keys (state-modules st)) chain<?))))
 
 (define (chain<? a b) (string<? (format "~a" a) (format "~a" b)))
 
 ;; 一个模块能看到的全部 require 绑定
-(define (env-of st name)
-  (hash-ref (state-envs st) name '()))
+(define (imports-of st name)
+  (hash-ref (state-imports st) name '()))
 
 ;; 在"某个模块里"把一个本地链解析成绝对链:
 ;;   require 绑定(本模块) -> 本模块或子模块里定义的 label
 (define (resolve-in-module st name local)
-  (define hit (assoc local (env-of st name)))
+  (define hit (assoc local (imports-of st name)))
   (cond
     [hit (cdr hit)]
     [else
      (define full (append name local))
-     (define known (hash-ref (state-labels st) full #f))
+     (define known (hash-ref (state-label-index st) full #f))
      (and known full)]))
 
 ;; 一个模块导出了什么: (listof (cons 外部链 绝对链))
@@ -223,25 +226,27 @@
 ;;   具名的        -> 先看本模块/子模块里有没有这个 label, 再看自己的 require 绑定(re-export)
 ;; 解不出来的条目先跳过 —— 迭代到不动点后再统一报错(见 resolve-modules!)。
 (define (module-provides st name provides-map)
-  (define m (module-of! st name))
+  (define m (must-module st name))
   (append*
    (for/list ([p (in-list (mod-provides m))])
      (cond
        [(not (car p))
-        (for/list ([local (in-list (reverse (mod-own m)))])
+        (for/list ([local (in-list (reverse (mod-own-labels m)))])   ; own 是 cons 出来的, 翻回源顺序
           (cons local (append name local)))]
        [else
-        (define abs (or (resolve-in-module st name (car p))
-                        (let ([hit (assoc (car p) (env-of st name))]) (and hit (cdr hit)))))
+        ;; resolve-in-module 已经先查 require 绑定(re-export), 再查本地/子模块的 label
+        (define abs (resolve-in-module st name (car p)))
         (if abs (list (cons (cdr p) abs)) '())]))))
 
-(define (make-env st name provides-map)
+(define (module-imports st name provides-map)
   (append*
-   (for/list ([r (in-list (mod-requires (module-of! st name)))])
-     (module-of! st (require-decl-target r))     ; 不存在的模块要在这一步就报
+   (for/list ([r (in-list (mod-requires (must-module st name)))])
+     ;; 目标模块必须存在; 不存在就在这一步报, 别等到引用解析
+     (define target (require-decl-target r))
+     (must-module st target)
      (define prefix (require-decl-prefix r))
      (define renames (require-decl-renames r))
-     (for/list ([p (in-list (hash-ref provides-map (require-decl-target r) '()))])
+     (for/list ([p (in-list (hash-ref provides-map target '()))])
        (define external (car p))
        (define absolute (cdr p))
        (define renamed (assoc external renames))
@@ -252,11 +257,11 @@
            [else external]))
        (cons local absolute)))))
 
-;; 不动点: env 依赖对方 provides, provides 又可能依赖自己的 env(re-export)。
+;; 不动点: imports 依赖对方 provides, provides 又可能依赖自己的 imports(re-export)。
 ;; 允许 require 成环 —— 这里只是名字解析, 不涉及初始化顺序。
 ;; 涨不上去的 provide 条目最后统一报错。
 (define (resolve-modules! st)
-  (define mods (sort (hash-keys (state-mods st)) chain<?))
+  (define mods (sort (hash-keys (state-modules st)) chain<?))
   (define provides (make-hash))
   (for ([n (in-list mods)]) (hash-set! provides n '()))
 
@@ -264,13 +269,13 @@
     (when (> round 100)
       (error 'flatten "module resolution did not converge"))
     (define changed? #f)
-    ;; env: 由各模块当前 provides 算
+    ;; imports: 由各模块当前 provides 算
     (for ([n (in-list mods)])
-      (define env (make-env st n provides))
-      (unless (equal? env (env-of st n))
-        (hash-set! (state-envs st) n env)
+      (define imports (module-imports st n provides))
+      (unless (equal? imports (imports-of st n))
+        (hash-set! (state-imports st) n imports)
         (set! changed? #t)))
-    ;; provides: 由 env + 自有 label 重算
+    ;; provides: 由 imports + 自有 label 重算
     (for ([n (in-list mods)])
       (define new (module-provides st n provides))
       (unless (equal? new (hash-ref provides n '()))
@@ -280,7 +285,7 @@
 
   ;; 校验
   (for ([n (in-list mods)])
-    (define m (module-of! st n))
+    (define m (must-module st n))
     ;; 1) 每个 provide 条目都必须解得出来
     (define got (hash-ref provides n '()))
     (for ([p (in-list (mod-provides m))] #:when (car p))
@@ -288,17 +293,17 @@
         (error 'flatten "module ~s provides ~s, but it is not defined there"
                n (car p))))
     ;; 2) 同一个短名不能来自两个不同目标
-    (define env (env-of st n))
+    (define imports (imports-of st n))
     (define seen (make-hash))
-    (for ([b (in-list env)])
+    (for ([b (in-list imports)])
       (define prev (hash-ref seen (car b) #f))
       (when (and prev (not (equal? prev (cdr b))))
         (error 'flatten "module ~s: ~s is required from two places (~s and ~s)"
                n (car b) prev (cdr b)))
       (hash-set! seen (car b) (cdr b)))
     ;; 3) require 进来的名字不能和本模块直接定义的 label 撞
-    (for ([b (in-list env)])
-      (define known (hash-ref (state-labels st) (append n (car b)) #f))
+    (for ([b (in-list imports)])
+      (define known (hash-ref (state-label-index st) (append n (car b)) #f))
       (when (and known (equal? (cdr known) n))
         (error 'flatten "module ~s: ~s is both defined here and required"
                n (car b))))))
@@ -320,28 +325,19 @@
 ;; 注意: 本环境的 for/first 只取**第一次迭代**的值(不像文档说的"第一个非 #f"),
 ;; 所以这里一律用 for/or。别再换回去。
 (define (resolve-ref st scope ref)
-  (define chain (ancestors-and-self scope))             ; 已是由内到外
-  (or (for/or ([m (in-list chain)])
-        (define hit (assoc ref (env-of st m)))
+  (define levels (ancestors-and-self scope))            ; 由内到外: 自己, 父, ..., 根
+  (or (for/or ([m (in-list levels)])
+        (define hit (assoc ref (imports-of st m)))
         (and hit (cdr hit)))
-      (for/or ([p (in-list chain)])
+      (for/or ([p (in-list levels)])
         (define full (append p ref))
-        (define known (hash-ref (state-labels st) full #f))
+        (define known (hash-ref (state-label-index st) full #f))
         (and known (prefix-of? (cdr known) scope) full))
       #f))
 
 ;; ---------------------------------------------------------------------------
 ;; 第 5 步: 输出
 ;; ---------------------------------------------------------------------------
-
-;; 地址表达式: (label+ 链 加数) / (label- 链 加数)。链藏在**操作数里面**。
-(define (label-expr? x)
-  (and (form? x)
-       (memq (car x) '(label+ label-))
-       (let ([args (cdr x)])
-         (and (memq (length args) '(1 2))
-              (path? (car args))
-              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
 
 (define (rewrite-operand st scope x)
   (define (resolve ref)
@@ -352,7 +348,11 @@
     [(label-expr? x) (cons (car x) (cons (resolve (cadr x)) (cddr x)))]
     [else x]))
 
-(define (emit annotated st)
+(define (rewrite-operands item scope st)
+  (cons (car item)
+        (for/list ([x (in-list (cdr item))]) (rewrite-operand st scope x))))
+
+(define (resolve-items annotated st)
   (define-values (rev-out _prev _here)
     (for/fold ([rev-out '()] [previous-was-label? #f] [emitted-here '()])
               ([entry (in-list annotated)])
@@ -369,10 +369,6 @@
          (values (cons (rewrite-operands it scope st) rev-out) #f emitted-here)])))
   (reverse rev-out))
 
-(define (rewrite-operands item scope st)
-  (cons (car item)
-        (for/list ([x (in-list (cdr item))]) (rewrite-operand st scope x))))
-
 ;; ---------------------------------------------------------------------------
 ;; 入口
 ;; ---------------------------------------------------------------------------
@@ -384,12 +380,12 @@
   (define st (state (make-hash) (make-hash) (make-hash)))
   (define runs
     (for/list ([in (in-list inputs)])
-      (walk (program-items in) '() st)))
-  (build-labels! runs st)
+      (annotate (as-items in) '() st)))
+  (index-labels! runs st)
   (resolve-modules! st)
-  (values (for/list ([run (in-list runs)]) (emit run st))
+  (values (for/list ([run (in-list runs)]) (resolve-items run st))
           ;; 对外保持老形状: 链 -> slot（scope 是我们内部用的）
-          (for/hash ([(chain entry) (in-hash (state-labels st))])
+          (for/hash ([(chain entry) (in-hash (state-label-index st))])
             (values chain (car entry)))))
 
 ;; flatten-program : (listof item) -> (listof item)   ; 单个输入

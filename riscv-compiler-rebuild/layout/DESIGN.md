@@ -44,8 +44,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 
 | 文件 | API |
 | --- | --- |
-| `layout.rkt` | `layout-program` `layout-problems` `program-items` `run` |
-| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload` `label-expr?` `label-expr-chain` `label-expr-addend` `la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
+| `layout.rkt` | `layout-program` `layout-problems` `as-items` `run` |
+| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload`；地址表达式 `label-expr?` / `label-expr-chain` / `label-expr-addend` 来自 `sexp.rkt` `la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
 
 ## 4. 规则
 

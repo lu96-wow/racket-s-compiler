@@ -39,7 +39,7 @@
 
 (provide (struct-out program)
          analyze
-         program-items
+         as-items
          block-head block-items make-block
          flow-succ flow-fallthrough flow-root? make-flow
          program->sexp sexp->program)
@@ -74,7 +74,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (analyze program-or-items [data-items '()])
-  (define items (program-items program-or-items))
+  (define items (as-items program-or-items))
   (define g (cfg:build-cfg items))
   (define cfg-blocks (cfg:graph-blocks g))
   (define n (vector-length cfg-blocks))
@@ -84,7 +84,7 @@
   ;; "地址被取过"包含数据侧: 数据里存了某块的地址, 就等于外部能进来。
   (define address-taken (if (cfg:graph-indirect? g)
                             (append (cfg:address-taken-paths items)
-                                    (cfg:address-taken-paths (program-items data-items)))
+                                    (cfg:address-taken-paths (as-items data-items)))
                             '()))
 
   (define blocks

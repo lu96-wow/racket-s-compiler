@@ -10,7 +10,7 @@
 | 整数值域检查 | 段 / 地址 / 偏移（属于 layout） |
 | 字符串 → UTF-8 字节 | 代码 |
 | 数组压缩 | 取地址求值（属于 encode） |
-| `label+` / `label-` 归一成地址字 | 真 reloc / 外部符号 |
+| `label+` / `label-` 归一成地址字（形状判定用 `sexp.rkt` 的 `label-expr?`） | 真 reloc / 外部符号 |
 | `(module …)` 结构壳：**递归展开内容，壳原样留着** | 给 label 加模块前缀（属于 flatten） |
 
 ## 2. 输入 / 输出
@@ -43,7 +43,7 @@ rich item                        核心 item（输出的全部词汇）
 | --- | --- | --- |
 | `expand-data` | rich item 列表 | 核心 item 列表 |
 | `expand-item` | 单条 rich item | 核心 item 列表（一条可以变多条） |
-| `program-items` | 任意输入（含旧壳） | item 列表 |
+| `as-items` | 任意输入（含旧壳） | item 列表 |
 | `width-form?` / `width-of` | 单条 item | 布尔 / 宽度（1/2/4/8） |
 
 ## 4. 规则
@@ -76,7 +76,7 @@ rich item                        核心 item（输出的全部词汇）
 - `segment` / `place` / 未知形式：直接 `error`（本层是数据入口）。
 - `(module …)`：只当结构壳递归进去，**不解释它的名字** —— 前缀是 flatten 的事。
 
-## 6. 测试（`expand-data/test.rkt`，67 条）
+## 6. 测试（`expand-data/test.rkt`，68 条）
 
 宽度/值域、地址表达式、字符串、数组压缩、`(module …)` 递归、幂等、错误路径、输出词汇封闭。
 

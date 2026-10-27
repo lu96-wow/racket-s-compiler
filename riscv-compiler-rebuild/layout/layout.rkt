@@ -31,7 +31,7 @@
                   block-head block-items flow-fallthrough))
 
 (provide layout-program
-         program-items
+         as-items
          layout-problems
          (struct-out run))
 
@@ -42,7 +42,7 @@
 
 
 (define (clauses input key)
-  (for/list ([x (in-list (program-items input))]
+  (for/list ([x (in-list (as-items input))]
              #:when (and (form? x) (eq? (car x) key)))
     x))
 
@@ -411,7 +411,7 @@
   (define-values (blocks flows) (program-parts program))
   (define matched (make-hash))             ; 用到过的 place 链
   (define code-by-seg (place-blocks blocks rules matched problem!))
-  (define data-by-seg (place-runs (split-runs (program-items data)) rules matched problem!))
+  (define data-by-seg (place-runs (split-runs (as-items data)) rules matched problem!))
 
   ;; place 里的链一次都没命中: 写错名字, 或指的是块内的位置标记(块不能拆)
   (for ([rule (in-list rules)])

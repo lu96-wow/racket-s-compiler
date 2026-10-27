@@ -44,7 +44,7 @@
          expand-item
          rewrite-tree
          rewrite-program
-         program-items
+         as-items
          ;; 验证
          pseudo-leftover?
          fully-rewritten?
@@ -251,9 +251,9 @@
 ;; 代码内部的 quote 仍然是数据, rewrite-tree 不进去。
 ;; ---------------------------------------------------------------------------
 
-;; program-items : 去掉旧壳(quote/begin), 拿到 item 列表
+;; as-items : 去掉旧壳(quote/begin), 拿到 item 列表
 
 
 ;; rewrite-program : (listof item) -> (listof item)
 (define (rewrite-program prog [tbl default-table])
-  (rewrite-tree (program-items prog) tbl))
+  (rewrite-tree (as-items prog) tbl))

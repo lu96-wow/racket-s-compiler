@@ -32,7 +32,7 @@
 
 (require (only-in "../analyze/analyze.rkt" program program? program-blocks program-flows
                   block-head block-items make-block)
-         (only-in "../layout/layout.rkt" layout-program layout-problems program-items)
+         (only-in "../layout/layout.rkt" layout-program layout-problems as-items)
          (only-in "../layout/forms.rkt" form?))
 
 (provide relax

@@ -55,13 +55,13 @@
 
 (define info-cache (make-hash))
 
-(define (instruction-info* name)
+(define (lookup-instruction name)
   (hash-ref! info-cache name
              (lambda ()
                (and (pair? (instruction-info-candidates target-extensions name))
                     (resolve-instruction-info target-extensions name)))))
 
-(define (known-instruction? name) (and (instruction-info* name) #t))
+(define (known-instruction? name) (and (lookup-instruction name) #t))
 
 (define proc-cache (make-hash))
 
@@ -144,7 +144,7 @@
 
 (define (instruction-arity name)
   (define-values (base _aq _rl) (split-aqrl name))
-  (define info (instruction-info* base))
+  (define info (lookup-instruction base))
   (and info
        (let ([plan (plan-of info)])
          (and plan (operand-arity plan)))))
@@ -163,7 +163,7 @@
 
 (define (encode-instruction name operands)
   (define-values (base aq rl) (split-aqrl name))
-  (define info (or (instruction-info* base)
+  (define info (or (lookup-instruction base)
                    (error 'encode-instruction "unknown instruction: ~a" name)))
   (define plan (or (plan-of info)
                    (error 'encode-instruction

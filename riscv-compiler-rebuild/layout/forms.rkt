@@ -78,16 +78,6 @@
        (memq (value-width x) '(1 2 4 8))
        #t))
 
-;; 值里的地址表达式: (label+ 链 加数)。expand-data 会归一成这个形状(加数一定在)。
-(define label-expr-chain cadr)
-(define label-expr-addend caddr)
-
-(define (label-expr? x)
-  (and (form? x) (eq? (car x) 'label+) (= 3 (length x))
-       (path? (label-expr-chain x))
-       (exact-integer? (label-expr-addend x))
-       #t))
-
 ;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
 (define (compressed-form? x)
   (and (form? x) (symbol? (car x))

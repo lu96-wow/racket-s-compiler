@@ -40,9 +40,9 @@ layout  list ┘                items          program    program  layout   byte
 | stage | 文件 | 一句话 | 读 | 写 | 细节 |
 | --- | --- | --- | --- | --- | --- |
 | `expand-data` | `expand-data/expand.rkt` | 数据定义 | `rich-data` | `data-items` | [`expand-data/DESIGN.md`](expand-data/DESIGN.md) |
-| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `program-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
-| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `program-items` | `program-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
-| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `program-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
+| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `as-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
+| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `as-items` | `as-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
+| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `as-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
 | `dce` | `dce/dce.rkt` | 死代码消除 | `program` | `program` | [`dce/DESIGN.md`](dce/DESIGN.md) |
 | `layout` | `layout/forms.rkt` `layout/layout.rkt` | 布局计算 | `program` `data-items` `layout-spec` | `layout` | [`layout/DESIGN.md`](layout/DESIGN.md) |
 | `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | 同 `layout` | `layout` | [`relax/DESIGN.md`](relax/DESIGN.md) |
@@ -55,11 +55,11 @@ layout  list ┘                items          program    program  layout   byte
 
 | 文件 | 内容 | 谁用 |
 | --- | --- | --- |
-| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `program-items`（旧壳 `quote`/`begin` 也认） | 除了 flow 之外的所有层 |
+| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）`label-expr?` / `label-expr-chain` / `label-expr-addend` / `normalize-label-expr`（地址表达式 `(label+ 链 加数)`） | 除了 flow 之外的所有层 |
 | `target.rkt` | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes` | layout（XLEN）、encode（端序/填充/扩展集） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
-所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `program-items` 而冲突。
+所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `as-items` 而冲突。
 
 两个外部包：
 
@@ -140,7 +140,7 @@ layout  list ┘                items          program    program  layout   byte
 | `(bytes …)` `(fill n b)` `(align n)` | layout（尺寸/类别）；`fill` 归 layout，expand-data 是生产者 | expand-data / 人 | layout / encode |
 | `(pad n)` | layout 把 `(align n)` 换算成的事实 | layout | encode |
 | `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 定端序落字节 | expand-data | analyze / layout / encode |
-| `(label+ 链 加数)` | expand-data 归一；analyze 当取地址；layout 解析范围；encode 落值 | 人 / expand-data | analyze / layout / encode |
+| `(label+ 链 加数)` | `sexp.rkt` 定形状（`label-expr?`）；expand-data 归一；analyze 当取地址；layout 解析范围；encode 落值 | 人 / expand-data | expand-data / flatten / analyze / layout / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |
 | `(segments …)` `(place …)` | layout | 人 | layout |
 | `(offset k item)` `(symbols …)` `(problems …)` | layout | layout | relax / encode / 人 |
@@ -183,8 +183,8 @@ segment d start=#x200000 size=11
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
-- 测试条数：expand-data 67 / flatten 47 / expand-pseudo 119 / analyze 176 / dce 46 /
-  layout 176 / relax 30 / encode 68 / flow 20。
+- 测试条数：expand-data 68 / flatten 65 / expand-pseudo 119 / analyze 176 / dce 46 /
+  layout 176 / relax 30 / encode 68 / flow 24。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
 

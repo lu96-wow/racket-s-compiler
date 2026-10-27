@@ -9,13 +9,17 @@
 ;;;
 ;;; 各层可以原样 re-provide 这里的绑定, 于是
 ;;;   (require "analyze/analyze.rkt" "layout/layout.rkt")
-;;; 不会再因为两边都 provide program-items 而冲突 —— 它们是同一个绑定。
+;;; 不会再因为两边都 provide as-items 而冲突 —— 它们是同一个绑定。
 
 (provide form?
          name?
          path?
          normalize-path
-         program-items)
+         as-items
+         label-expr?
+         label-expr-chain
+         label-expr-addend
+         normalize-label-expr)
 
 ;; 真列表(代码/数据形式的形状)。'(a . b) 和 '() 都不是 form。
 (define (form? x) (and (pair? x) (list? x)))
@@ -33,9 +37,32 @@
     [(name? x) (list x)]
     [else #f]))
 
+;; 地址表达式: 数据里的"符号 + 加数"。 (label+ 链) / (label+ 链 加数) / (label- 链 加数)
+;; 它出现在 item 的**值**里（(value w (label+ 链 0)) 或 rich 的 (b64 (label+ 链 0))），
+;; 所以判"这个操作数是不是链"是不够的 —— expand-data / flatten / layout 都靠这三个函数。
+(define (label-expr? x)
+  (and (form? x)
+       (memq (car x) '(label+ label-))
+       (let ([args (cdr x)])
+         (and (memq (length args) '(1 2))
+              (path? (car args))
+              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
+
+(define (label-expr-chain x) (cadr x))
+
+;; (label- 链 n) 的加数是 -n；加数省略就是 0
+(define (label-expr-addend x)
+  (define a (if (= 3 (length x)) (caddr x) 0))
+  (if (eq? (car x) 'label-) (- a) a))
+
+;; 归一成 (label+ 链 加数): 加数一定写出来, 下游只需认这一种形状
+(define (normalize-label-expr x)
+  (list 'label+ (label-expr-chain x) (label-expr-addend x)))
+
 ;; 任意输入 -> item 列表。宽容收旧壳 (quote …) / (begin …)，单条 item 也收。
 ;; 出口一律 plain list。
-(define (program-items prog)
+;; 名字不叫 program-items: 数据、layout 输入也走这里, 它跟"程序"无关。
+(define (as-items prog)
   (define body
     (cond
       [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))

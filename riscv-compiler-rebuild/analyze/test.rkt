@@ -322,13 +322,13 @@
 ;; 程序形状 / 打印 / 读字面量
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (program-items '((label a) (add t0 t0 t0)))
+(check-equal? (as-items '((label a) (add t0 t0 t0)))
               '((label a) (add t0 t0 t0)))
-(check-equal? (program-items '(quote ((label a) (add t0 t0 t0))))
+(check-equal? (as-items '(quote ((label a) (add t0 t0 t0))))
               '((label a) (add t0 t0 t0)))
-(check-equal? (program-items '(begin (label a) (add t0 t0 t0)))
+(check-equal? (as-items '(begin (label a) (add t0 t0 t0)))
               '((label a) (add t0 t0 t0)))
-(check-equal? (program-items '(add t0 t0 t0)) '((add t0 t0 t0)))
+(check-equal? (as-items '(add t0 t0 t0)) '((add t0 t0 t0)))
 
 ;; blocks <-> sexp 往返
 

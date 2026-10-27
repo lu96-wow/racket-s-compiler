@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `rich-data` | 人写的 rich 数据（seed） | — |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
-| `program-items` | 扁平程序 item（可含 `(module …)`） | seed / `flatten` / `expand-pseudo` |
+| `as-items` | 扁平程序 item（可含 `(module …)`） | seed / `flatten` / `expand-pseudo` |
 | `names` | `flatten` 建的名字表 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
 | `layout` | 布局产物 | `layout` / `relax` |
@@ -40,9 +40,9 @@
 | stage | requires | provides |
 | --- | --- | --- |
 | `expand-data` | `rich-data` | `data-items` |
-| `flatten` | `program-items` `data-items` | `program-items` `data-items` `names`（模块系统：provide/require 在这里解析） |
-| `expand-pseudo` | `program-items` | `program-items` |
-| `analyze` | `program-items` `data-items` | `program` |
+| `flatten` | `as-items` `data-items` | `as-items` `data-items` `names`（模块系统：provide/require 在这里解析） |
+| `expand-pseudo` | `as-items` | `as-items` |
+| `analyze` | `as-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
 | `layout` | `program` `data-items` `layout-spec` | `layout` |
 | `relax` | `program` `data-items` `layout-spec` | `layout` |
@@ -78,7 +78,7 @@
 
 ## 6. 测试与 demo
 
-`flow/test.rkt`（20 条）：阶段表、默认流字节、可选层（关掉 `dce` 后死块留下）、
+`flow/test.rkt`（24 条）：阶段表、默认流字节、可选层（关掉 `dce` 后死块留下）、
 顺序敏感（先 `analyze` 后 `expand-pseudo` 会失败）、依赖缺失与未知层名的报错、
 平层重复/互换。
 
