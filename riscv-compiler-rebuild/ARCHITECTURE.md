@@ -6,8 +6,8 @@
 source(多输入)                  │ 每层都是纯函数, 可单独测
 ──────────────                  │
 program list ┐                  ↓
-data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ L6 松弛 ─→ [L7 编码]
-layout  list ┘                      program       program         (layout)     (layout)     (未做)
+data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ L6 松弛 ─→ L7 编码
+layout  list ┘                      program       program         (layout)     (layout)     (bytes)
 ```
 
 D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**核心 item**：
@@ -26,6 +26,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | L1 / L2 | `module`、`label` 链、替换表里的伪指令名 | 透传 |
 | L3 / L4 | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
 | L5 | 数据 `label` / `bytes` / `fill` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
+| L7 | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）+ 目标端序 | 交给 `riscv-asm` 编码，越界由它报 |
 
 推论（也是本仓的硬规矩）：
 
@@ -40,7 +41,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 `li` / `la` 是**特殊伪指令**，不进 L2 的替换表，源样一路透传到 L7：
 它们要「最终地址」才能展开（`la` 要 delta、`li` 要常量），所以在 L5 之后由 L7
-调用 `../riscv-help` 展开；L5 只为它们预留字节。
+调用 `../riscv-help` 展开。**这两个还没做**（L7 Phase 2），尺寸契约见 L7 一节。
 
 ## 1. 关键 API
 
@@ -168,30 +169,50 @@ L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 i
 那属于「动态内存布局 / 寄存器使用」那一层（**未实现**），本层只把它留在
 `scratch-hole` problem 里当交接点。升到这两档就会产生新的空槽，然后循环停下。
 
-### L7 `encode`（未做）
+### L7 `L7/target.rkt` `L7/insn.rkt` `L7/encode.rkt` — s-exp → 字节（已做）
 
-L7 还没建目录，先把契约写死在这里（编号以本文为准）。
+| 文件 | 职责 |
+| --- | --- |
+| `L7/target.rkt` | 目标常量：XLEN、**端序（全流水线唯一一处）**、启用的扩展集合、`integer->bytes` |
+| `L7/insn.rkt` | 助记符 → 指令字：操作数顺序表 + `aq`/`rl` 后缀 + 调 riscv-asm |
+| `L7/encode.rkt` | `layout -> (build …)`：逐 item 出字节、算对齐、解析地址、拒绝有 problem 的 layout |
 
-| 层 | 输入 | 输出 | 职责 |
-| --- | --- | --- | --- |
-| L6 relax | `program` + data + layout 输入 | layout | 消费 `needs-far`：超范围 item 升成远形式；自己驱动 L5 重排到不动点（**空槽不填**） |
-| L7 encode | layout | `(build ...)` | `li`/`la` 展开（riscv-help）、远形式展开、指令编码、立即数范围检查、**`(value w …)` 落字节（端序在这一步定）**、`(label+ 链 加数)` 求值、有致命 problem 就拒绝出 `(build ...)` |
+| API | 输入 | 输出 |
+| --- | --- | --- |
+| `encode-layout` | layout（L6 产物） | `(build (segment (name …) (start …) (size …) (bytes #vu8…)) …)` |
+| `encode-instruction` | 助记符 + 操作数（寄存器名/整数） | `(values 指令字 字节数)` |
+| `instruction-arity` / `known-instruction?` | 助记符 | 操作数个数 / 布尔 |
+| `split-aqrl` | 助记符 | `(values 基名 aq rl)` |
+| `integer->bytes` | 宽度 + 整数 | 字节列表（按目标端序） |
 
-**为什么 `li` / `la` 在 L7 才展开**
+**编码本身不在这里**：`riscv-asm` 生成的 `rebuilt` 模块里每条指令就是
+`(lambda (操作数 …) 指令字)`，位域检查（立即数范围、压缩寄存器约束、aq/rl 值域）也都在那里。
+L7 只补 riscv-asm 不负责的两件：
 
-- `(la rd 链)` 要 `delta = 符号地址 − 当前 item 地址`，两个地址都只有 L5 之后才有。
-  L7 用 `la-pcrel`（已知 delta）或 `load-pcrel`（自动选近/远形式，远形式自带 scratch）。
-  短形式不需要 scratch，所以 `la` 的 scratch 是**可选槽**：`(la rd 链)` 由 L7 自己挑，
-  `(la rd tmp 链)` 显式指定（给以后的 frame / regalloc 用）。两者尺寸相同，都不报 `scratch-hole`
-  （只有 `branch-indirect` 那种**必填却缺失**的才算空槽；`jump-far` 要不要 scratch
-  取决于它的 link：`(jump-far x0 L)` 缺 base 要报，`(jump-far ra L)` 自己就是 base）。
-  远形式的寄存器全部显式，见 `L5/DESIGN.md`「远形式：寄存器全部显式」。
-- `(li rd 常量)` 与布局无关，但它和 `la` 是同一类「一条源 item 变成多条指令」的伪指令，
-  放在同一处展开；用 `expand-li`，字节数可以问 `li-size`。
-- 两者的展开字节数都**不是常量**（`li` 看值的范围，`la` 看距离），所以 L5 只能按**上界预留**。
-  L7 展开后若实际尺寸 ≠ 预留，必须回到 L5 重排，迭代到不动点（relaxation）。
-- L2/L3/L4 只把 `li` / `la` 当普通 item 透传；L5 只量尺寸、不解释。
-  谁都不许在中途把它们改成 `lui`/`addi`/`auipc`，否则 L7 的地址就算错了。
+1. **操作数顺序**。riscv-opcodes 的声明顺序（= rebuilt 函数参数顺序）不是汇编写法：
+   分支/存储/原子把合并后的立即数放在第一位（`beq bimm12 rs1 rs2`）。
+   所以 `L7/insn.rkt` 有一张"调用位置 ← s-exp 位置"的表，
+   键是操作数名列表，32 位 22 类、16 位 25 类。**这是本层唯一的公开接口约定**。
+2. **`aq` / `rl`**。riscv-opcodes 里是两个 0/1 操作数，gas 里是助记符后缀。
+   只认规范写法 `.aq` / `.rl` / `.aqrl`（`.rlaq` 是拼错 → 未知助记符）。
+
+字节规则：
+
+| item | 字节 |
+| --- | --- |
+| `label` | 无 |
+| `align n` | 补到**绝对地址**对齐；code 段补 `nop`（会顺着执行），其余补 0 |
+| `bytes` / `fill` | 原样 |
+| `value w 值` | `w` 字节按目标端序；值是整数或 `(label+ 链 加数)`（用符号表求值） |
+| 真指令 | `riscv-asm` 编码 |
+| 远形式 | `riscv-help` 的 `branch-long` / `jump-auipc-jalr` 展开后再编码 |
+
+每个 item 的 `(offset k …)` 是**断言**：写出的字节数必须正好让它落在 `k`，
+否则说明 L5 与 L7 对尺寸的理解不一致，直接报错。layout 里还有任何 problem 就拒绝出产物。
+
+**还没做（Phase 2）**：`li` / `la`。它们尺寸不固定（`li` 4…32、`la` 8…40），
+需要先定尺寸契约（`li` 其实可以精确算，`la` 要一个"只增不减"的重排循环），
+所以现在遇到它们直接报"未实现"。
 
 ## 2. IO 形状
 
@@ -243,7 +264,7 @@ L7 还没建目录，先把契约写死在这里（编号以本文为准）。
 | 分支松弛 / 远跳转 | L6（`relax`；只消费 `needs-far`） |
 | `li` / `la` 展开 | L7（`../riscv-help`；`la` 还要 L5 的符号表） |
 | 端序 / `value` 落字节 | L7（全流水线只有这一处写端序） |
-| 产物 | L7（未做） |
+| 产物（字节） | L7（`encode-layout`） |
 | 单层测试 | 每层（纯函数；L3 起 IR 是 block list） |
 
 ## 5. demo 的约定
@@ -259,6 +280,7 @@ L7 还没建目录，先把契约写死在这里（编号以本文为准）。
 | `L4/demo.rkt` | block list（用 `sexp->program` 写字面量） | block list |
 | `L5/demo.rkt` | block list + 数据 item + layout 输入 | `((segments …) (symbols …) (problems …))` |
 | `L6/demo.rkt` | block list + layout 输入 | 同样的 layout，但远分支已经升好形式（空槽留着） |
+| `L7/demo.rkt` | block list + 数据 + layout 输入 | `(build …)`：每个段一坨字节（带 hexdump） |
 
 层与层之间不互相调用；要看整条链就按顺序手动串。
 
@@ -288,6 +310,7 @@ L7 只负责「把地址算好、传进去、把结果接回来」。
 | L5 | 符号重名不报（`collect-symbols` 用 `assoc` 取第一个） | 待改 |
 | L5 | 只报 `broken-fallthrough`，不补跳转 | 修复属于 L6/L7 |
 | L6 | 只做"升形式"；补 `fallthrough` 跳转、trampoline、块重排没做 | 未做 |
+| L7 | `li` / `la` 没做（尺寸契约未定）；遇到直接报"未实现" | Phase 2 |
 | 空槽（scratch 寄存器） | 谁填、填哪个寄存器 = 动态内存布局 / 寄存器使用 | **留空，等待实现** |
 | L6 | 跨段到冷段没有 trampoline（LLVM 那条路），一律就地升形式 | 按需 |
 | L7 | 目录不存在：layout 之后没有消费者；`li`/`la` 展开、编码表、立即数范围检查都在这里 | 未做 |
