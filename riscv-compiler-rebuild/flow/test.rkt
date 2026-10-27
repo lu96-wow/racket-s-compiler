@@ -169,4 +169,48 @@
                'c)
               (bytes-of-seg build 'c))
 
+;; ---------------------------------------------------------------------------
+;; 多模块: 程序和**数据**都用 module + label
+;;   expand-data 只递归展开数据壳(不动名字), flatten 拆壳加前缀
+;; ---------------------------------------------------------------------------
+
+(define mmod-src
+  '((module prog
+      (label main)
+      (la t0 (data d table))      ; 跨模块引用要写完整链
+      (ld t1 t0 0)
+      (jalr ra t1 0)
+      (jalr x0 ra 0)
+      (label f) (addi a0 a0 1) (jalr x0 ra 0))))
+
+(define mmod-rich
+  '((module data
+      (label d table)
+      (b64 (label+ (prog f) 0))   ; 数据里指向程序模块的函数
+      (utf-stringz "hi"))))
+
+(define mmod-spec
+  '((segments (segment c code #x100000 #x100FFF 16)
+              (segment d data #x200000 #x200FFF 8))
+    (place c (prog main) (prog f))
+    (place d (data d table))))
+
+(define mmod (run-flow default-flow
+                       (list (cons 'rich-data mmod-rich)
+                             (cons 'program-items mmod-src)
+                             (cons 'layout-spec mmod-spec))))
+
+;; 名字表里三条链都带了模块前缀
+(check-equal? (sort (hash-keys (flow-value mmod 'names)) string<? #:key ~a)
+              '((data d table) (prog f) (prog main)))
+
+;; 数据里的地址字 = (prog f) 的绝对地址 0x100014, 小端
+(check-equal? (bytes-of-seg (flow-value mmod 'build) 'd)
+              (append '(#x14 #x00 #x10 #x00 0 0 0 0)   ; (value 8 (label+ (prog f) 0))
+                      '(#x68 #x69 0)))                 ; "hi\0"
+
+;; 程序里的 la 指向 (data d table)
+(check-equal? (length (bytes-of-seg (flow-value mmod 'build) 'c)) 28)
+(check-equal? (cdr (assoc 'problems (flow-value mmod 'layout))) '())
+
 (displayln "flow tests: ok")

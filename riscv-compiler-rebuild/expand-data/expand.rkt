@@ -57,6 +57,10 @@
 (define (label-form? x)
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
 
+;; (module 名 item...) 是**结构壳**: 名字前缀是 flatten 的事, 本层不解释它,
+;; 只是递归进去把数据展开, 壳原样留着。
+(define (module-form? x) (and (form? x) (eq? (car x) 'module)))
+
 (define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
 
 (define (bytes-form? x)
@@ -205,6 +209,13 @@
 
 (define (expand-item it)
   (cond
+    [(module-form? it)
+     (unless (and (>= (length it) 2) (name? (cadr it)))
+       (error 'expand-data "module needs a name: ~e" it))
+     (list (cons 'module
+                 (cons (cadr it)
+                       (append* (for/list ([sub (in-list (cddr it))])
+                                  (expand-item sub))))))]
     [(label-form? it) (list it)]
     [(bytes-form? it) (list it)]
     [(fill-item? it) (list it)]

@@ -126,7 +126,7 @@ layout  list ┘                items          program    program  layout   byte
 
 | 形式 | 谁定义 | 谁产生 | 谁消费 |
 | --- | --- | --- | --- |
-| `(module 名 item...)` | flatten | 人 | flatten |
+| `(module 名 item...)` | flatten 定名字；expand-data 只把**数据侧**的壳递归展开、壳原样留着 | 人 | expand-data / flatten |
 | `(label 链...)` | flatten 定链 / analyze 定块头 / layout 定偏移 | flatten / layout | 全部 |
 | 伪指令 `(load-32 …)` `(move …)` `(ble …)` | expand-pseudo 的表 | 人 | expand-pseudo |
 | 真指令 `(lwu …)` `(bge …)` `(jalr …)` `(c.j …)` | expand-pseudo 产出；analyze 分类；layout 定尺寸；encode 编码 | expand-pseudo / 人 | analyze / dce / layout / relax / encode |
@@ -180,7 +180,7 @@ segment d start=#x200000 size=11
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
-- 测试条数：expand-data 62 / flatten 47 / expand-pseudo 119 / analyze 176 / dce 46 /
+- 测试条数：expand-data 67 / flatten 47 / expand-pseudo 119 / analyze 176 / dce 46 /
   layout 176 / relax 30 / encode 68 / flow 20。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。

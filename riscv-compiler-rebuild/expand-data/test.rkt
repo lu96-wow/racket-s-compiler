@@ -88,6 +88,25 @@
               '((value 4 1) (value 4 (label+ (d t) 4))))
 
 ;; ---------------------------------------------------------------------------
+;; (module …) 是结构壳: 递归展开内容, 名字前缀留给 flatten
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((module m (label d t) (b16 258))))
+              '((module m (label d t) (value 2 258))))
+;; 嵌套
+(check-equal? (ex '((module a (module b (b8 1)))))
+              '((module a (module b (value 1 1)))))
+;; 一条 rich item 展开成多条也要铺在壳里(数组)
+(check-equal? (ex '((module m (label d t) (b16-array 2 1 2))))
+              '((module m (label d t) (value 2 1) (value 2 2))))
+;; 壳里的地址字照常归一
+(check-equal? (ex '((module m (b64 (label- (d t) 8)))))
+              '((module m (value 8 (label+ (d t) -8)))))
+;; 壳里出现不认识的形式 -> 照样报错
+(check-exn exn:fail? (lambda () (ex '((module m (word 1))))))
+(check-exn exn:fail? (lambda () (ex '((module)))))          ; 没名字
+
+;; ---------------------------------------------------------------------------
 ;; 核心形式: 透传 / 幂等
 ;; ---------------------------------------------------------------------------
 
@@ -101,11 +120,10 @@
 (check-equal? (ex '(begin (b8 1))) '((value 1 1)))
 (check-equal? (ex '()) '())
 
-;; 词汇封闭: 段/放置/模块/未知形式都不是本层的词汇
+;; 词汇封闭: 段/放置/未知形式都不是本层的词汇
 (check-exn exn:fail? (lambda () (ex '((segment d data 0 1 1)))))
 (check-exn exn:fail? (lambda () (ex '((segments (segment d data 0 1 1))))))
 (check-exn exn:fail? (lambda () (ex '((place d (d t))))))
-(check-exn exn:fail? (lambda () (ex '((module m (label d t))))))
 (check-exn exn:fail? (lambda () (ex '((word 1)))))
 (check-exn exn:fail? (lambda () (ex '((b8)))))
 (check-exn exn:fail? (lambda () (ex '((bytes 999)))))
