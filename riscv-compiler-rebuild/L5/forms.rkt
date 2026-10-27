@@ -9,7 +9,10 @@
 
 ;; "是不是零寄存器" 只有一个来源: L3/insn.rkt (x0 / zero / 0)。
 ;; 布局层需要它, 因为 jump-far 要不要 scratch 取决于它的 link。
-(require (only-in "../L3/insn.rkt" zero-register?))
+(require (only-in "../L3/insn.rkt" zero-register?)
+         ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
+         ;; 不是上界。li-size 默认 rv64, 和 L7/target.rkt 一致。
+         (only-in "../../riscv-help/main.rkt" li-size))
 
 (provide form? name? path? normalize-path
          label-form? align-form? bytes-form? fill-form? value-form? compressed-form?
@@ -138,7 +141,8 @@
      (case (car x)
        [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
        [else 4])]
-    [(eq? (car x) 'la) 8]             ; (la rd 链) 和 (la rd tmp 链) 同尺寸
+    [(eq? (car x) 'li) (li-size (caddr x))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
+    [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 L5 报 la-too-far
     [else 4]))
 
 ;; ---------------------------------------------------------------------------

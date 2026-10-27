@@ -41,7 +41,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 `li` / `la` 是**特殊伪指令**，不进 L2 的替换表，源样一路透传到 L7：
 它们要「最终地址」才能展开（`la` 要 delta、`li` 要常量），所以在 L5 之后由 L7
-调用 `../riscv-help` 展开。**这两个还没做**（L7 Phase 2），尺寸契约见 L7 一节。
+调用 `../riscv-help` 展开。两者的尺寸契约见 L7 一节（`li` 精确、`la` 近形式 8 字节）。
 
 ## 1. 关键 API
 
@@ -210,9 +210,13 @@ L7 只补 riscv-asm 不负责的两件：
 每个 item 的 `(offset k …)` 是**断言**：写出的字节数必须正好让它落在 `k`，
 否则说明 L5 与 L7 对尺寸的理解不一致，直接报错。layout 里还有任何 problem 就拒绝出产物。
 
-**还没做（Phase 2）**：`li` / `la`。它们尺寸不固定（`li` 4…32、`la` 8…40），
-需要先定尺寸契约（`li` 其实可以精确算，`la` 要一个"只增不减"的重排循环），
-所以现在遇到它们直接报"未实现"。
+**`li` / `la`（Phase 2 已完成近形式）**：
+
+- `(li rd 常量)`：尺寸由常量**精确**决定（`li-size`，4…32），L5 的 `item-size` 直接调它，
+  L7 用同一个展开器，所以两边天然一致。
+- `(la rd [tmp] 链)`：近形式 `auipc+addi` = 8 字节。L5 用 `fits-auipc-pair?` 检查
+  够不够得着，够不着报 `la-too-far`。**远形式需要 scratch 寄存器**，那属于
+  「动态内存布局 / 寄存器使用」那一层（未实现），所以现在只报问题、不生成。
 
 ## 2. IO 形状
 
@@ -236,8 +240,8 @@ L7 只补 riscv-asm 不负责的两件：
 | 伪指令 `(load-32 …)` `(l8 …)` `(move …)` `(ble …)` | 源 → L2 前 | **L2** 的表 | 人 | L2 |
 | 真指令 `(lwu …)` `(bge …)` `(jal …)` `(jalr …)` `(c.beqz …)` `(c.j …)` | L2 起 | **L2** 产出；**L3** 分类；**L5** 定尺寸 | L2 | L3 / L5 |
 | 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
-| `(li rd 常量)` | 源 → L7 | **L7**（`riscv-help` 的 `expand-li` / `li-size`） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
-| `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
+| `(li rd 常量)` | 源 → L7 | **L5** 用 `riscv-help` 的 `li-size` 精确量尺寸；**L7** 用 `li` 展开 | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
+| `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L5** 量 8 字节 + `fits-auipc-pair?` 检查；**L7** 用 `load-pcrel` 展开 | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(bytes …)` `(fill n b)` `(align n)` | D1 输出 / 数据输入 | **L5**（尺寸 / padding / kind）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 |
 | `(value 宽度 值)` | D1 输出 | **D1** 出宽度+值；**L5** 量尺寸并查地址范围；**L7** 定端序并落字节 | D1 | L3（取地址）/ L5 / L7 |
 | `(label+ 链 加数)` | `value` 的值 / 源 | **D1** 归一形状；**L3** 当取地址；**L5** 解析范围；**L7** 落值 | 人 / D1 | L3 / L5 / L7 |
@@ -310,7 +314,7 @@ L7 只负责「把地址算好、传进去、把结果接回来」。
 | L5 | 符号重名不报（`collect-symbols` 用 `assoc` 取第一个） | 待改 |
 | L5 | 只报 `broken-fallthrough`，不补跳转 | 修复属于 L6/L7 |
 | L6 | 只做"升形式"；补 `fallthrough` 跳转、trampoline、块重排没做 | 未做 |
-| L7 | `li` / `la` 没做（尺寸契约未定）；遇到直接报"未实现" | Phase 2 |
+| L7 | `la` 的远形式（超 ±2GB）需要 scratch 寄存器 → 属于未实现的"寄存器使用"层 | 留空 |
 | 空槽（scratch 寄存器） | 谁填、填哪个寄存器 = 动态内存布局 / 寄存器使用 | **留空，等待实现** |
 | L6 | 跨段到冷段没有 trampoline（LLVM 那条路），一律就地升形式 | 按需 |
 | L7 | 目录不存在：layout 之后没有消费者；`li`/`la` 展开、编码表、立即数范围检查都在这里 | 未做 |

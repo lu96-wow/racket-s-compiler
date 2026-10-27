@@ -23,6 +23,8 @@
 ;;;   - 放完检查 fallthrough: 顺序后继必须紧挨在后面, 否则 broken-fallthrough
 
 (require "forms.rkt"
+         ;; la 的近形式够不够得着: 和 L7 用同一个判据
+         (only-in "../../riscv-help/main.rkt" fits-auipc-pair?)
          (only-in "../L3/analyze.rkt" program? program-blocks program-flows
                   block-head block-items flow-fallthrough))
 
@@ -306,7 +308,7 @@
 (define (symbol-row symbols path) (and path (assoc path symbols)))
 
 ;; ---------------------------------------------------------------------------
-;; 校验: 目标存在 / 距离够 / scratch 空槽 / 地址字能放进宽度
+;; 校验: 目标存在 / 距离够 / scratch 空槽 / 地址字能放进宽度 / la 够得着
 ;; ---------------------------------------------------------------------------
 
 (define (verify measured-segs symbols problem!)
@@ -330,6 +332,17 @@
              (problem! `(needs-far ,(segment-name seg) ,off ,it ,d ,origin)))]))
       (when (scratch-hole? it)
         (problem! `(scratch-hole ,(segment-name seg) ,off ,it ,origin)))
+      ;; (la rd [tmp] 链): 8 字节的 auipc+addi 够不够得着?
+      ;; 远形式需要 scratch 寄存器, 那属于"动态内存布局 / 寄存器使用"那一层(未实现),
+      ;; 所以这里只报问题, 不做远形式。
+      (when (la-form? it)
+        (define row (symbol-row symbols (normalize-path (last it))))
+        (cond
+          [(not row) (problem! `(undefined-target ,(segment-name seg) ,off ,it))]
+          [else
+           (define d (- (cadddr row) here))
+           (unless (fits-auipc-pair? d 'rv64)
+             (problem! `(la-too-far ,(segment-name seg) ,off ,it ,d ,origin)))]))
       ;; 数据里的地址字: 解析出绝对地址, 查链在不在 + 能不能放进 宽度 个字节。
       ;; 整数不用查(D1 已经按宽度查过值域); 只有 label+ 需要地址才知道。
       (when (value-form? it)

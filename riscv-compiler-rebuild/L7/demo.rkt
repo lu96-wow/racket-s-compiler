@@ -9,11 +9,14 @@
 (require "encode.rkt"
          "../L6/relax.rkt"
          (only-in "../L3/analyze.rkt" analyze))
-;; 注意: (la rd 链) 还没实现(L7 Phase 2), 见到会报"未实现"。
+;; li / la 都走 riscv-help 的展开器:
+;;   (li rd 常量)  尺寸由常量精确决定(4/8/12/16…/32), L5 已经量好
+;;   (la rd 链)    近形式 = auipc+addi, 8 字节; 够不着由 L5 报 la-too-far
 
-;; 只用 Phase 1 支持的东西: 去掉 la 那一行
 (define prog1
   '((label main)
+    (li t0 #x12345678)               ; 8 字节: lui + addi
+    (la t3 (data1 table))            ; 8 字节: auipc + addi
     (addi a0 a0 1)
     (beq t0 t1 (cold))
     (jalr x0 ra 0)

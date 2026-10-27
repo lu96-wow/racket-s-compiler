@@ -189,13 +189,44 @@
                               '((segments (segment s code #x1000 #x1FFF 4))
                                 (place s (main)))))))
 
-;; li / la 还没做
-(check-exn exn:fail?
-           (lambda ()
-             (encode-layout
-              (layout-program (eliminate-dead (analyze '((label main) (li t0 1))))
-                              '()
-                              '((segments (segment s code #x1000 #x1FFF 4))
-                                (place s (main)))))))
+;; ---------------------------------------------------------------------------
+;; li / la
+;; ---------------------------------------------------------------------------
+
+(define (encode-one-layout src data layout)
+  (encode-layout (layout-program (eliminate-dead (analyze src)) data layout)))
+
+;; li 的尺寸由常量决定(4/8/16…), 编码就是 riscv-help 的展开
+(check-equal? (build-bytes (encode-one-layout '((label main) (li t0 0)) '()
+                                             '((segments (segment s code #x1000 #x1FFF 4))
+                                               (place s (main))))
+                             's)
+              '(#x93 #x02 #x00 #x00))                       ; addi t0, x0, 0
+(check-equal? (build-bytes (encode-one-layout '((label main) (li t0 #x12345678)) '()
+                                             '((segments (segment s code #x1000 #x1FFF 4))
+                                               (place s (main))))
+                             's)
+              (append '(#xB7 #x52 #x34 #x12)                ; lui t0, 74565
+                      '(#x93 #x82 #x82 #x67)))              ; addi t0, t0, 1656
+
+;; la: 近形式 = auipc + addi; 0x1000 -> 0x8000, delta = 0x7000
+(check-equal? (build-bytes (encode-one-layout '((label main) (la t0 (d t)) (ret))
+                                             '((label d t) (bytes 1))
+                                             '((segments (segment s code #x1000 #x1FFF 4)
+                                                         (segment d data #x8000 #x8FFF 8))
+                                               (place s (main)) (place d (d t))))
+                             's)
+              (append '(#x97 #x72 #x00 #x00)                ; auipc t0, 7
+                      '(#x93 #x82 #x02 #x00)                ; addi t0, t0, 0
+                      '(#x67 #x80 #x00 #x00)))              ; ret
+
+;; la 的显式 scratch 在近形式里用不上, 尺寸/编码都不变
+(check-equal? (build-bytes (encode-one-layout '((label main) (la t0 t2 (d t)))
+                                             '((label d t) (bytes 1))
+                                             '((segments (segment s code #x1000 #x1FFF 4)
+                                                         (segment d data #x8000 #x8FFF 8))
+                                               (place s (main)) (place d (d t))))
+                             's)
+              '(#x97 #x72 #x00 #x00 #x93 #x82 #x02 #x00))
 
 (displayln "L7 tests: ok")

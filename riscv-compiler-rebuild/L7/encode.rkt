@@ -26,7 +26,8 @@
 (require "../L5/layout.rkt"
          "../L5/forms.rkt"
          (only-in "../../riscv-help/main.rkt"
-                  branch-long jump-jal jump-auipc-jalr zero-register?)
+                  branch-long jump-jal jump-auipc-jalr zero-register?
+                  li load-pcrel)
          (only-in "../../riscv-asm/base/register.rkt" register->number register-abi-name)
          "target.rkt"
          "insn.rkt")
@@ -126,7 +127,12 @@
     [(eq? (car it) 'branch-far)      (encode-all (encode-far-branch it here symbols))]
     [(eq? (car it) 'branch-indirect) (encode-all (encode-indirect-branch it here symbols))]
     [(eq? (car it) 'jump-far)        (encode-all (encode-far-jump it here symbols))]
-    [(memq (car it) '(li la)) (error 'encode "~a 还没实现(L7 Phase 2)" (car it))]
+    ;; (li rd 常量): 尺寸由 L5 用 li-size 精确算过, 这里用同一个展开器
+    [(eq? (car it) 'li) (encode-all (li (cadr it) (caddr it)))]
+    ;; (la rd [tmp] 链): 近形式 8 字节; L5 已经保证够得着, 所以不需要 scratch
+    [(eq? (car it) 'la)
+     (define d (- (symbol-address symbols (normalize-path (last it)) 0) here))
+     (encode-all (load-pcrel (cadr it) d))]
     [else (list (encode-one (car it) (operands-at it here symbols)))]))
 
 ;; ---------------------------------------------------------------------------

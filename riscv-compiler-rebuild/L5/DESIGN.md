@@ -78,7 +78,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
   指向块内位置标记的链会报 `unmatched-place`（块不能拆）。
 - **region**：命中的块是锚点；之后直到下一个锚点的块跟随它（没有身份的东西只能跟着有身份的前驱）。
 - **顺序**：段内按源顺序（程序先、数据后），`place` 行书写顺序无关。
-- **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。L5 只报，不补；补跳转属于 L6/L7 的修复阶段（未实现）。
+- **fallthrough 检查**：对每个 `fallthrough = j` 的块 i，块 j 必须是 i 在同一段里的**物理下一块**；否则 `broken-fallthrough`。L5 只报，不补；补跳转目前没有实现（也不属于 L6 的分支松弛）。
 
 ## 4. 段与度量
 
@@ -116,8 +116,8 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `branch-indirect` | 12 |
 | `jal` | 4 |
 | `jump-far` | 8 |
-| `la` | 8（预留，见下） |
-| `li` | 4（兜底值，**待改**：应按常量上界预留） |
+| `la` | 8（近形式；够不着报 `la-too-far`） |
+| `li` | 由常量精确决定：`li-size` ∈ {4, 8, 12, 16, …, 32} |
 | `c.*` | 2 |
 | 其他 | 4 |
 
@@ -194,6 +194,7 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
  (segment-bad-range b)
  (undefined-target s1 0 (jal x0 (ghost)))
  (undefined-target d 0 (value 8 (label+ (ghost) 0)))    ; 数据里的地址字
+ (la-too-far s 0 (la t0 (d t)) 4294963200 (code 0 0))    ; 超 ±2GB
  (value-out-of-range d 0 (value 4 (label+ (d t) 0)) #x100000000)  ; L5 才有的范围
  (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144 (code 1 0))  ; 留给 L6
  (scratch-hole prog1 0 (branch-indirect beq a0 a1 (done)) (code 0 0))  ; 留给 L6

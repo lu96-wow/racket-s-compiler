@@ -27,6 +27,12 @@
 ;; call-far 已删: 它就是 (jump-far ra L)
 (check-false (jump-form? '(call-far (l))))
 (check-equal? (item-size '(la t0 (l))) 8)
+;; li 的尺寸由常量精确决定, 不是预留
+(check-equal? (item-size '(li t0 0)) 4)
+(check-equal? (item-size '(li t0 2047)) 4)
+(check-equal? (item-size '(li t0 2048)) 8)
+(check-equal? (item-size '(li t0 #x12345678)) 8)
+(check-equal? (item-size '(li t0 #x123456789)) 16)
 (check-equal? (item-size '(la t0 tmp (l))) 8)
 (check-equal? (item-size '(label l)) 0)
 (check-equal? (item-size '(bytes 1 2 3)) 3)
@@ -466,6 +472,20 @@
                                '((segments (segment s1 code #x1000 #x1FFF 4))
                                  (place s1 (main)))))
               '((code-data-mixed s1 0 (fill 4 0))))
+
+;; la 够不着 ±2GB / 目标不存在
+(check-equal? (problems-of
+               (lay0 '((label main) (la t0 (d t)) (ret))
+                     '((label d t) (bytes 1))
+                     '((segments (segment s code #x1000 #x1FFF 4)
+                                 (segment d data #x100000000 #x100001000 8))
+                       (place s (main)) (place d (d t)))))
+              '((la-too-far s 0 (la t0 (d t)) 4294963200 (code 0 0))))
+(check-equal? (problems-of
+               (lay0 '((label main) (la t0 (ghost)) (ret)) '()
+                     '((segments (segment s code #x1000 #x1FFF 4))
+                       (place s (main)))))
+              '((undefined-target s 0 (la t0 (ghost)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 段表问题
