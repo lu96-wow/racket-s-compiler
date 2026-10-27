@@ -99,7 +99,7 @@ layout  list ┘                      program       program         (layout)    
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
 | 块 + 流 | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
-| layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))` |
+| layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))`；`problems` 空的时候就是 `(problems)` |
 | build | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
 
 ## 5. 形式归属
@@ -157,6 +157,7 @@ segment d start=#x200000 size=11
 
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
+- `L7/demo.rkt` 手写 layout 产物（不跑 L1–L6）；想看整条链就看 §6。
 - 测试条数：D1 62 / L1 43 / L2 119 / L3 176 / L4 46 / L5 171 / L6 30 / L7 57。
 - 层与层之间不互相调用；要看整条链就按顺序手动串（或看 §6）。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。

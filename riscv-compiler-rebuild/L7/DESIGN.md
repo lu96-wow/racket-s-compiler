@@ -130,7 +130,10 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 - 加载器格式（把 `(build …)` 写成文件）：还没做。
 - 真 reloc / 外部符号：还没做。
 
-## 6. 测试（`L7/test.rkt`，57 条）
+## 6. 测试与 demo
+
+`L7/test.rkt`（57 条）、`L7/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
+本层**不需要** layout 输入，也不需要 program / data）。
 
 单条指令与手算编码对照（含压缩、原子、别名）、`aq`/`rl` 后缀、元数、未知指令、
 layout → build 字节精确、`code`/`data` 对齐补齐、`li`（4 / 8 字节）、`la`（auipc+addi 的
