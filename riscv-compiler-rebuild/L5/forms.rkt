@@ -142,35 +142,45 @@
     [else 4]))
 
 ;; ---------------------------------------------------------------------------
-;; 可达距离 (字节); #f = 不设限 / 不是控制转移
+;; 可达距离: 区间 (lo . hi), #f = 不设限 / 不是控制转移
+;;
+;; 不是 ±幅度: RISC-V 的偏移都是偶数(2/4 字节指令), 所以
+;;   B 型   : [-4096, 4094]     (LLVM 写成 isInt<13>, 偶数偏移下等价)
+;;   CB 型  : [-256,  254]
+;;   CJ 型  : [-2048, 2046]
+;;   JAL    : [-1048576, 1048574]
+;; 用区间是为了不放过 +4096 这种"幅度看起来够、其实编不出来"的边界。
+;;
+;; 远形式的区间要把自己的偏置算进去: branch-far = 反向分支 + jal,
+;; 真正的 jal 在 +4, 所以区间整体右移 4。
 ;; ---------------------------------------------------------------------------
 
 (define (form-range x)
   (cond
     [(branch-form? x)
      (case (car x)
-       [(branch-far) 1048576]
+       [(branch-far) '(-1048572 . 1048578)]
        [(branch-indirect) #f]
-       [(c.beqz c.bnez) 256]           ; C.BEQZ/C.BNEZ: ±256 B
-       [else 4096])]
+       [(c.beqz c.bnez) '(-256 . 254)]
+       [else '(-4096 . 4094)])]
     [(jump-form? x)
      (case (car x)
        [(jump-far) #f]
-       [(c.j c.jal) 2048]              ; C.J/C.JAL: ±2 KiB
-       [else 1048576])]
+       [(c.j c.jal) '(-2048 . 2046)]
+       [else '(-1048576 . 1048574)])]
     [else #f]))
 
 ;; ---------------------------------------------------------------------------
 ;; scratch: 三种, 不要混
 ;;
 ;; 1. 条件空槽 = "这条指令需要 scratch, 但没给":
-;;      (branch-indirect a b L)    ; 条件分支远形式: 反向分支 + auipc+jalr, 总要 base
-;;      (jump-far x0 L)            ; link 是零寄存器: auipc 没有落点, 必须借 base
+;;      (branch-indirect <cond> a b L)   ; 远分支: 反向分支 + auipc+jalr, 总要 base
+;;      (jump-far x0 L)                  ; link 是零寄存器: auipc 没有落点, 必须借 base
 ;;    要不要 scratch 是 **link / 形式** 的函数, 所以 scratch-hole? 必须读操作数,
 ;;    不能只看"比满长度少一项"。报的是 problem(不是错误), 留给 L6 填。
 ;;
 ;; 2. 已填:
-;;      (branch-indirect s a b L)
+;;      (branch-indirect s <cond> a b L)
 ;;      (jump-far link s L)
 ;;
 ;; 3. 可选槽 = la 的 scratch, 缺省不代表缺陷:
@@ -193,7 +203,7 @@
 
 (define (scratch-hole? x)
   (cond
-    [(and (form? x) (eq? (car x) 'branch-indirect)) (= 4 (length x))]
+    [(and (form? x) (eq? (car x) 'branch-indirect)) (= 5 (length x))]
     [(far-jump-needs-scratch? x) (= 3 (length x))]
     [else #f]))
 

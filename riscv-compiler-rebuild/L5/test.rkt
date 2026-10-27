@@ -17,9 +17,9 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (item-size '(bge a b (l))) 4)
-(check-equal? (item-size '(branch-far a b (l))) 8)
-(check-equal? (item-size '(branch-indirect a b (l))) 12)
-(check-equal? (item-size '(branch-indirect t0 a b (l))) 12)
+(check-equal? (item-size '(branch-far beq a b (l))) 8)
+(check-equal? (item-size '(branch-indirect beq a b (l))) 12)
+(check-equal? (item-size '(branch-indirect t0 beq a b (l))) 12)
 (check-equal? (item-size '(jal x0 (l))) 4)
 (check-equal? (item-size '(jump-far x0 (l))) 8)
 (check-equal? (item-size '(jump-far x0 t0 (l))) 8)
@@ -47,16 +47,24 @@
 (check-equal? (item-size '(addi a0 a0 1)) 4)
 (check-equal? (item-size '(c.addi a0 1)) 2)
 
-(check-equal? (form-range '(bge a b (l))) 4096)
-(check-equal? (form-range '(branch-far a b (l))) 1048576)
-(check-false  (form-range '(branch-indirect a b (l))))
-(check-equal? (form-range '(jal x0 (l))) 1048576)
+;; 可达距离是区间, 不是幅度: 偶数偏移下 [+2^n-2 .. -2^n]
+(check-equal? (form-range '(bge a b (l))) '(-4096 . 4094))
+(check-equal? (form-range '(branch-far beq a b (l))) '(-1048572 . 1048578))
+(check-false  (form-range '(branch-indirect beq a b (l))))
+(check-equal? (form-range '(jal x0 (l))) '(-1048576 . 1048574))
 (check-false  (form-range '(jump-far x0 (l))))
 (check-false  (form-range '(jump-far ra (l))))
 (check-false  (form-range '(addi a0 a0 1)))
 
-(check-true  (scratch-hole? '(branch-indirect a b (l))))
-(check-false (scratch-hole? '(branch-indirect t0 a b (l))))
+;; 远形式带条件字段
+(check-equal? (item-size '(branch-far beq a b (l))) 8)
+(check-equal? (item-size '(branch-indirect beq a b (l))) 12)
+(check-equal? (control-target '(branch-far beq a b (l))) '(l))
+(check-true  (branch-form? '(branch-far beq a b (l))))
+(check-true  (branch-form? '(branch-indirect t0 beq a b (l))))
+
+(check-true  (scratch-hole? '(branch-indirect beq a b (l))))
+(check-false (scratch-hole? '(branch-indirect t0 beq a b (l))))
 ;; jump-far 要不要 scratch 是 link 的函数, 不是"少一项"的函数
 (check-true  (scratch-hole? '(jump-far x0 (l))))
 (check-true  (scratch-hole? '(jump-far zero (l))))
@@ -100,10 +108,10 @@
 (check-equal? (item-size '(c.jal (l))) 2)
 (check-equal? (item-size '(c.beqz a (l))) 2)
 (check-equal? (item-kind '(c.addi a0 1)) 'code)
-(check-equal? (form-range '(c.j (l))) 2048)
-(check-equal? (form-range '(c.jal (l))) 2048)
-(check-equal? (form-range '(c.beqz a (l))) 256)
-(check-equal? (form-range '(c.bnez a (l))) 256)
+(check-equal? (form-range '(c.j (l))) '(-2048 . 2046))
+(check-equal? (form-range '(c.jal (l))) '(-2048 . 2046))
+(check-equal? (form-range '(c.beqz a (l))) '(-256 . 254))
+(check-equal? (form-range '(c.bnez a (l))) '(-256 . 254))
 (check-false  (form-range '(c.addi a0 1)))
 
 ;; ---------------------------------------------------------------------------
@@ -176,7 +184,7 @@
                     '()
                     '((segments (segment s1 code #x100000 #x101FFF 4096))
                       (place s1 (a) (mid) (far)))))
-              '((needs-far s1 0 (c.jal (far)) 4100)))
+              '((needs-far s1 0 (c.jal (far)) 4100 (code 0 0))))
 
 ;; 压缩分支目标不存在 -> undefined-target
 (check-equal? (problems-of
@@ -212,7 +220,7 @@
 
 ;; jal 跨段 2MB -> needs-far, 留给 far 层
 (check-equal? (problems-of l2)
-              '((needs-far prog1 4 (jal x0 (cold)) 2097148)))
+              '((needs-far prog1 4 (jal x0 (cold)) 2097148 (code 1 0))))
 
 ;; ---------------------------------------------------------------------------
 ;; fallthrough: 顺序执行被拆到两个段 -> 必须报
@@ -268,8 +276,8 @@
 (check-equal? (problems-of
                (lay '((label a) (beq t0 t1 (c)) (addi a0 a0 1) (label c) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x1000 #x1FFF 4)
-                                (segment s2 code #x2000 #x2FFF 4))
+                    '((segments (segment s1 code #x1000 #x1008 4)
+                                (segment s2 code #x1FF8 #x2FFF 4))
                       (place s1 (a))
                       (place s2 (c)))))
               '((broken-fallthrough 1 2 () ((c)))))
@@ -405,13 +413,13 @@
                                '((segments (segment s1 code #x1000 #x1FFF 4))
                                  (place s1 (main)))))
               '((undefined-target s1 0 (jal x0 (ghost)))))
-(check-equal? (problems-of (lay '((label main) (branch-indirect a0 a1 (done))
+(check-equal? (problems-of (lay '((label main) (branch-indirect beq a0 a1 (done))
                                   (label keep) (jal x0 (keep))   ; 让目标不是紧邻下一块
                                   (label done) (jalr x0 ra 0))
                                '()
                                '((segments (segment s1 code #x1000 #x1FFF 4))
                                  (place s1 (main) (keep) (done)))))
-              '((scratch-hole s1 0 (branch-indirect a0 a1 (done)))))
+              '((scratch-hole s1 0 (branch-indirect beq a0 a1 (done)) (code 0 0))))
 
 ;; jump-far: 要不要 scratch 由 link 决定, 不是由"少一项"决定
 (check-equal? (problems-of (lay0 '((label main) (jump-far x0 (done))
@@ -419,7 +427,7 @@
                                 '()
                                 '((segments (segment s1 code #x1000 #x1FFF 4))
                                   (place s1 (main) (done)))))
-              '((scratch-hole s1 0 (jump-far x0 (done)))))
+              '((scratch-hole s1 0 (jump-far x0 (done)) (code 0 0))))
 (check-equal? (problems-of (lay0 '((label main) (jump-far x0 t0 (done))
                                    (label done) (jalr x0 ra 0))
                                 '()

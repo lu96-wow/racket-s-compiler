@@ -141,13 +141,16 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 远形式**不许从助记符里猜寄存器**。`jump-far` 的 link、scratch 都是操作数：
 
 ```racket
-(branch-far      a  b  L)        ; 条件分支, 8B, 无 scratch
-(branch-indirect a  b  L)        ; 条件分支的 auipc+jalr 版, 12B, 空槽
-(branch-indirect s  a  b  L)     ; 已填
-(jump-far        link  L)        ; 跳/调用, 8B, link = x0 时空槽
-(jump-far        link  s  L)     ; 已填
+(branch-far      <cond> a  b  L)     ; 条件分支, 8B, 无 scratch
+(branch-indirect <cond> a  b  L)     ; auipc+jalr 版, 12B, 空槽
+(branch-indirect s <cond> a b L)     ; 已填
+(jump-far        link  L)            ; 跳/调用, 8B, link = x0 时空槽
+(jump-far        link  s  L)         ; 已填
+;; <cond> ∈ beq bne blt bge bltu bgeu —— 反向分支要知道反哪个条件
 ```
 
+- **远形式必须带 `<cond>`**：`(branch-far beq a b L)` 才能展开成
+  `bne a b +8` + `jal x0 L`；不带条件的形式根本展不开（这是 2024 修正）。
 - **没有 `call-far`**：它就是 `(jump-far ra L)`。两个名字表达同一条指令，就是在制造
   "两个合法拼写"——L5 和 L3 都必须靠 link 判断"落不落下"，所以 link 必须显式。
 - `branch-indirect` 没有 link：条件分支不写链接寄存器。
@@ -158,7 +161,7 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 
 | 形式 | 缺省表示 | 报 `scratch-hole` 吗 |
 | --- | --- | --- |
-| `(branch-indirect a b L)` | 条件分支远形式的 base 还没给 | 会（留给 L6 填） |
+| `(branch-indirect <cond> a b L)` | 远分支的 base 还没给 | 会（留给 L6 填） |
 | `(jump-far x0 L)` / `(jump-far zero L)` / `(jump-far 0 L)` | link 是零寄存器，auipc 没有落点 | 会（留给 L6 填） |
 | `(jump-far ra L)` | link 自己就是 base，**本来就不需要** scratch | 不会 |
 | `(la rd 链)` | 短形式不需要 scratch，远形式由 L7 自己挑 | 不会（缺省不是缺陷） |
@@ -192,9 +195,9 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
  (undefined-target s1 0 (jal x0 (ghost)))
  (undefined-target d 0 (value 8 (label+ (ghost) 0)))    ; 数据里的地址字
  (value-out-of-range d 0 (value 4 (label+ (d t) 0)) #x100000000)  ; L5 才有的范围
- (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L6
- (scratch-hole prog1 0 (branch-indirect a0 a1 (done)))   ; 留给 L6
- (scratch-hole prog1 0 (jump-far x0 (done))))            ; link=x0 才需要 base
+ (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144 (code 1 0))  ; 留给 L6
+ (scratch-hole prog1 0 (branch-indirect beq a0 a1 (done)) (code 0 0))  ; 留给 L6
+ (scratch-hole prog1 0 (jump-far x0 (done)) (code 0 0)))  ; link=x0 才需要 base
 ```
 
 最后两类不是错误，是远跳转层（L6）的入口。
@@ -206,16 +209,21 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 `value-out-of-range` 属于本层：判断"地址能不能放进宽度个字节"要有符号表，只有 L5 有；
 它和 `needs-far` 是同一类（范围），不是指令合法性。整数的值域由 D1 查（它看得到宽度和字面量）。
 
-## 6. 远跳转层（L6，预留，不实现）
+## 6. 分支松弛层（L6，已做）
 
-编号以 `ARCHITECTURE.md` 为准：far 是 **L6**，encode 是 **L7**。
+编号以 `ARCHITECTURE.md` 为准：松弛是 **L6**（`L6/relax.rkt`），encode 是 **L7**。
 
-- 契约：`layout -> layout`（`((segments …) (symbols …) (problems …))`），只做「超范围的 item 升成远形式」和「填 scratch 空槽」。
-- 空槽规则：`(branch-indirect a b L)` 少一个参数 = 洞；`(branch-indirect s a b L)` 已填。
-  `(jump-far x0 L)` 的 link 是零寄存器时同样缺 base；`(jump-far ra L)` 不缺。
-- 填槽方式不在本层定义。
-- 尺寸变了（8 → 12、加跳转、填 scratch）就必须重跑 L5，迭代到不动点。
-- 补 fallthrough 跳转、trampoline、块重排也属于本层或 L7。
+- 契约：`program + data + layout 输入 -> layout`。**不是** `layout -> layout`：
+  L5 的产物已经排好偏移、没有块结构，改完没法重排，所以 L6 驱动 L5。
+- 本层只做一件事：把 `needs-far` 的 item 换成大一号的形式。
+- 提升阶梯：`c.*` → 普通 → `branch-far` → `branch-indirect`；`jal` → `jump-far`。
+  每一步都重跑 L5；**只升不降**，所以一定收敛（单调性，见 `L6/relax.rkt` 的头注释）。
+- 本层不造 label、不拆块、不改 CFG：远形式是定长 item，L7 才展开成
+  "反向条件分支 + 紧接着的跳转"（与 gas `md_convert_frag_branch` 同形）。
+- **空槽（scratch 寄存器）不归本层**：那是「动态内存布局 / 寄存器使用」的一部分（未实现）。
+  升到 `branch-indirect` / `(jump-far x0 …)` 时会产生一个新的 `scratch-hole`，本层原样留着，
+  作为和那一层的交接点。
+- 补 fallthrough 跳转、trampoline、块重排不属于本层当前实现。
 
 ## 7. 与真实工具链一致的地方
 

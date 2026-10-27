@@ -42,14 +42,14 @@
 (check-equal? (jump-target '(jal ra L)) 'L)
 
 ;; 远形式也在控制流里: link 显式写出来, 所以"落不落下"可算
-(check-true  (branch-instruction? '(branch-far t0 t1 L)))
-(check-true  (branch-instruction? '(branch-indirect s t0 t1 L)))
-(check-true  (branch-instruction? '(branch-indirect t0 t1 L)))     ; 空槽也算分支
+(check-true  (branch-instruction? '(branch-far beq t0 t1 L)))
+(check-true  (branch-instruction? '(branch-indirect s beq t0 t1 L)))
+(check-true  (branch-instruction? '(branch-indirect beq t0 t1 L)))     ; 空槽也算分支
 (check-false (branch-instruction? '(add t0 t1 t2)))
 (check-true  (jump-instruction? '(jump-far ra L)))
 (check-false (jump-instruction? '(call-far (L))))                  ; 已删: 就是 jump-far ra
 (check-true  (ends-block? '(jump-far x0 L)))
-(check-true  (ends-block? '(branch-far t0 t1 L)))
+(check-true  (ends-block? '(branch-far beq t0 t1 L)))
 (check-equal? (jump-register '(jump-far ra L)) 'ra)
 (check-equal? (jump-register '(jump-far x0 L)) 'x0)
 (check-equal? (jump-register '(jump-far 0 L)) 0)
@@ -58,11 +58,11 @@
 (check-false (falls-through? '(jump-far zero L)))
 (check-true  (unconditional-jump? '(jump-far x0 L)))
 (check-false (unconditional-jump? '(jump-far ra L)))
-(check-true  (falls-through? '(branch-far t0 t1 L)))
-(check-true  (falls-through? '(branch-indirect s t0 t1 L)))
-(check-equal? (jump-target '(branch-far t0 t1 L)) 'L)
+(check-true  (falls-through? '(branch-far beq t0 t1 L)))
+(check-true  (falls-through? '(branch-indirect s beq t0 t1 L)))
+(check-equal? (jump-target '(branch-far beq t0 t1 L)) 'L)
 (check-equal? (jump-target '(jump-far ra L)) 'L)
-(check-equal? (jump-target '(branch-indirect s t0 t1 L)) 'L)
+(check-equal? (jump-target '(branch-indirect s beq t0 t1 L)) 'L)
 
 ;; 压缩形式: 分类与展开形式一致
 (check-true  (branch-instruction? '(c.beqz a L)))

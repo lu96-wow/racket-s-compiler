@@ -206,9 +206,11 @@
 ;; 度量: 段内单游标, align 补齐, 逐条累加
 ;; ---------------------------------------------------------------------------
 
-(struct measured (segment items size blocks) #:transparent)
-;; items  : (listof (list 'offset 偏移 item))
-;; blocks : 代码段里块的顺序 (listof (cons 全局下标 block)), 数据段为空
+(struct measured (segment items size blocks origins) #:transparent)
+;; items   : (listof (list 'offset 偏移 item))
+;; blocks  : 代码段里块的顺序 (listof (cons 全局下标 block)), 数据段为空
+;; origins : 偏移 -> (code 块下标 项下标) | (data 游程下标 项下标)
+;;           只给"要改 item 的层"(L6)用来精确定位; L7 不关心
 
 (define (measure seg blks runs problem!)
   (define seg-name (segment-name seg))
@@ -217,7 +219,10 @@
   (define cursor 0)
   (define out '())
 
-  (define (emit! it sz)
+  (define origins (make-hash))
+
+  (define (emit! it sz [origin #f])
+    (when origin (hash-set! origins cursor origin))
     (cond
       [(and (eq? (item-kind it) 'data) (eq? seg-kind 'code))
        (problem! `(code-data-mixed ,seg-name ,cursor ,it))]
@@ -226,31 +231,33 @@
     (set! out (cons (list 'offset cursor it) out))
     (set! cursor (+ cursor sz)))
 
-  (define (emit-item! it)
+  (define (emit-item! it origin)
     (cond
       [(align-form? it)
        (define n (cadr it))
        ;; "code 段的 align 必须是 4 的倍数"是 ISA 合法性, 不归本层: 只对齐, 不判。
        ;; align 是**绝对地址**对齐: 段 start 不一定被 item 的 n 整除,
        ;; 所以用 (start + cursor) 算, 不能只用段内 cursor。
-       (emit! it (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))]
-      [else (emit! it (item-size it))]))
+       (emit! it (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n) origin)]
+      [else (emit! it (item-size it) origin)]))
 
   (for ([e (in-list blks)])
     (define b (cdr e))
     (for ([chain (in-list (block-head b))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (block-items b))]) (emit-item! it)))
+    (for ([it (in-list (block-items b))] [i (in-naturals)])
+      (emit-item! it (list 'code (car e) i))))
 
-  (for ([r (in-list runs)])
+  (for ([r (in-list runs)] [ri (in-naturals)])
     (for ([chain (in-list (run-labels r))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (run-items r))]) (emit-item! it)))
+    (for ([it (in-list (run-items r))] [i (in-naturals)])
+      (emit-item! it (list 'data ri i))))
 
   (when (and (>= capacity 0) (> cursor capacity))
     (problem! `(segment-overflow ,seg-name ,cursor ,capacity)))
 
-  (measured seg (reverse out) cursor blks))
+  (measured seg (reverse out) cursor blks origins))
 
 (define (measure-all segs code-by-seg data-by-seg problem!)
   (for/list ([seg (in-list segs)])
@@ -309,6 +316,7 @@
       (define off (cadr entry))
       (define it (caddr entry))
       (define here (+ (segment-start seg) off))
+      (define origin (hash-ref (measured-origins m) off #f))
       (when (control-form? it)
         (define target (normalize-path (control-target it)))
         (define row (symbol-row symbols target))
@@ -317,10 +325,11 @@
           [else
            (define d (- (cadddr row) here))
            (define range (form-range it))
-           (when (and range (> (abs d) range))
-             (problem! `(needs-far ,(segment-name seg) ,off ,it ,d)))]))
+           ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
+           (when (and range (not (<= (car range) d (cdr range))))
+             (problem! `(needs-far ,(segment-name seg) ,off ,it ,d ,origin)))]))
       (when (scratch-hole? it)
-        (problem! `(scratch-hole ,(segment-name seg) ,off ,it)))
+        (problem! `(scratch-hole ,(segment-name seg) ,off ,it ,origin)))
       ;; 数据里的地址字: 解析出绝对地址, 查链在不在 + 能不能放进 宽度 个字节。
       ;; 整数不用查(D1 已经按宽度查过值域); 只有 label+ 需要地址才知道。
       (when (value-form? it)

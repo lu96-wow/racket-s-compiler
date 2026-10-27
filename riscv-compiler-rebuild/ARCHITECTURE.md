@@ -6,8 +6,8 @@
 source(多输入)                  │ 每层都是纯函数, 可单独测
 ──────────────                  │
 program list ┐                  ↓
-data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ [L6 far] ─→ [L7 编码]
-layout  list ┘                      program       program         (layout)     (预留)      (未做)
+data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ L6 松弛 ─→ [L7 编码]
+layout  list ┘                      program       program         (layout)     (layout)     (未做)
 ```
 
 D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**核心 item**：
@@ -141,18 +141,40 @@ L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 i
 | `layout-program` | `program` + 数据 items + layout 输入 | `((segments …) (symbols …) (problems …))` |
 | `layout-problems` | layout 产物 | `(listof problem)` |
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
-| 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离 / 布尔 |
+| 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离**区间** `(lo . hi)` / 布尔 |
 | 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `label-expr?` `compressed-form?` | 单条 item | 布尔 / 值 |
 | 地址字：`value-width` `value-payload` `label-expr-chain` `label-expr-addend` | 单条 item | 宽度 / 值 / 链 / 加数 |
 | 显式寄存器：`jump-far-form?` `jump-far-link` `jump-far-scratch` `la-form?` `la-scratch` | 单条 item | 布尔 / 寄存器 |
 
-### L6 `far`（预留）、L7 `encode`（未做）
+### L6 `L6/relax.rkt` — 分支松弛（已做）
 
-两块都还没建目录，先把契约写死在这里（编号以本文为准）。
+| API | 输入 | 输出 |
+| --- | --- | --- |
+| `relax` | `program` + data + layout 输入 | `layout`（`needs-far` 已经销完；`scratch-hole` 原样留着） |
+| `far-step` | 单条 item | 大一号的形式 / `#f`（到头了） |
+
+**契约改成 `program + data + layout -> layout`**：L5 的产物已经排好偏移、没有块结构，
+改完没法重排，所以 L6 **驱动** L5，而不是吃 L5 的产物（`layout -> layout` 做不到）。
+
+提升阶梯（语义不变、尺寸只增）：`c.*` → 普通 → 远形式 → 间接远形式；`jal` → `jump-far`。
+每次都重跑 L5。收敛性来自单调性：**任何一圈都只会让 item 变长，而两个端点之间跨过变长点
+的距离只会变大**，所以"太远"的集合单调递增，每个 item 最多升 3 档。
+
+本层**不造 label、不拆块、不改 CFG**：远形式是定长 item，由 L7 展开成"反向条件分支 +
+紧接着的跳转"（与 gas `md_convert_frag_branch` 同形）。所以 `place` 行永远有效，
+`fallthrough` 也不会因为松弛而断。
+
+**空槽不填**：`(branch-indirect <cond> a b L)` / `(jump-far x0 L)` 需要临时寄存器，
+那属于「动态内存布局 / 寄存器使用」那一层（**未实现**），本层只把它留在
+`scratch-hole` problem 里当交接点。升到这两档就会产生新的空槽，然后循环停下。
+
+### L7 `encode`（未做）
+
+L7 还没建目录，先把契约写死在这里（编号以本文为准）。
 
 | 层 | 输入 | 输出 | 职责 |
 | --- | --- | --- | --- |
-| L6 far | layout | layout | 消费 `needs-far` / `scratch-hole`：超范围 item 升成远形式、填 scratch 空槽；尺寸变了要重跑 L5 |
+| L6 relax | `program` + data + layout 输入 | layout | 消费 `needs-far`：超范围 item 升成远形式；自己驱动 L5 重排到不动点（**空槽不填**） |
 | L7 encode | layout | `(build ...)` | `li`/`la` 展开（riscv-help）、远形式展开、指令编码、立即数范围检查、**`(value w …)` 落字节（端序在这一步定）**、`(label+ 链 加数)` 求值、有致命 problem 就拒绝出 `(build ...)` |
 
 **为什么 `li` / `la` 在 L7 才展开**
@@ -192,7 +214,7 @@ L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 i
 | `(quote ...)` / `(begin ...)` | 源 | 无（旧壳） | 人 | L1/L2/L3/L5 入口 |
 | 伪指令 `(load-32 …)` `(l8 …)` `(move …)` `(ble …)` | 源 → L2 前 | **L2** 的表 | 人 | L2 |
 | 真指令 `(lwu …)` `(bge …)` `(jal …)` `(jalr …)` `(c.beqz …)` `(c.j …)` | L2 起 | **L2** 产出；**L3** 分类；**L5** 定尺寸 | L2 | L3 / L5 |
-| 远形式 `(branch-far a b L)` `(branch-indirect [s] a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
+| 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
 | `(li rd 常量)` | 源 → L7 | **L7**（`riscv-help` 的 `expand-li` / `li-size`） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(bytes …)` `(fill n b)` `(align n)` | D1 输出 / 数据输入 | **L5**（尺寸 / padding / kind）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 |
@@ -218,7 +240,7 @@ L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 i
 | 控制流分析/调图 | L3（`analyze` + `cfg->lines`） |
 | 死代码消除 | L4（`passes` 表） |
 | 分段 / 地址布局 | L5（写 `segments` + `place`） |
-| 远跳转 | L6（预留，消费 `needs-far` / `scratch-hole`） |
+| 分支松弛 / 远跳转 | L6（`relax`；只消费 `needs-far`） |
 | `li` / `la` 展开 | L7（`../riscv-help`；`la` 还要 L5 的符号表） |
 | 端序 / `value` 落字节 | L7（全流水线只有这一处写端序） |
 | 产物 | L7（未做） |
@@ -236,6 +258,7 @@ L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 i
 | `L3/demo.rkt` | 扁平 item（+ 可选 data） | block list |
 | `L4/demo.rkt` | block list（用 `sexp->program` 写字面量） | block list |
 | `L5/demo.rkt` | block list + 数据 item + layout 输入 | `((segments …) (symbols …) (problems …))` |
+| `L6/demo.rkt` | block list + layout 输入 | 同样的 layout，但远分支已经升好形式（空槽留着） |
 
 层与层之间不互相调用；要看整条链就按顺序手动串。
 
@@ -264,7 +287,9 @@ L7 只负责「把地址算好、传进去、把结果接回来」。
 | L5 | `li` / `la` 预留的 4 / 8 字节是**下界**，不是上界（`li-general64` 最坏约 32B、`la` 远形式 `li-size + 8`） | 待改（尺寸契约） |
 | L5 | 符号重名不报（`collect-symbols` 用 `assoc` 取第一个） | 待改 |
 | L5 | 只报 `broken-fallthrough`，不补跳转 | 修复属于 L6/L7 |
-| L6 | 目录不存在：`needs-far` / `scratch-hole` 只产不销 | 未做 |
+| L6 | 只做"升形式"；补 `fallthrough` 跳转、trampoline、块重排没做 | 未做 |
+| 空槽（scratch 寄存器） | 谁填、填哪个寄存器 = 动态内存布局 / 寄存器使用 | **留空，等待实现** |
+| L6 | 跨段到冷段没有 trampoline（LLVM 那条路），一律就地升形式 | 按需 |
 | L7 | 目录不存在：layout 之后没有消费者；`li`/`la` 展开、编码表、立即数范围检查都在这里 | 未做 |
 | 源 | 缺 `export` / `entry`，外部入口会被 L4 当死代码删掉 | 未做 |
 | 源/数据 | 数据核心词只有 `label`/`bytes`/`fill`/`value`/`align`；缺 `ascii`、`.bss`、真 reloc | 未做 |
