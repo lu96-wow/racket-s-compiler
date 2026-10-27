@@ -1,338 +1,196 @@
-# 分层与接口一览
+# 架构总览（索引 + 规范）
+
+> **本文件只做两件事**：给出全局地图，和写死跨层规矩。
+> 每层的细节在各自的 `DESIGN.md` 里，本文件不重复。
+
+## 0. 文档地图
+
+| 文档 | 讲什么 |
+| --- | --- |
+| `ARCHITECTURE.md`（本文） | 分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
+| `D1/DESIGN.md` | 数据定义：宽度 / 值域 / 字符串 / 数组 / 地址字 |
+| `L1/DESIGN.md` | 模块展平 + 链式查表（只做名字） |
+| `L2/DESIGN.md` | 伪指令替换表 |
+| `L3/DESIGN.md` | 控制流分析：块、流、root |
+| `L4/DESIGN.md` | 死代码消除 |
+| `L5/DESIGN.md` | 布局：放置、度量、符号表、范围检查、problems |
+| `L6/DESIGN.md` | 分支松弛（只升形式） |
+| `L7/DESIGN.md` | 编码：操作数顺序、端序、字节规则 |
+| `../riscv-asm/README.md` | 指令编码表（生成器 + 运行时），L7 的编码来源 |
+| `../riscv-help/DESIGN.md` | `li` / `la` / 远分支 / 远跳转的展开器 |
+
+## 1. 分层总图
 
 ```
       rich 数据 ─→ D1 数据定义 ─┐
                                 │
-source(多输入)                  │ 每层都是纯函数, 可单独测
-──────────────                  │
-program list ┐                  ↓
+source(多输入)                  │  每层都是纯函数, 可单独测
+──────────────                  ↓
+program list ┐
 data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ L6 松弛 ─→ L7 编码
 layout  list ┘                      program       program         (layout)     (layout)     (bytes)
 ```
 
-D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**核心 item**：
-`label` / `bytes` / `fill` / `value` / `align`。**端序不归 D1**：`value` 只带"宽度 + 值"，
-字节序在 L7 落字节时才定（端序在整个流水线里只出现这一次）。
+| 层 | 文件 | 一句话 | 输入 | 输出 | 细节 |
+| --- | --- | --- | --- | --- | --- |
+| D1 | `D1/expand.rkt` | 数据定义 | rich 数据 | 核心 item | [`D1/DESIGN.md`](D1/DESIGN.md) |
+| L1 | `L1/flatten.rkt` | 模块展平 + 链式查表 | 多输入 item | item + 名字表 | [`L1/DESIGN.md`](L1/DESIGN.md) |
+| L2 | `L2/rewrite.rkt` | 伪指令替换 | item | item | [`L2/DESIGN.md`](L2/DESIGN.md) |
+| L3 | `L3/insn.rkt` `L3/cfg.rkt` `L3/analyze.rkt` | 控制流分析（只分析） | item（+ 可选 data） | `program` = blocks + flows | [`L3/DESIGN.md`](L3/DESIGN.md) |
+| L4 | `L4/dce.rkt` | 死代码消除（改控制流） | `program` | `program` | [`L4/DESIGN.md`](L4/DESIGN.md) |
+| L5 | `L5/forms.rkt` `L5/layout.rkt` | 布局计算 | `program` + data + layout 输入 | layout | [`L5/DESIGN.md`](L5/DESIGN.md) |
+| L6 | `L6/relax.rkt` | 分支松弛 | `program` + data + layout 输入 | layout | [`L6/DESIGN.md`](L6/DESIGN.md) |
+| L7 | `L7/target.rkt` `L7/insn.rkt` `L7/encode.rkt` | 编码 | layout | `(build …)` | [`L7/DESIGN.md`](L7/DESIGN.md) |
 
-L3 只**分析**（s-exp → block list），L4 才开始**改**（block list → block list，会改控制流）。
+两个外部包：
 
-## 0. 词汇边界（每层只关心自己）
-
-每层只处理**与自己设计的那几种 s-exp** 相关的逻辑，其余一律是**不透明载荷**：
-
-| 层 | 自己认识的 item | 其余 |
+| 包 | 管什么 | 谁用 |
 | --- | --- | --- |
-| D1 | rich 数据（宽度/数组/字符串/对齐/label） | 不认识就 `error`（它是入口） |
-| L1 / L2 | `module`、`label` 链、替换表里的伪指令名 | 透传 |
+| `../riscv-asm` | 指令编码表（每条指令 = 操作数 → 指令字），含全部位域检查 | L7 |
+| `../riscv-help` | `li` / `la` / 远分支 / 远跳转的展开器，和 `li-size` / `fits-auipc-pair?` 这类判据 | L5（尺寸/判据）、L7（展开） |
+
+## 2. 词汇边界（每层只关心自己）
+
+每层只处理**与自己设计的那几种 s-exp** 相关的逻辑，其余一律是**不透明载荷**。
+
+| 层 | 自己认识的 item | 其余怎么办 |
+| --- | --- | --- |
+| D1 | rich 数据（`b8/b16/b32/b64`、`bN-array`、`utf-string`、`label`、`bytes`、`fill`、`align`） | 不认识就 `error`（它是数据入口） |
+| L1 | `module`、`label` 链 | 透传（不认识任何助记符） |
+| L2 | 替换表里的伪指令名 | 透传（原子 / `quote` 当数据） |
 | L3 / L4 | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
 | L5 | 数据 `label` / `bytes` / `fill` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
-| L7 | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）+ 目标端序 | 交给 `riscv-asm` 编码，越界由它报 |
+| L6 | `needs-far` 提到的那些 control 形式 | 其余 item 不碰 |
+| L7 | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序 | 交给 `riscv-asm` 编码 |
 
-推论（也是本仓的硬规矩）：
+推论：
 
-- **真实指令是否合法不归 L1–L5 管**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
-  都是「变二进制」（L7）那一步的事。中间层不写这类检查。
-- 因此 L5 的 `item-size` / `item-kind` 兜底（`4` 字节 / `'code`）**是设计，不是漏检**。
-- 反过来，谁**输出**了别人的词汇就是 bug：D1 不输出 `b16` 这种"宽度 + 值"的组合名，
-  它输出 `(value 宽度 值)` —— 宽度是**数据**，所以 L5 不需要认识任何宽度名。
-- 数据不是只给 L5：D1 的输出**同时**喂给 L3（只用来找"地址被取过"的链，
-  即 `(value 宽度 (label+ 链 加数))`），否则函数指针表里的函数会被 L4 当死代码删掉。
-- 一个名字只能有一个归属：`fill` 归 L5（padding 需要它），D1 只是它的生产者。
+- **L5 的兜底 `4 字节 / 'code` 是设计，不是漏检**：真实指令在它眼里就是不透明字节串。
+- **反过来，谁输出了别人的词汇就是 bug**：D1 不输出 `b16`（下游不认识），它输出 `(value 2 v)`。
+- 一个名字只能有一个归属：`fill` 归 L5（padding 需要它），D1 只是生产者；
+  `value` 的宽度归 L5 量，值归 L7 解释。
 
-`li` / `la` 是**特殊伪指令**，不进 L2 的替换表，源样一路透传到 L7：
-它们要「最终地址」才能展开（`la` 要 delta、`li` 要常量），所以在 L5 之后由 L7
-调用 `../riscv-help` 展开。两者的尺寸契约见 L7 一节（`li` 精确、`la` 近形式 8 字节）。
+## 3. 跨层铁律
 
-## 1. 关键 API
+1. **寄存器一律显式**。远形式写 `(branch-far <cond> a b L)` / `(branch-indirect s <cond> a b L)`；
+   没有 `call-far`（它就是 `(jump-far ra L)`）。谁都不许从助记符里猜寄存器。
+2. **一个东西只有一种写法**。`.aq` / `.rl` / `.aqrl` 只认规范顺序；`x0` / `zero` / `0` 由
+   `riscv-help` 的寄存器表统一。
+3. **尺寸：谁的 item 谁负责**。`li` 由常量精确算，`la` 近形式固定 8，
+   远形式 / 空槽要 scratch → 留给未实现的那一层。数据 `value` 的宽度由作者写死。
+4. **端序只出现一次**：`L7/target.rkt`。D1 只管宽度和值，L5 只管字节数。
+5. **问题分三级**：本层模型错误（硬）、范围问题（`needs-far` / `value-out-of-range`）、
+   交接给下一层（`needs-far` → L6，`scratch-hole` → 未实现的寄存器层）。
+6. **松弛只增不减**：L6 每轮只把 item 变长，所以"太远"的集合单调递增，必然收敛。
+7. **不造 label**：L6 不造新 label，所以 `place` 行永远有效，`fallthrough` 不会被松弛剪断。
+8. **中间层不写合法性检查**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
+   都属于 L7（实际是 `riscv-asm`）。L1–L6 只判自己模型里的东西。
+9. **label 链是身份**：`(label a f)` 是一个位置多个名字；跳转目标是链；`place` 按精确链匹配。
+10. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
+    出口一律 plain list。
 
-### D1 `D1/expand.rkt` — 数据定义（rich 数据 → 核心 item）
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `expand-data` | rich 数据 item 列表 | `(listof core item)`（`label` / `bytes` / `fill` / `value` / `align`） |
-| `expand-item` | 单条 item | `(listof core item)` |
-| `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
-| 查询：`fill-form?` `width-form?` `width-of` | 单条 item | 布尔 / 宽度 |
-
-宽度、值域、字符串编码、数组压缩都在这层定；**端序不在这层**（L7 落字节时才定）。
-`value` 的值可以是整数，也可以是地址字 `(label+ 链 加数)` —— 地址值要等 L5 算完符号表、
-L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 item。
-
-### L1 `L1/flatten.rkt` — 模块展平 + 链式查表
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `flatten-inputs` | `(listof (listof item))` 多输入 | `(values (listof (listof item)) 名字表)` |
-| `flatten-program` | `(listof item)` | `(listof item)` |
-| `flatten-items` | `(listof item)` | `(values (listof item) 名字表)` |
-| `name?` / `path?` | 任意 | 布尔 |
-
-多输入共享一张名字表，所以程序里能引用数据里的 label。
-
-### L2 `L2/rewrite.rkt` — 按表替换（+ `table.rkt` / `table-*.rkt` 数据）
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `rewrite-program` | `(listof item)` `[table]` | `(listof item)` |
-| `rewrite-tree` | item 列表 / 单条 item / 原子 | 同形 |
-| `expand-item` | 单条 item | 单条 item（展开到不再命中） |
-| `apply-rule` | 单条 item | 单条 item / `#f`（未命中；只跑一次规则） |
-| `make-table` / `check-rows` | 行表 | `table` / void |
-| `pseudo-leftover?` / `fully-rewritten?` | item 列表 / 单条 | 布尔 |
-
-数据：`rewrite-rows` `default-table` `rules` `rules-for` `pseudo-name?` `directive-heads` `reserved-heads`。
-
-### L3 `L3/insn.rkt` `L3/cfg.rkt` `L3/analyze.rkt` — 控制流分析（不改程序）
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `analyze` | `(listof item)` + 可选 data items | **`program`**（blocks + flows）；data 只贡献 roots |
-| `block-head` / `block-items` | 块 | 头 label 链列表 / 程序 item |
-| `flow-succ` / `flow-fallthrough` / `flow-root?` | flow | 值 |
-| `program->sexp` / `sexp->program` | program / 字面量 | 字面量 / program |
-| `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
-| `build-cfg` | `(listof item)` | `graph`（CFG 内部用） |
-| `cfg-reachable` | `graph` `roots` | `(listof 块 id)` |
-| `cfg->lines` | `graph` | `(listof string)`（给人看） |
-| `referenced-labels` | `(listof item)` | `(listof path)` |
-| `address-taken-paths` | `(listof item)` | `(listof path)`（含 `(value w (label+ 链 加数))` 里的链） |
-| 分类：`branch-instruction?` `jump-instruction?` `indirect-instruction?` `trap-instruction?` `ends-block?` `falls-through?` `unconditional-jump?` `jump-target` `jump-register` `zero-register?` | 单条 item | 布尔 / 值 |
-| 形状：`label-form?` `label-path` `name?` `path?` `normalize-path` | 任意 | 布尔 / 值 |
-
-块是**两部分**的 s-exp：身份 + 程序。
-
-```racket
-(block <头 label 链列表> item ...)     ; 例: (block ((prog1 main)) (lwu t0 sp 8) (bge …))
-```
-
-只想要"程序"的层直接 `(cddr block)` 即可，不需要认识块的其他信息。
-
-**块边界只由控制流决定**：程序开头 / 控制转移的目标 label / 切流指令之后。
-非目标的 `label` 不是边界，它作为位置标记留在块的程序里。
-
-控制流信息**不在块里**，单独一份、与块一一对应：
-
-```racket
-(flow (succ <块下标> ...) (fallthrough <块下标>|#f) (root? <bool>))
-```
-
-`root?` = 外部入口：程序入口，或（有 `jalr` 时）地址被取过的块。
-内部引用不算根——它们在 CFG 里就是边，这样死代码才删得干净。
-
-两份数据装在一起：`(struct program (blocks flows))`（`L3/analyze.rkt`）。
-
-### L4 `L4/dce.rkt` — 死代码消除（改控制流）
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `eliminate-dead` | `program` | `program` |
-| `optimize-program` | 同上（跑 pass 到不动点） | 同上 |
-| `passes` / `pass-names` | — | `(drop-unreachable drop-transfers-to-next-block merge-empty-blocks)` |
-
-三个 pass 都会改 `succ` / `fallthrough`：
-
-- `drop-unreachable`：删从 `root?` 走不到的块，重新编号并重映射
-- `drop-transfers-to-next-block`：删掉跳到紧邻下一块的转移，该块只剩顺序边
-- `merge-empty-blocks`：空块的 label 与下一块同址，并进下一块（末尾空块保留）
-
-### L5 `L5/forms.rkt` `L5/layout.rkt` — 布局计算
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `layout-program` | `program` + 数据 items + layout 输入 | `((segments …) (symbols …) (problems …))` |
-| `layout-problems` | layout 产物 | `(listof problem)` |
-| `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
-| 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离**区间** `(lo . hi)` / 布尔 |
-| 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `label-expr?` `compressed-form?` | 单条 item | 布尔 / 值 |
-| 地址字：`value-width` `value-payload` `label-expr-chain` `label-expr-addend` | 单条 item | 宽度 / 值 / 链 / 加数 |
-| 显式寄存器：`jump-far-form?` `jump-far-link` `jump-far-scratch` `la-form?` `la-scratch` | 单条 item | 布尔 / 寄存器 |
-
-### L6 `L6/relax.rkt` — 分支松弛（已做）
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `relax` | `program` + data + layout 输入 | `layout`（`needs-far` 已经销完；`scratch-hole` 原样留着） |
-| `far-step` | 单条 item | 大一号的形式 / `#f`（到头了） |
-
-**契约改成 `program + data + layout -> layout`**：L5 的产物已经排好偏移、没有块结构，
-改完没法重排，所以 L6 **驱动** L5，而不是吃 L5 的产物（`layout -> layout` 做不到）。
-
-提升阶梯（语义不变、尺寸只增）：`c.*` → 普通 → 远形式 → 间接远形式；`jal` → `jump-far`。
-每次都重跑 L5。收敛性来自单调性：**任何一圈都只会让 item 变长，而两个端点之间跨过变长点
-的距离只会变大**，所以"太远"的集合单调递增，每个 item 最多升 3 档。
-
-本层**不造 label、不拆块、不改 CFG**：远形式是定长 item，由 L7 展开成"反向条件分支 +
-紧接着的跳转"（与 gas `md_convert_frag_branch` 同形）。所以 `place` 行永远有效，
-`fallthrough` 也不会因为松弛而断。
-
-**空槽不填**：`(branch-indirect <cond> a b L)` / `(jump-far x0 L)` 需要临时寄存器，
-那属于「动态内存布局 / 寄存器使用」那一层（**未实现**），本层只把它留在
-`scratch-hole` problem 里当交接点。升到这两档就会产生新的空槽，然后循环停下。
-
-### L7 `L7/target.rkt` `L7/insn.rkt` `L7/encode.rkt` — s-exp → 字节（已做）
-
-| 文件 | 职责 |
-| --- | --- |
-| `L7/target.rkt` | 目标常量：XLEN、**端序（全流水线唯一一处）**、启用的扩展集合、`integer->bytes` |
-| `L7/insn.rkt` | 助记符 → 指令字：操作数顺序表 + `aq`/`rl` 后缀 + 调 riscv-asm |
-| `L7/encode.rkt` | `layout -> (build …)`：逐 item 出字节、算对齐、解析地址、拒绝有 problem 的 layout |
-
-| API | 输入 | 输出 |
-| --- | --- | --- |
-| `encode-layout` | layout（L6 产物） | `(build (segment (name …) (start …) (size …) (bytes #vu8…)) …)` |
-| `encode-instruction` | 助记符 + 操作数（寄存器名/整数） | `(values 指令字 字节数)` |
-| `instruction-arity` / `known-instruction?` | 助记符 | 操作数个数 / 布尔 |
-| `split-aqrl` | 助记符 | `(values 基名 aq rl)` |
-| `integer->bytes` | 宽度 + 整数 | 字节列表（按目标端序） |
-
-**编码本身不在这里**：`riscv-asm` 生成的 `rebuilt` 模块里每条指令就是
-`(lambda (操作数 …) 指令字)`，位域检查（立即数范围、压缩寄存器约束、aq/rl 值域）也都在那里。
-L7 只补 riscv-asm 不负责的两件：
-
-1. **操作数顺序**。riscv-opcodes 的声明顺序（= rebuilt 函数参数顺序）不是汇编写法：
-   分支/存储/原子把合并后的立即数放在第一位（`beq bimm12 rs1 rs2`）。
-   所以 `L7/insn.rkt` 有一张"调用位置 ← s-exp 位置"的表，
-   键是操作数名列表，32 位 22 类、16 位 25 类。**这是本层唯一的公开接口约定**。
-2. **`aq` / `rl`**。riscv-opcodes 里是两个 0/1 操作数，gas 里是助记符后缀。
-   只认规范写法 `.aq` / `.rl` / `.aqrl`（`.rlaq` 是拼错 → 未知助记符）。
-
-字节规则：
-
-| item | 字节 |
-| --- | --- |
-| `label` | 无 |
-| `align n` | 补到**绝对地址**对齐；code 段补 `nop`（会顺着执行），其余补 0 |
-| `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按目标端序；值是整数或 `(label+ 链 加数)`（用符号表求值） |
-| 真指令 | `riscv-asm` 编码 |
-| 远形式 | `riscv-help` 的 `branch-long` / `jump-auipc-jalr` 展开后再编码 |
-
-每个 item 的 `(offset k …)` 是**断言**：写出的字节数必须正好让它落在 `k`，
-否则说明 L5 与 L7 对尺寸的理解不一致，直接报错。layout 里还有任何 problem 就拒绝出产物。
-
-**`li` / `la`（Phase 2 已完成近形式）**：
-
-- `(li rd 常量)`：尺寸由常量**精确**决定（`li-size`，4…32），L5 的 `item-size` 直接调它，
-  L7 用同一个展开器，所以两边天然一致。
-- `(la rd [tmp] 链)`：近形式 `auipc+addi` = 8 字节。L5 用 `fits-auipc-pair?` 检查
-  够不够得着，够不着报 `la-too-far`。**远形式需要 scratch 寄存器**，那属于
-  「动态内存布局 / 寄存器使用」那一层（未实现），所以现在只报问题、不生成。
-
-## 2. IO 形状
+## 4. IO 形状速查
 
 | 形状 | 例子 |
 | --- | --- |
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
-| 程序（块 + 流） | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
+| 块 + 流 | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
 | layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) …) (size 28)) …) (symbols …) (problems …))` |
-| build（L7） | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
+| build | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
 
-`(quote ...)` / `(begin ...)` 是旧壳，各层入口宽容接受，出口一律 plain list。
+## 5. 形式归属
 
-## 3. 每个 s-expression 归谁管
+| 形式 | 谁定义 | 谁产生 | 谁消费 |
+| --- | --- | --- | --- |
+| `(module 名 item...)` | L1 | 人 | L1 |
+| `(label 链...)` | L1 定链 / L3 定块头 / L5 定偏移 | L1 / L5 | 全部 |
+| 伪指令 `(load-32 …)` `(move …)` `(ble …)` | L2 的表 | 人 | L2 |
+| 真指令 `(lwu …)` `(bge …)` `(jalr …)` `(c.j …)` | L2 产出；L3 分类；L5 定尺寸；L7 编码 | L2 / 人 | L3 / L4 / L5 / L6 / L7 |
+| 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | L5/forms | 人 / L6 | L3 / L5 / L6 / L7 |
+| `(li rd 常量)` | L5 量尺寸（`li-size`）、L7 展开（`li`） | 人 | L3 / L5 / L7 |
+| `(la rd [tmp] 链)` | L5 量尺寸 + 判 `fits-auipc-pair?`、L7 展开（`load-pcrel`） | 人 | L3 / L5 / L7 |
+| rich 数据 `b8` `b16` `bN-array` `utf-string` | D1 | 人 | D1 |
+| `(bytes …)` `(fill n b)` `(align n)` | L5（尺寸/类别）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 / L7 |
+| `(value 宽度 值)` | D1 出宽度+值；L5 量尺寸 + 查地址范围；L3 用它算 root；L7 定端序落字节 | D1 | L3 / L5 / L7 |
+| `(label+ 链 加数)` | D1 归一；L3 当取地址；L5 解析范围；L7 落值 | 人 / D1 | L3 / L5 / L7 |
+| `(block …)` `(flow …)` `(program …)` | L3 | L3 / L4 | L4 / L5 / L6 |
+| `(segments …)` `(place …)` | L5 | 人 | L5 |
+| `(offset k item)` `(symbols …)` `(problems …)` | L5 | L5 | L6 / L7 / 人 |
+| `(build …)` | L7 | L7 | 加载器（未做） |
 
-| 形式 | 出现在 | 语义由谁定义 | 谁产生 | 谁消费 |
-| --- | --- | --- | --- | --- |
-| `(module 名 item...)` | 源 | **L1**（展平后消失） | 人 | L1 |
-| `(label 链...)` | 源 → L1/L2/L3 | **L1** 定链；**L3** 定块头；**L5** 定偏移 | L1/L3/L5 | 全部 |
-| `(quote ...)` / `(begin ...)` | 源 | 无（旧壳） | 人 | L1/L2/L3/L5 入口 |
-| 伪指令 `(load-32 …)` `(l8 …)` `(move …)` `(ble …)` | 源 → L2 前 | **L2** 的表 | 人 | L2 |
-| 真指令 `(lwu …)` `(bge …)` `(jal …)` `(jalr …)` `(c.beqz …)` `(c.j …)` | L2 起 | **L2** 产出；**L3** 分类；**L5** 定尺寸 | L2 | L3 / L5 |
-| 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
-| `(li rd 常量)` | 源 → L7 | **L5** 用 `riscv-help` 的 `li-size` 精确量尺寸；**L7** 用 `li` 展开 | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
-| `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L5** 量 8 字节 + `fits-auipc-pair?` 检查；**L7** 用 `load-pcrel` 展开 | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
-| `(bytes …)` `(fill n b)` `(align n)` | D1 输出 / 数据输入 | **L5**（尺寸 / padding / kind）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 |
-| `(value 宽度 值)` | D1 输出 | **D1** 出宽度+值；**L5** 量尺寸并查地址范围；**L7** 定端序并落字节 | D1 | L3（取地址）/ L5 / L7 |
-| `(label+ 链 加数)` | `value` 的值 / 源 | **D1** 归一形状；**L3** 当取地址；**L5** 解析范围；**L7** 落值 | 人 / D1 | L3 / L5 / L7 |
-| rich 数据 `b8` `b16` `b64` `bN-array` `utf-string` | 源 | **D1**（宽度 / 值域 / 字符串） | 人 | D1 |
-| `(block <头 label> item ...)` | L3 → L5 | **L3** | L3 | L4 / L5 |
-| `(flow …)` | L3 → L5 | **L3** | L3 | L4 / L5 |
-| `(segments …)` `(place …)` | layout 输入 | **L5** | 人 | L5 |
-| `(offset n item)` | L5 产物 | **L5** | L5 | L7 |
-| layout（字段表） | L5 产物 | **L5** | L5 | L6 / L7 / 人 |
-| `(build …)` | L7 产物 | **L7** | L7 | 加载器 |
+## 6. 完整流水线（真实输出）
 
-## 4. 哪些过程用到哪些层
+```racket
+src  = ((label main) (move a0 a1) (ble a0 a1 (hot)) (jal x0 (end))
+        (label hot) (addi a0 a0 1) (jalr x0 ra 0)
+        (label end) (ld t0 sp 8))
+data = (expand-data '((label g tab) (value 8 (label+ (main) 0)) (utf-stringz "hi")))
+```
 
-| 过程 | 用到的层 |
+| 层 | 结果 |
 | --- | --- |
-| 单文件汇编 | L1（可省）→ L2 → L3 → L4 → L5 |
-| 数据（必需） | D1 → L3（只算 roots）→ L5 |
-| 数据里的地址字 | D1 出 `(value w (label+ 链 n))` → L5 查范围 → L7 定端序落字节 |
-| 多模块 / 多文件 | **L1 必用**（作用域前缀 + 跨输入名字表） |
-| 扩伪指令 | L2（加一行表） |
-| 控制流分析/调图 | L3（`analyze` + `cfg->lines`） |
-| 死代码消除 | L4（`passes` 表） |
-| 分段 / 地址布局 | L5（写 `segments` + `place`） |
-| 分支松弛 / 远跳转 | L6（`relax`；只消费 `needs-far`） |
-| `li` / `la` 展开 | L7（`../riscv-help`；`la` 还要 L5 的符号表） |
-| 端序 / `value` 落字节 | L7（全流水线只有这一处写端序） |
-| 产物（字节） | L7（`encode-layout`） |
-| 单层测试 | 每层（纯函数；L3 起 IR 是 block list） |
+| L2 | `(move a0 a1)` → `(add a0 a1 x0)`；`(ble a0 a1 (hot))` → `(bge a1 a0 (hot))` |
+| L3 | `data` 让 `main` 成为 root（数据里存了它的地址） |
+| L4 | 没有可删的块 |
+| L5/L6 | 全部够得着，`problems = ()` |
+| L7 | 见下面两段字节 |
 
-## 5. demo 的约定
+```
+segment c start=#x100000 size=24
+  100000  33 85 05 00   ; add a0,a1,x0
+  100004  63 D4 A5 00   ; bge a1,a0,+8
+  100008  6F 00 C0 00   ; jal x0,+12
+  10000C  13 05 15 00   ; addi a0,a0,1
+  100010  67 80 00 00   ; jalr x0,ra,0
+  100014  83 32 81 00   ; ld t0,8(sp)
+segment d start=#x200000 size=11
+  200000  00 00 10 00 00 00 00 00   ; (value 8 (label+ (main) 0)) = 0x100000
+  200008  68 69 00                  ; "hi\0"
+```
 
-每个 `L*/demo.rkt` 只出现**该层自己的输入输出**：
+## 7. 测试与 demo 约定
 
-| demo | 输入 | 输出 |
+- 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
+  一个 `demo.rkt`（只出现**该层自己的**输入输出）。
+- 测试条数：D1 62 / L1 43 / L2 119 / L3 176 / L4 46 / L5 171 / L6 30 / L7 57。
+- 层与层之间不互相调用；要看整条链就按顺序手动串（或看 §6）。
+- 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
+
+## 8. 已知缺口 / 未实现
+
+| 项 | 现状 | 备注 |
 | --- | --- | --- |
-| `D1/demo.rkt` | rich 数据 | 核心 item（`label` / `bytes` / `fill` / `value` / `align`） |
-| `L1/demo.rkt` | `(module ...)` 源 | 扁平 item + 名字表 |
-| `L2/demo.rkt` | 扁平 item（含伪指令） | 扁平 item |
-| `L3/demo.rkt` | 扁平 item（+ 可选 data） | block list |
-| `L4/demo.rkt` | block list（用 `sexp->program` 写字面量） | block list |
-| `L5/demo.rkt` | block list + 数据 item + layout 输入 | `((segments …) (symbols …) (problems …))` |
-| `L6/demo.rkt` | block list + layout 输入 | 同样的 layout，但远分支已经升好形式（空槽留着） |
-| `L7/demo.rkt` | block list + 数据 + layout 输入 | `(build …)`：每个段一坨字节（带 hexdump） |
+| scratch 寄存器（`scratch-hole` 的填充） | **留空** | "动态内存布局 / 寄存器使用"层，尚未设计 |
+| `la` 远形式（>±2GB） | 只报 `la-too-far` | 需要 scratch |
+| 真 reloc / 外部符号 | 没做 | 栈顶 / `malloc` 区要它 |
+| 补 fallthrough 跳转、trampoline、块重排 | 没做 | L5 只报 `broken-fallthrough` |
+| 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |
+| `fence` / `fence.tso` 的操作数语法 | 没定义 | L7 报 "no operand syntax" |
+| `.bss` / `ascii` 等数据指令 | 没做 | `fill` / `bytes` 够用 |
 
-层与层之间不互相调用；要看整条链就按顺序手动串。
+## 9. 文档规范
 
-`li` / `la` 在 L2~L5 的 demo 里只代表**透传**，不代表该层有语义
-（`L2/demo.rkt` 里 `(li t2 42) ; 真指令, 透传` 的注释是错的：`li` 是伪指令。代码未改，以本文为准）。
+每个 `<层>/DESIGN.md` 用同一套骨架：
 
-## 6. 数据表与外部展开器
+```
+# <层> <名字>（<文件>）
+> 一句话定位
+## 1. 职责        —— 做 / 不做 两列
+## 2. 输入 / 输出  —— s-exp 形状 + 例子
+## 3. API         —— 表格
+## 4. 规则        —— 编号条目，每条能落到代码
+## 5. 不归本层管   —— 边界，指向归属层
+## 6. 测试        —— 文件 + 条数 + 覆盖点
+## 7. 已知缺口
+```
 
-| 表 | 位置 | 管什么 |
-| --- | --- | --- |
-| 替换表 | `L2/table-base.rkt` … `L2/table.rkt` | 伪指令 → 真指令（**不含 `li` / `la`**） |
-| 指令分类表 | `L3/insn.rkt` | 分支 / 跳转 / 间接 / 陷阱 / 是否顺序落下（含 `c.*` 与远形式） |
-| 形式表 | `L5/forms.rkt` | 字节数 / 类别 / 可达距离 / 是否需要 scratch / 数据值宽度 |
-| 展开器（外部） | `../riscv-help`：`li` `la-pcrel` `load-pcrel` `branch-long` `jump-*` | `li` / `la` / 远分支 / 远跳转的最终展开；本仓不重复实现 |
+改代码时按这张表同步：
 
-`li` / `la` 的展开器不在本仓：它是 `riscv-help` 的公开 API（见其 `main.rkt`），
-L7 只负责「把地址算好、传进去、把结果接回来」。
-
-## 7. 已知缺口（按归属层）
-
-| 层 | 缺什么 | 状态 |
-| --- | --- | --- |
-| L2 | 伪指令表只覆盖 load/store/move/nop/c.nop/4 条换位分支 | 可加行；`li` / `la` 不进表 |
-| L5 | `li` 走 `item-size` 兜底 4 字节，应按常量上界预留 | 待改（形式表） |
-| L5 | `(la rd 链)` 不查 `undefined-target`、不查 ±2GB（`form-range` 返回 `#f`） | 待改（`verify`） |
-| L5 | `li` / `la` 预留的 4 / 8 字节是**下界**，不是上界（`li-general64` 最坏约 32B、`la` 远形式 `li-size + 8`） | 待改（尺寸契约） |
-| L5 | 符号重名不报（`collect-symbols` 用 `assoc` 取第一个） | 待改 |
-| L5 | 只报 `broken-fallthrough`，不补跳转 | 修复属于 L6/L7 |
-| L6 | 只做"升形式"；补 `fallthrough` 跳转、trampoline、块重排没做 | 未做 |
-| L7 | `la` 的远形式（超 ±2GB）需要 scratch 寄存器 → 属于未实现的"寄存器使用"层 | 留空 |
-| 空槽（scratch 寄存器） | 谁填、填哪个寄存器 = 动态内存布局 / 寄存器使用 | **留空，等待实现** |
-| L6 | 跨段到冷段没有 trampoline（LLVM 那条路），一律就地升形式 | 按需 |
-| L7 | 目录不存在：layout 之后没有消费者；`li`/`la` 展开、编码表、立即数范围检查都在这里 | 未做 |
-| 源 | 缺 `export` / `entry`，外部入口会被 L4 当死代码删掉 | 未做 |
-| 源/数据 | 数据核心词只有 `label`/`bytes`/`fill`/`value`/`align`；缺 `ascii`、`.bss`、真 reloc | 未做 |
-| 链外 | 没有 driver、没有 L1→L7 的整链测试 | 未做 |
-
-## 8. 代码约定
-
-- **顶层不带标签**：层与层之间传的数据一律是「字段表」——
-  `((blocks …) (flows …))`、`((segments …) (symbols …) (problems …))`。
-  只有子结构带标签：`(block …)` `(flow …)` `(segment …)` `(offset n item)`。
-- **记录写法**：身份 + 程序用位置式（`(block 头 item…)`）；可选字段用具名式
-  （`(flow (succ …) (fallthrough …) (root? …))`、`(segment (name …) (kind …) …)`）。
-- **命名**：谓词以 `?` 结尾；**有可观察副作用**的以 `!` 结尾（`problem!`、`flush!`），纯函数不加；
-  层入口统一 `<动词>-<名词>`（`flatten-program`、`rewrite-program`、`layout-program`）。
-- **「剥旧壳 + 规整成 item 列表」的函数一律叫 `program-items`**：
-  L1/L2/L3/L5 各一份（每层独立，层间不共享）。
-- **迭代上限**：`max-expand-steps`（L2，展开链）、`max-rounds`（L4，pass 不动点）。
-- **error 标签 = 模块名**：`'flatten` `'table` `'rewrite` `'analyze` `'layout`（不用函数名）。
-- **数据表集中放**：`table-*.rkt` / `insn.rkt` / `forms.rkt` 只放数据与查询，不放变换逻辑。
+| 改了 | 同步 |
+| --- | --- |
+| 某个 item 的名字 / 形状 | 该层 `DESIGN.md` + 本文 §5 形式归属 + 上/下层的词汇边界 |
+| 尺寸或可达距离 | 该层 `DESIGN.md` 的表 + 相邻层的度量说明 |
+| 新增一层或换契约 | 本文 §1 总图 + §3 铁律（如果需要新铁律） |
+| 修掉一个缺口 | 本文 §8 + 该层 §7 |
+| 新增 API | 该层 `DESIGN.md` §3 |
