@@ -56,8 +56,8 @@
     (utf-stringz "hi")))
 
 (define layout-spec
-  '((segments (segment c code #x100000 #x100FFF 16)
-              (segment d data #x200000 #x200FFF 8))
+  '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16))
+              (segment (name d) (kind data) (start #x200000) (end #x200FFF) (align 8)))
     (place c (main) (hot) (end))
     (place d (g tab))))
 

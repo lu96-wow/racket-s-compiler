@@ -44,7 +44,8 @@
 (check-false (value-form? '(value 3 0)))              ; 宽度只认 1/2/4/8
 (check-false (value-form? '(value 8)))                ; 少了值
 (check-true  (label-expr? '(label+ (d t) 0)))
-(check-false (label-expr? '(label+ (d t))))           ; 核心形式里加数必须写
+(check-true  (label-expr? '(label+ (d t))))           ; 加数可省, 默认 0
+(check-equal? (label-expr-addend '(label+ (d t))) 0)
 (check-equal? (label-expr-chain '(label+ (d t) 8)) '(d t))
 (check-equal? (label-expr-addend '(label+ (d t) -8)) -8)
 (check-true  (fill-form? '(fill 4096 0)))
@@ -153,7 +154,7 @@
                   (label b) (addi a1 a1 1)
                   (label c) (addi a2 a2 1))
                 '()
-                '((segments (segment prog1 code #x100000 #x100FFF 16))
+                '((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)))
                   (place prog1 (main) (b) (c)))))
 
 (check-equal? (map car l1) '(segments symbols problems))   ; 顶层是字段表, 无标签
@@ -164,12 +165,13 @@
 (check-equal? (size-of-seg l1 'prog1) 16)
 (check-equal? (problems-of l1) '())
 
-(check-equal? (findf (lambda (s) (equal? (car s) '(main))) (symbols-of l1))
-              '((main) prog1 0 #x100000))
-(check-equal? (findf (lambda (s) (equal? (car s) '(b))) (symbols-of l1))
-              '((b) prog1 8 #x100008))
-(check-equal? (findf (lambda (s) (equal? (car s) '(c))) (symbols-of l1))
-              '((c) prog1 12 #x10000c))
+;; 符号行带 tag: (symbol 链 段名 偏移 绝对地址)
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(main))) (symbols-of l1))
+              '(symbol (main) prog1 0 #x100000))
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(b))) (symbols-of l1))
+              '(symbol (b) prog1 8 #x100008))
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(c))) (symbols-of l1))
+              '(symbol (c) prog1 12 #x10000c))
 
 ;; 压缩分支/跳转: 同理占 2 字节, 目标照查
 ;; (目标故意不指向物理下一块, 否则会被 dce 当冗余转移删掉)
@@ -178,7 +180,7 @@
                   (label c) (c.addi a0 1)
                   (label d) (c.addi a1 1))
                 '()
-                '((segments (segment s1 code #x100000 #x1000FF 4))
+                '((segments (segment (name s1) (kind code) (start #x100000) (end #x1000FF) (align 4)))
                   (place s1 (a) (b) (c) (d)))))
 (check-equal? (items-of-seg lc 's1)
               '((offset 0 (label a)) (offset 0 (c.beqz t0 (c)))
@@ -194,7 +196,7 @@
                       (label mid) (align 4096) (addi a0 a0 1)
                       (label far) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x100000 #x101FFF 4096))
+                    '((segments (segment (name s1) (kind code) (start #x100000) (end #x101FFF) (align 4096)))
                       (place s1 (a) (mid) (far)))))
               '((needs-far s1 0 (c.jal (far)) 4100 (code 0 0))))
 
@@ -202,7 +204,7 @@
 (check-equal? (problems-of
                (lay '((label a) (c.beqz t0 (ghost)) (label b) (addi a0 a0 1))
                     '()
-                    '((segments (segment s1 code #x100000 #x1000FF 4))
+                    '((segments (segment (name s1) (kind code) (start #x100000) (end #x1000FF) (align 4)))
                       (place s1 (a) (b)))))
               '((undefined-target s1 0 (c.beqz t0 (ghost)))))
 
@@ -215,8 +217,8 @@
                   (label keep) (jal x0 (keep))
                   (label cold) (addi a1 a1 1))
                 '()
-                '((segments (segment prog1     code #x100000 #x100FFF 4)
-                            (segment prog1cold code #x300000 #x300FFF 4))
+                '((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 4))
+                            (segment (name prog1cold) (kind code) (start #x300000) (end #x300FFF) (align 4)))
                   ;; place 行书写顺序无所谓, 段内仍按源顺序
                   (place prog1cold (cold))
                   (place prog1 (keep) (main)))))
@@ -242,8 +244,8 @@
                (lay '((label a) (addi a0 a0 1) (beq t0 t1 (a))   ; 这条把块切开
                       (label b) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x1000 #x1FFF 4)
-                                (segment s2 code #x2000 #x2FFF 4))
+                    '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                (segment (name s2) (kind code) (start #x2000) (end #x2FFF) (align 4)))
                       (place s1 (a))
                       (place s2 (b)))))
               '((broken-fallthrough 0 1 ((a)) ((b)))))
@@ -253,7 +255,7 @@
                (lay '((label a) (addi a0 a0 1) (beq t0 t1 (a))
                       (label b) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x1000 #x1FFF 4))
+                    '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                       (place s1 (a) (b)))))
               '())
 
@@ -263,8 +265,8 @@
                       (label x) (jal ra (x))          ; 调用自己, 并顺序落到 b
                       (label b) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x1000 #x1FFF 4)
-                                (segment s2 code #x2000 #x2FFF 4))
+                    '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                (segment (name s2) (kind code) (start #x2000) (end #x2FFF) (align 4)))
                       (place s1 (a) (b))
                       (place s2 (x)))))
               '((broken-fallthrough 0 1 ((a)) ((x)))
@@ -276,7 +278,7 @@
 
 (define l3 (lay '((label a) (beq t0 t1 (c)) (addi a0 a0 1) (label c) (addi a1 a1 1))
                 '()
-                '((segments (segment s1 code #x1000 #x1FFF 4))
+                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                   (place s1 (a) (c)))))
 
 (check-equal? (items-of-seg l3 's1)
@@ -288,8 +290,8 @@
 (check-equal? (problems-of
                (lay '((label a) (beq t0 t1 (c)) (addi a0 a0 1) (label c) (addi a1 a1 1))
                     '()
-                    '((segments (segment s1 code #x1000 #x1008 4)
-                                (segment s2 code #x1FF8 #x2FFF 4))
+                    '((segments (segment (name s1) (kind code) (start #x1000) (end #x1008) (align 4))
+                                (segment (name s2) (kind code) (start #x1FF8) (end #x2FFF) (align 4)))
                       (place s1 (a))
                       (place s2 (c)))))
               '((broken-fallthrough 1 2 () ((c)))))
@@ -300,7 +302,7 @@
 
 (define l4 (lay '((label a b) (label alias) (addi a0 a0 1))
                 '()
-                '((segments (segment s1 code #x1000 #x1FFF 4))
+                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                   (place s1 (alias)))))
 
 (check-equal? (items-of-seg l4 's1)
@@ -316,8 +318,8 @@
 (define l-abs-align
   (lay '((label main) (addi a0 a0 1))
        '((label d1) (bytes 1) (align 8) (bytes 2))
-       '((segments (segment s1 code #x1004 #x10FF 4)
-                   (segment d1 data #x2002 #x20FF 2))
+       '((segments (segment (name s1) (kind code) (start #x1004) (end #x10FF) (align 4))
+                   (segment (name d1) (kind data) (start #x2002) (end #x20FF) (align 2)))
          (place s1 (main)) (place d1 (d1)))))
 
 (check-equal? (items-of-seg l-abs-align 'd1)
@@ -330,7 +332,7 @@
 (define l-abs-align-code
   (lay '((label main) (align 16) (addi a0 a0 1))
        '()
-       '((segments (segment s1 code #x1004 #x10FF 4))
+       '((segments (segment (name s1) (kind code) (start #x1004) (end #x10FF) (align 4)))
          (place s1 (main)))))
 
 (check-equal? (items-of-seg l-abs-align-code 's1)
@@ -359,8 +361,8 @@
 (define l5 (lay '((label main) (la t0 (data1 table)) (ld t1 t0 0) (jalr x0 ra 0))
                 '((label data1 table) (bytes 1 2 3 4) (align 8)
                   (label data1 end) (bytes 0))
-                '((segments (segment prog1 code #x100000 #x1000FF 4)
-                            (segment data1 data #x001000 #x0010FF 16))
+                '((segments (segment (name prog1) (kind code) (start #x100000) (end #x1000FF) (align 4))
+                            (segment (name data1) (kind data) (start #x001000) (end #x0010FF) (align 16)))
                   (place prog1 (main))
                   (place data1 (data1 table) (data1 end)))))
 
@@ -379,57 +381,57 @@
 
 ;; 没有 place 行 -> 块没有家
 (check-equal? (problems-of (lay '((label main) (addi a0 a0 1)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4)))))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))))))
               '((unplaced-block 0 ((main)))))
 
 ;; 后续块跟随锚点, 不需要单独 place
 (check-equal? (problems-of (lay '((label main) (addi a0 a0 1) (addi a0 a0 1)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main)))))
               '())
 
 ;; place 指向不存在的段
 (check-equal? (problems-of (lay '((label main)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place nope (main)))))
               '((unknown-segment nope) (unplaced-block 0 ((main)))))
 
 ;; 同一个链被两行 place 抢
 (check-equal? (problems-of (lay '((label main)) '()
-                               '((segments (segment a code #x1000 #x1FFF 4)
-                                           (segment b code #x2000 #x2FFF 4))
+                               '((segments (segment (name a) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                           (segment (name b) (kind code) (start #x2000) (end #x2FFF) (align 4)))
                                  (place a (main))
                                  (place b (main)))))
               '((ambiguous-placement (main) a b)))
 
 ;; data 开头没有 label
 (check-equal? (problems-of (lay '((label main)) '((bytes 1))
-                               '((segments (segment d data #x1000 #x1FFF 4))
+                               '((segments (segment (name d) (kind data) (start #x1000) (end #x1FFF) (align 4)))
                                  (place d (main)))))
               '((unlabeled-run ((bytes 1)))))
 
 ;; 指令落进 data 段
 (check-equal? (problems-of (lay '((label main) (addi a0 a0 1)) '()
-                               '((segments (segment d data #x1000 #x1FFF 4))
+                               '((segments (segment (name d) (kind data) (start #x1000) (end #x1FFF) (align 4)))
                                  (place d (main)))))
               '((data-code-mixed d 0 (addi a0 a0 1))))
 
 ;; bytes 落进 code 段
 (check-equal? (problems-of (lay '((label main) (bytes 1 2)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main)))))
               '((code-data-mixed s1 0 (bytes 1 2))))
 
 ;; 目标不存在 / scratch 空槽
 (check-equal? (problems-of (lay '((label main) (jal x0 (ghost))) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main)))))
               '((undefined-target s1 0 (jal x0 (ghost)))))
 (check-equal? (problems-of (lay '((label main) (branch-indirect beq a0 a1 (done))
                                   (label keep) (jal x0 (keep))   ; 让目标不是紧邻下一块
                                   (label done) (jalr x0 ra 0))
                                '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main) (keep) (done)))))
               '((scratch-hole s1 0 (branch-indirect beq a0 a1 (done)) (code 0 0))))
 
@@ -437,27 +439,27 @@
 (check-equal? (problems-of (lay0 '((label main) (jump-far x0 (done))
                                    (label done) (jalr x0 ra 0))
                                 '()
-                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                   (place s1 (main) (done)))))
               '((scratch-hole s1 0 (jump-far x0 (done)) (code 0 0))))
 (check-equal? (problems-of (lay0 '((label main) (jump-far x0 t0 (done))
                                    (label done) (jalr x0 ra 0))
                                 '()
-                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                   (place s1 (main) (done)))))
               '())
 ;; link = ra: 是调用, 自己就是 auipc 的落点, 不需要 scratch
 (check-equal? (problems-of (lay0 '((label main) (jump-far ra (done))
                                    (label done) (jalr x0 ra 0))
                                 '()
-                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                   (place s1 (main) (done)))))
               '())
 ;; dce 眼里它已经是真转移了: 跳到紧邻下一块会被删掉(变成顺序落下)
 (check-equal? (items-of-seg (lay '((label main) (jump-far x0 (done))
                                    (label done) (jalr x0 ra 0))
                                 '()
-                                '((segments (segment s1 code #x1000 #x1FFF 4))
+                                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                   (place s1 (main) (done))))
                              's1)
               '((offset 0 (label main)) (offset 0 (label done))
@@ -467,15 +469,15 @@
 (check-equal? (items-of-seg
                (lay '((label main) (jalr x0 ra 0))
                     '((label d z) (fill 4096 0) (label d e) (bytes 7))
-                    '((segments (segment s1 code #x1000 #x1FFF 4)
-                                (segment d data #x10000 #x1FFFF 8))
+                    '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                       (place s1 (main)) (place d (d z) (d e))))
                'd)
               '((offset 0 (label d z)) (offset 0 (fill 4096 0))
                 (offset 4096 (label d e)) (offset 4096 (bytes 7))))
 ;; fill 落进 code 段 -> 数据/代码混放
 (check-equal? (problems-of (lay '((label main) (fill 4 0)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main)))))
               '((code-data-mixed s1 0 (fill 4 0))))
 
@@ -483,13 +485,13 @@
 (check-equal? (problems-of
                (lay0 '((label main) (la t0 (d t)) (ret))
                      '((label d t) (bytes 1))
-                     '((segments (segment s code #x1000 #x1FFF 4)
-                                 (segment d data #x100000000 #x100001000 8))
+                     '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x100000000) (end #x100001000) (align 8)))
                        (place s (main)) (place d (d t)))))
               '((la-too-far s 0 (la t0 (d t)) 4294963200 (code 0 0))))
 (check-equal? (problems-of
                (lay0 '((label main) (la t0 (ghost)) (ret)) '()
-                     '((segments (segment s code #x1000 #x1FFF 4))
+                     '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                        (place s (main)))))
               '((undefined-target s 0 (la t0 (ghost)))))
 
@@ -498,25 +500,25 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (problems-of (lay '((label main)) '()
-                               '((segments (segment s1 code #x1002 #x1FFF 16))
+                               '((segments (segment (name s1) (kind code) (start #x1002) (end #x1FFF) (align 16)))
                                  (place s1 (main)))))
               '((segment-misaligned s1 #x1002 16)))
 
 (check-equal? (problems-of (lay '((label main)) '()
-                               '((segments (segment a code #x1000 #x1FFF 4)
-                                           (segment b code #x1800 #x2FFF 4))
+                               '((segments (segment (name a) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                           (segment (name b) (kind code) (start #x1800) (end #x2FFF) (align 4)))
                                  (place a (main)))))
               '((segment-overlap a b)))
 
 (check-equal? (problems-of (lay '((label main)) '()
-                               '((segments (segment a code #x1000 #x1FFF 4)
-                                           (segment b code #x2000 #x1FFF 4))
+                               '((segments (segment (name a) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                           (segment (name b) (kind code) (start #x2000) (end #x1FFF) (align 4)))
                                  (place a (main)))))
               '((segment-bad-range b)))
 
 ;; 越界
 (check-equal? (problems-of (lay '((label main) (addi a0 a0 1) (addi a0 a0 1)) '()
-                               '((segments (segment s1 code #x1000 #x1007 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1007) (align 4)))
                                  (place s1 (main)))))
               '((segment-overflow s1 8 7)))
 
@@ -549,8 +551,8 @@
 (define d1-laid
   (layout-program (analyze '((label main) (jalr x0 ra 0)))
                   d1-items
-                  '((segments (segment s1 code #x1000 #x1FFF 4)
-                              (segment d data #x10000 #x1FFFF 8))
+                  '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                              (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                     (place s1 (main)) (place d (d t)))))
 (check-equal? (problems-of d1-laid) '())
 (check-equal? (items-of-seg d1-laid 'd)
@@ -569,8 +571,8 @@
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
                      '((label d t) (value 8 (label+ (ghost) 0)))
-                     '((segments (segment s1 code #x1000 #x1FFF 4)
-                                 (segment d data #x10000 #x1FFFF 8))
+                     '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
               '((undefined-target d 0 (value 8 (label+ (ghost) 0)))))
 
@@ -578,8 +580,8 @@
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
                      '((label d t) (value 4 (label+ (d t) 0)))
-                     '((segments (segment s1 code #x1000 #x1FFF 4)
-                                 (segment d data #x100000000 #x100000FFF 8))
+                     '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x100000000) (end #x100000FFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
               '((value-out-of-range d 0 (value 4 (label+ (d t) 0)) #x100000000)))
 
@@ -587,8 +589,8 @@
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
                      '((label d t) (value 8 (label+ (d t) 8)))
-                     '((segments (segment s1 code #x1000 #x1FFF 4)
-                                 (segment d data #x10000 #x1FFFF 8))
+                     '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
               '())
 
@@ -604,8 +606,8 @@
 (define table-data (expand-data '((label d table) (b64-array 1 (label+ (f) 0)))))
 
 (define table-layout
-  '((segments (segment s code #x100000 #x100FFF 4)
-              (segment t data #x200000 #x2000FF 8))
+  '((segments (segment (name s) (kind code) (start #x100000) (end #x100FFF) (align 4))
+              (segment (name t) (kind data) (start #x200000) (end #x2000FF) (align 8)))
     (place s (main) (f)) (place t (d table))))
 
 ;; 不把 data 喂给 analyze: f 没有外部引用 -> 被 dce 当死块删掉 -> 表里的地址悬空
@@ -639,7 +641,7 @@
 (define pipeline
   (layout-program (eliminate-dead (analyze (rewrite-program (car flat))))
                   '()
-                  '((segments (segment prog1 code #x100000 #x1000FF 4))
+                  '((segments (segment (name prog1) (kind code) (start #x100000) (end #x1000FF) (align 4)))
                     (place prog1 (prog1 main) (prog1 done)))))
 
 ;; analyze 已经删掉 dead 块和"跳到紧邻下一块"的 jal
@@ -652,16 +654,16 @@
 (define l-mid
   (lay '((label a) (addi a0 a0 1) (label mid) (addi a0 a0 1))
        '()
-       '((segments (segment s1 code #x1000 #x1FFF 4))
+       '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place s1 (a) (mid)))))
 (check-equal? (problems-of l-mid) '((unmatched-place (mid))))
 ;; 块内 label 照样有偏移(符号表里有它)
-(check-equal? (findf (lambda (r) (equal? (car r) '(mid))) (symbols-of l-mid))
-              '((mid) s1 4 #x1004))
+(check-equal? (findf (lambda (r) (equal? (cadr r) '(mid))) (symbols-of l-mid))
+              '(symbol (mid) s1 4 #x1004))
 
 ;; place 名字写错 -> 也报 unmatched-place
 (check-equal? (problems-of (lay '((label a) (addi a0 a0 1)) '()
-                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (a) (typo)))))
               '((unmatched-place (typo))))
 

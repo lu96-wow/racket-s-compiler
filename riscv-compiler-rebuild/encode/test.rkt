@@ -95,8 +95,8 @@
 
 (define out
   (layout-program (eliminate-dead (analyze prog)) data
-                  '((segments (segment s code #x1000 #x1FFF 4)
-                              (segment d data #x8000 #x8FFF 8))
+                  '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                              (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
                     (place s (main) (done)) (place d (d t)))))
 
 (check-equal? (seg-problems out) '())
@@ -104,6 +104,8 @@
 (define build (encode-layout out))
 (check-equal? (map car (cdr build)) '(segment segment))
 (check-equal? (map (lambda (s) (cadr (assoc 'name (cdr s)))) (cdr build)) '(s d))
+;; 最终产物也带 kind: loader 靠它决定可执行/可写
+(check-equal? (map (lambda (s) (cadr (assoc 'kind (cdr s)))) (cdr build)) '(code data))
 
 ;; dce 已经删掉"跳到紧邻下一块"的 jal, 所以只剩 addi + jalr
 (check-equal? (build-bytes build 's) '(#x13 #x05 #x15 #x00  #x67 #x80 #x00 #x00))
@@ -122,8 +124,8 @@
   (layout-program (eliminate-dead (analyze '((label main) (addi a0 a0 1)
                                              (align 16) (jalr x0 ra 0))))
                   '((label d t) (bytes 1) (align 8) (bytes 2))
-                  '((segments (segment s code #x1000 #x1FFF 4)
-                              (segment d data #x8002 #x8FFF 2))
+                  '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                              (segment (name d) (kind data) (start #x8002) (end #x8FFF) (align 2)))
                     (place s (main)) (place d (d t)))))
 
 (check-equal? (seg-problems align-out) '())
@@ -141,7 +143,7 @@
   (layout-program (eliminate-dead (analyze '((label main) (c.addi a0 1)
                                              (align 4) (ret))))
                   '()
-                  '((segments (segment s code #x1000 #x1FFF 4))
+                  '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                     (place s (main)))))
 (check-equal? (seg-problems pad2-out) '())
 ;; c.addi a0,1 (2B) + c.nop (2B) + ret (4B)
@@ -178,8 +180,8 @@
             (flow (succ) (fallthrough #f) (root? #f))))))
 
 (define far-out (relax far-prog '()
-                       '((segments (segment p code #x1000 #x1014 4)
-                                   (segment q code #x2000 #x2FFF 4))
+                       '((segments (segment (name p) (kind code) (start #x1000) (end #x1014) (align 4))
+                                   (segment (name q) (kind code) (start #x2000) (end #x2FFF) (align 4)))
                          (place p (p main)) (place q (q cold)))))
 (check-equal? (seg-problems far-out) '())
 ;; branch-far = 反向分支 + jal, 一共 8 字节
@@ -214,7 +216,7 @@
              (encode-layout
               (layout-program (eliminate-dead (analyze '((label main) (jal x0 (ghost)))))
                               '()
-                              '((segments (segment s code #x1000 #x1FFF 4))
+                              '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                 (place s (main)))))))
 
 ;; ---------------------------------------------------------------------------
@@ -226,12 +228,12 @@
 
 ;; li 的尺寸由常量决定(4/8/16…), 编码就是 riscv-help 的展开
 (check-equal? (build-bytes (encode-one-layout '((label main) (li t0 0)) '()
-                                             '((segments (segment s code #x1000 #x1FFF 4))
+                                             '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                                (place s (main))))
                              's)
               '(#x93 #x02 #x00 #x00))                       ; addi t0, x0, 0
 (check-equal? (build-bytes (encode-one-layout '((label main) (li t0 #x12345678)) '()
-                                             '((segments (segment s code #x1000 #x1FFF 4))
+                                             '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                                (place s (main))))
                              's)
               (append '(#xB7 #x52 #x34 #x12)                ; lui t0, 74565
@@ -240,8 +242,8 @@
 ;; la: 近形式 = auipc + addi; 0x1000 -> 0x8000, delta = 0x7000
 (check-equal? (build-bytes (encode-one-layout '((label main) (la t0 (d t)) (ret))
                                              '((label d t) (bytes 1))
-                                             '((segments (segment s code #x1000 #x1FFF 4)
-                                                         (segment d data #x8000 #x8FFF 8))
+                                             '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                                         (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
                                                (place s (main)) (place d (d t))))
                              's)
               (append '(#x97 #x72 #x00 #x00)                ; auipc t0, 7
@@ -251,8 +253,8 @@
 ;; la 的显式 scratch 在近形式里用不上, 尺寸/编码都不变
 (check-equal? (build-bytes (encode-one-layout '((label main) (la t0 t2 (d t)))
                                              '((label d t) (bytes 1))
-                                             '((segments (segment s code #x1000 #x1FFF 4)
-                                                         (segment d data #x8000 #x8FFF 8))
+                                             '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                                         (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
                                                (place s (main)) (place d (d t))))
                              's)
               '(#x97 #x72 #x00 #x00 #x93 #x82 #x02 #x00))

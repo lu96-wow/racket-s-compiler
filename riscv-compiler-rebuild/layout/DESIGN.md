@@ -18,7 +18,8 @@
 ```
 program : dce 输出 ((blocks …) (flows …))
 data    : 核心 item 列表（expand-data 输出）
-layout  : ((segments (segment 名 kind start end align) ...)
+layout  : ((segments (segment (name 名) (kind code|data)
+                            (start x) (end y) (align n)) ...)
            (place 段名 链 ...) ...)
 ```
 
@@ -31,7 +32,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
                                  (offset 8 (label done))
                                  (offset 8 (add a0 a0 x0)))
                           (size 12)) ...)
-      (symbols ((main) s 0 #x1000) …)
+      (symbols (symbol (main) s 0 #x1000) …)
       (problems …))
 ```
 
@@ -174,7 +175,7 @@ relax 才能精确改那一条。
 - 分支松弛：relax。补 fallthrough 跳转：目前没有实现。
 - 端序：encode。
 
-## 6. 测试（`layout/test.rkt`，176 条）
+## 6. 测试（`layout/test.rkt`，177 条）
 
 形式表（尺寸 / 类别 / 区间 / 空槽 / 值）、放置、region、对齐（含绝对地址）、
 fallthrough、符号表、每类 problem、expand-data 边界（expand-data 的输出必须能被本层度量）、

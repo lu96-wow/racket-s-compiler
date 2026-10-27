@@ -18,7 +18,8 @@
 
 (require "relax.rkt"
          (only-in "../analyze/analyze.rkt" sexp->program)
-         (only-in "../layout/layout.rkt" layout-program layout-problems))
+         (only-in "../layout/layout.rkt" layout-program layout-problems
+                  symbol-address))
 
 (define prog
   (sexp->program
@@ -32,8 +33,8 @@
       (flow (succ) (fallthrough #f) (root? #f))))))
 
 (define layout-input
-  '((segments (segment prog1     code #x1000   #x1FFF   4)
-              (segment prog1cold code #x200000 #x200FFF 4))
+  '((segments (segment (name prog1) (kind code) (start #x1000) (end #x1FFF) (align 4))
+              (segment (name prog1cold) (kind code) (start #x200000) (end #x200FFF) (align 4)))
     (place prog1     (prog1 main))
     (place prog1cold (prog1cold cold))))
 
@@ -51,4 +52,4 @@
 
 (displayln ";;;; 最终布局(地址都按新尺寸重算过)")
 (for ([s (in-list (cdr (assoc 'symbols out)))])
-  (displayln (format "  ~s -> ~a+~x (#x~x)" (car s) (cadr s) (caddr s) (cadddr s))))
+  (displayln (format "  ~s -> ~a+~x (#x~x)" (cadr s) (caddr s) (cadddr s) (symbol-address s))))

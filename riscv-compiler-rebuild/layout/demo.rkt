@@ -29,9 +29,9 @@
     (label data1 ptr) (value 8 (label+ (data1 table) 0))))
 
 (define layout-input
-  '((segments (segment prog1     code #x100000 #x100FFF 16)
-              (segment prog1cold code #x300000 #x300FFF 16)
-              (segment data1     data #x001000 #x0010FF 16))
+  '((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16))
+              (segment (name prog1cold) (kind code) (start #x300000) (end #x300FFF) (align 16))
+              (segment (name data1) (kind data) (start #x001000) (end #x0010FF) (align 16)))
     ;; 精确匹配块头的 label 链; 没有 label 的块跟随前一个锚点
     (place prog1     (prog1 main) (prog1 done))
     (place prog1cold (prog1cold cold))
@@ -50,9 +50,9 @@
     (displayln (format "    ~s" entry))))
 
 (newline)
-(displayln ";; 符号 (链 -> 段 偏移 绝对地址)")
+(displayln ";; 符号行 (symbol 链 段名 偏移 绝对地址)")
 (for ([s (in-list (cdr (assoc 'symbols laid)))])
-  (displayln (format "  ~s -> ~a+~x (#x~x)" (car s) (cadr s) (caddr s) (cadddr s))))
+  (displayln (format "  ~s -> ~a+~x (#x~x)" (cadr s) (caddr s) (cadddr s) (symbol-address s))))
 
 (newline)
 (displayln (format "problems: ~s" (layout-problems laid)))

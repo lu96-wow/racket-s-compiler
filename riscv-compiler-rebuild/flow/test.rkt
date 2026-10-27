@@ -21,8 +21,8 @@
 (define rich '((label g tab) (value 8 (label+ (main) 0)) (utf-stringz "hi")))
 
 (define layout-spec
-  '((segments (segment c code #x100000 #x100FFF 16)
-              (segment d data #x200000 #x200FFF 8))
+  '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16))
+              (segment (name d) (kind data) (start #x200000) (end #x200FFF) (align 8)))
     (place c (main) (hot) (end)) (place d (g tab))))
 
 (define seeds
@@ -37,12 +37,12 @@
     (label end) (jalr x0 ra 0)))
 
 (define spec-dead
-  '((segments (segment c code #x100000 #x100FFF 16))
+  '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16)))
     (place c (main) (end))))
 
 ;; 同一个程序, 但数据段是空的
 (define spec-code
-  '((segments (segment c code #x100000 #x100FFF 16))
+  '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16)))
     (place c (main) (hot) (end))))
 
 (define (bytes-of-seg build name)
@@ -115,7 +115,7 @@
   (lambda ()
     (run-flow (list 'expand-pseudo 'flatten 'analyze 'dce 'relax 'encode)
               (list (cons 'program-items '((label main) (move a0 a1) (ret)))
-                    (cons 'layout-spec '((segments (segment c code #x1000 #x1FFF 4))
+                    (cons 'layout-spec '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                          (place c (main))))))))
 
 ;; 正确顺序: expand-pseudo 在 analyze 之前
@@ -123,7 +123,7 @@
   (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
             (list (cons 'program-items '((label main) (move a0 a1) (ret)))
                   (cons 'data-items '())
-                  (cons 'layout-spec '((segments (segment c code #x1000 #x1FFF 4))
+                  (cons 'layout-spec '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                        (place c (main)))))))
 (check-equal? (bytes-of-seg (flow-value right-order 'build) 'c)
               '(#x33 #x85 #x05 #x00  #x67 #x80 #x00 #x00))
@@ -205,8 +205,8 @@
       (label f) (addi a0 a0 1) (jalr x0 ra 0))))
 
 (define mmod-spec
-  '((segments (segment c code #x100000 #x100FFF 16)
-              (segment d data #x200000 #x200FFF 8))
+  '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16))
+              (segment (name d) (kind data) (start #x200000) (end #x200FFF) (align 8)))
     (place c (prog main) (prog f))
     (place d (data d table))))
 

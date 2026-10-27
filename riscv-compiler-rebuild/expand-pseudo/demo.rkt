@@ -8,7 +8,7 @@
   '((load-32  t0 sp 8)        ; 显式写法
     (ls8      t1 t0)          ; 简写, 省略 off
     (add      t1 t1 t0)       ; 真指令, 透传
-    (store-64 sp 16 t1)       ; 地址在前, 值在后
+    (store-64 t1 sp 16)       ; 值, 基址, 偏移 —— 和 (sd t1 sp 16) 同序
     (ble      t1 t0 L)        ; 简写分支
     (move     t0 t1)          ; 显式 move
     (li       t2 42)          ; 低层伪指令, 留到 encode

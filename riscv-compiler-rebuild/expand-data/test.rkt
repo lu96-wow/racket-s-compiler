@@ -125,8 +125,8 @@
 (check-equal? (ex '()) '())
 
 ;; 词汇封闭: 段/放置/未知形式都不是本层的词汇
-(check-exn exn:fail? (lambda () (ex '((segment d data 0 1 1)))))
-(check-exn exn:fail? (lambda () (ex '((segments (segment d data 0 1 1))))))
+(check-exn exn:fail? (lambda () (ex '((segment (name d) (kind data) (start 0) (end 1) (align 1))))))
+(check-exn exn:fail? (lambda () (ex '((segments (segment (name d) (kind data) (start 0) (end 1) (align 1)))))))
 (check-exn exn:fail? (lambda () (ex '((place d (d t))))))
 (check-exn exn:fail? (lambda () (ex '((word 1)))))
 (check-exn exn:fail? (lambda () (ex '((b8)))))

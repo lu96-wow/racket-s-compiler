@@ -23,12 +23,12 @@
 (check-equal? (rw '(ls32     t0 a))   '(lw  t0 a 0))
 
 ;; --- 存储: 操作数顺序被摆正 ------------------------------------------------
-(check-equal? (rw '(store-8  a s))     '(sb s a 0))
-(check-equal? (rw '(store-8  a 8 s))   '(sb s a 8))
-(check-equal? (rw '(store-16 a s))     '(sh s a 0))
-(check-equal? (rw '(store-32 a 4 t0))  '(sw t0 a 4))
-(check-equal? (rw '(store-64 a ra))    '(sd ra a 0))
-(check-equal? (rw '(st64     sp 16 ra))'(sd ra sp 16))
+(check-equal? (rw '(store-8  s a))     '(sb s a 0))
+(check-equal? (rw '(store-8  s a 8))   '(sb s a 8))
+(check-equal? (rw '(store-16 s a))     '(sh s a 0))
+(check-equal? (rw '(store-32 t0 a 4))  '(sw t0 a 4))
+(check-equal? (rw '(store-64 ra a))    '(sd ra a 0))
+(check-equal? (rw '(st64 ra sp 16))   '(sd ra sp 16))
 
 ;; --- move ------------------------------------------------------------------
 (check-equal? (rw '(move t0 t1)) '(add t0 t1 x0))
@@ -57,7 +57,7 @@
 ;; --- item 列表 --------------------------------------------------------------
 (check-equal? (rw '(label L))
               '(label L))
-(check-equal? (rw '((load-32 t0 sp 8) (store-64 sp 16 ra)))
+(check-equal? (rw '((load-32 t0 sp 8) (store-64 ra sp 16)))
               '((lwu t0 sp 8) (sd ra sp 16)))
 
 ;; 操作数是值: 嵌套写在操作数里的伪指令不展开(展平后不存在这种写法)
@@ -74,7 +74,7 @@
               '(quote (load-32 t0 sp 8)))
 
 ;; --- 验证器 ----------------------------------------------------------------
-(check-false (pseudo-leftover? (rw '((load-32 t0 sp 8) (store-64 sp 16 ra)))))
+(check-false (pseudo-leftover? (rw '((load-32 t0 sp 8) (store-64 ra sp 16)))))
 (check-true  (pseudo-leftover? '(load-32 t0 sp 8)))
 (check-false (pseudo-leftover? '(lwu t0 sp 8)))
 (check-true  (fully-rewritten? '(lwu t0 sp 8)))
@@ -87,7 +87,7 @@
               (rw '((l8 t0 a) (ble a b L))))
 
 ;; --- 层入口: 进 list, 出也一定是 list ---------------------------------------
-(check-equal? (rewrite-program '((load-32 t0 sp 8) (store-64 sp 16 ra) L))
+(check-equal? (rewrite-program '((load-32 t0 sp 8) (store-64 ra sp 16) L))
               '((lwu t0 sp 8) (sd ra sp 16) L))
 (check-equal? (rewrite-program '(l8 t0 a)) '((lbu t0 a 0)))
 
@@ -136,7 +136,7 @@
 ;; 同一行的名字平级: 谁做头都是同一组规则
 (check-equal? (rw '(l8 t0 a))          (rw '(load-8 t0 a)))
 (check-equal? (rw '(ls16 t0 a 2))      (rw '(load-s16 t0 a 2)))
-(check-equal? (rw '(st64 sp 16 ra))    (rw '(store-64 sp 16 ra)))
+(check-equal? (rw '(st64 ra sp 16))    (rw '(store-64 ra sp 16)))
 (check-equal? (rw '(mv t0 t1))         (rw '(move t0 t1)))
 (check-equal? (rw '(bleu a b L))       (rw '(branch-leu a b L)))
 

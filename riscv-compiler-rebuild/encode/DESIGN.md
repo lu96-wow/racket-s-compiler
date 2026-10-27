@@ -19,7 +19,7 @@
 ```
 layout : relax 产物（segments + symbols + problems）
   ↓
-(build (segment (name s) (start #x1000) (size 12) (bytes #vu8…)) ...)
+(build (segment (name s) (kind code) (start #x1000) (size 12) (bytes #vu8…)) ...)
 ```
 
 ## 3. API
@@ -132,7 +132,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 
 ## 6. 测试与 demo
 
-`encode/test.rkt`（68 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
+`encode/test.rkt`（69 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
 本层**不需要** layout 输入，也不需要 program / data）。
 
 单条指令与手算编码对照（含压缩、原子、别名）、`aq`/`rl` 后缀、元数、未知指令、

@@ -27,8 +27,8 @@
 ;; 形状约定:
 ;;   (load-*  d a)           ; off 省略 -> 补 0
 ;;   (load-*  d a off)
-;;   (store-* a s)           ; off 省略 -> 补 0, 且值写最后
-;;   (store-* a off s)
+;;   (store-* s a)           ; 值在前, 与真指令 (sd 值 基址 偏移) 同序
+;;   (store-* s a off)
 ;;
 ;; load-8/16/32 是 zero-extend; load-s8/16/32 是 sign-extend。
 ;; ---------------------------------------------------------------------------
@@ -65,22 +65,22 @@
      ((?d ?a)      (lw ?d ?a 0))
      ((?d ?a ?off) (lw ?d ?a ?off)))
 
-    ;; --- 存储: 统一 (地址 [偏移] 值), 值写低 bits ------------------------
+    ;; --- 存储: (值 基址 [偏移]) —— 和 (sd 值 基址 偏移) 同序 ---------------
     (store-8 st8
-     ((?a ?s)      (sb ?s ?a 0))
-     ((?a ?off ?s) (sb ?s ?a ?off)))
+     ((?s ?a)      (sb ?s ?a 0))
+     ((?s ?a ?off) (sb ?s ?a ?off)))
 
     (store-16 st16
-     ((?a ?s)      (sh ?s ?a 0))
-     ((?a ?off ?s) (sh ?s ?a ?off)))
+     ((?s ?a)      (sh ?s ?a 0))
+     ((?s ?a ?off) (sh ?s ?a ?off)))
 
     (store-32 st32
-     ((?a ?s)      (sw ?s ?a 0))
-     ((?a ?off ?s) (sw ?s ?a ?off)))
+     ((?s ?a)      (sw ?s ?a 0))
+     ((?s ?a ?off) (sw ?s ?a ?off)))
 
     (store-64 st64
-     ((?a ?s)      (sd ?s ?a 0))
-     ((?a ?off ?s) (sd ?s ?a ?off)))
+     ((?s ?a)      (sd ?s ?a 0))
+     ((?s ?a ?off) (sd ?s ?a ?off)))
 
     ;; --- 寄存器移动 -----------------------------------------------------
     (move mv

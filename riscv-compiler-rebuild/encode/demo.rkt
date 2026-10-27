@@ -5,7 +5,7 @@
 ;;;
 ;;;   ((segments (segment (name …) (kind …) (start …) (end …) (align …)
 ;;;                       (items (offset k item) ...) (size n)) ...)
-;;;    (symbols (链 段 偏移 绝对地址) ...)
+;;    (symbols (symbol 链 段名 偏移 绝对地址) ...)
 ;;;    (problems ...))          ; 空的时候就是 (problems)
 ;;;
 ;;; 所以这个 demo 直接手写 layout，不跑前面的层（那属于别层的 demo）。
@@ -31,8 +31,8 @@
                      (offset 16 (value 4 #x12345678))
                      (offset 20 (fill 4 #xAA)))
               (size 24)))
-    (symbols ((main) prog1 0 #x100000)
-             ((data1 table) data1 0 #x200000))
+    (symbols (symbol (main) prog1 0 #x100000)
+             (symbol (data1 table) data1 0 #x200000))
     ;; problems 为空时 layout 写成 (problems) —— 一个只有头的表
     (problems)))
 

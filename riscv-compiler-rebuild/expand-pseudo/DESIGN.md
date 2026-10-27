@@ -13,10 +13,14 @@
 ## 2. 输入 / 输出
 
 ```racket
-'((load-32 t0 sp 8) (jal x0 (done)))
+'((load-32 t0 sp 8) (store-64 t1 sp 16) (jal x0 (done)))
   ↓ rewrite-program
-'((lwu t0 sp 8) (jal x0 (done)))        ; 同形，里面已按表换过
+'((lwu t0 sp 8) (sd t1 sp 16) (jal x0 (done)))     ; 同形，里面已按表换过
 ```
+
+**伪指令和它展开的真指令同序**：`(load-32 d a off)` → `(lwu d a off)`、
+`(store-64 s a off)` → `(sd s a off)`；差别只有助记符。偏移可省（补 0），
+省掉时值/目标仍在前：`(load-32 t0 sp)`、`(store-64 t1 sp)`。
 
 不认识的**头**、形状不对的 form、原子、`quote` 数据 → 原样透传，不报错。
 

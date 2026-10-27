@@ -31,8 +31,8 @@
 ;; cold 放在 cold-start, 决定距离
 (define (run br cold-start)
   (relax (make-prog br) '()
-         `((segments (segment p code #x1000 #x1014 4)   ; 20B: 够放 branch-indirect + 一个块
-                     (segment q code ,cold-start #x10000000 4))
+         `((segments (segment (name p) (kind code) (start #x1000) (end #x1014) (align 4))   ; 20B: 够放 branch-indirect + 一个块
+                     (segment (name q) (kind code) (start ,cold-start) (end #x10000000) (align 4)))
            (place p (p main))
            (place q (q cold)))))
 
@@ -153,8 +153,8 @@
 
 (check-exn exn:fail?
            (lambda () (relax (make-prog '(beq t0 t1 (q cold))) '()
-                             '((segments (segment p code #x1000 #x1014 4)
-                                         (segment q code #x200000 #x10000000 4))
+                             '((segments (segment (name p) (kind code) (start #x1000) (end #x1014) (align 4))
+                                         (segment (name q) (kind code) (start #x200000) (end #x10000000) (align 4)))
                                (place p (p main)) (place q (q cold)))
                              #:max-rounds 1)))
 

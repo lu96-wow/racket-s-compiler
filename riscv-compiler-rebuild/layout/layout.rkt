@@ -33,6 +33,8 @@
 (provide layout-program
          as-items
          layout-problems
+         symbol-row       ; 符号行查找 (enable 也要用)
+         symbol-address
          (struct-out run))
 
 ;; ---------------------------------------------------------------------------
@@ -52,20 +54,28 @@
 
 (struct segment (name kind start end align) #:transparent)
 
+;; 段声明的形状只有一种: (segment (name s) (kind code) (start x) (end y) (align n))
+;; 产物多 (items …) (size …)，最终产物 (build) 把 items 换成 (bytes …)。
+(define (segment-field* s key)
+  (define hit (assoc key (cdr s)))
+  (and hit (cadr hit)))
+
 (define (parse-segments input)
   (append*
    (for/list ([cl (in-list (clauses input 'segments))])
      (for/list ([s (in-list (cdr cl))])
-       (define ok?
-         (and (segment-form? s)
-              (= 6 (length s))
-              (symbol? (cadr s))
-              (segment-kind? (caddr s))
-              (exact-nonnegative-integer? (cadddr s))
-              (exact-nonnegative-integer? (list-ref s 4))
-              (exact-positive-integer? (list-ref s 5))))
-       (unless ok? (error 'layout "bad segment: ~e" s))
-       (segment (cadr s) (caddr s) (cadddr s) (list-ref s 4) (list-ref s 5))))))
+       (define name  (and (segment-form? s) (segment-field* s 'name)))
+       (define kind  (and (segment-form? s) (segment-field* s 'kind)))
+       (define start (and (segment-form? s) (segment-field* s 'start)))
+       (define end   (and (segment-form? s) (segment-field* s 'end)))
+       (define align (and (segment-form? s) (segment-field* s 'align)))
+       (unless (and (symbol? name)
+                    (segment-kind? kind)
+                    (exact-nonnegative-integer? start)
+                    (exact-nonnegative-integer? end)
+                    (exact-positive-integer? align))
+         (error 'layout "bad segment: ~e" s))
+       (segment name kind start end align)))))
 
 (define (parse-places input)
   (for/list ([cl (in-list (clauses input 'place))])
@@ -288,6 +298,7 @@
 ;; 符号表
 ;; ---------------------------------------------------------------------------
 
+;; 符号行: (symbol 链 段名 偏移 绝对地址)
 (define (collect-symbols measured-segs)
   (for*/list ([m (in-list measured-segs)]
               [entry (in-list (measured-items m))]
@@ -295,9 +306,13 @@
     (define off (cadr entry))
     (define path (cdr (caddr entry)))
     (define seg (measured-segment m))
-    (list path (segment-name seg) off (+ (segment-start seg) off))))
+    (list 'symbol path (segment-name seg) off (+ (segment-start seg) off))))
 
-(define (symbol-row symbols path) (and path (assoc path symbols)))
+(define (symbol-row symbols path)
+  (and path (findf (lambda (row) (equal? (cadr row) path)) symbols)))
+
+;; 绝对地址在最后一列
+(define (symbol-address row) (last row))
 
 ;; ---------------------------------------------------------------------------
 ;; 校验: 只报 problems, 不抛异常。
@@ -321,7 +336,7 @@
       [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
       [else
        ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
-       (define d (- (cadddr row) (site-here s)))
+       (define d (- (symbol-address row) (site-here s)))
        (define range (form-range it))
        (when (and range (not (<= (car range) d (cdr range))))
          (report! s `(needs-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
@@ -339,7 +354,7 @@
     (cond
       [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
       [else
-       (define d (- (cadddr row) (site-here s)))
+       (define d (- (symbol-address row) (site-here s)))
        (unless (fits-auipc-pair? d target-xlen)
          (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
 
@@ -354,7 +369,7 @@
       (cond
         [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
         [else
-         (define n (+ (cadddr row) (label-expr-addend v)))
+         (define n (+ (symbol-address row) (label-expr-addend v)))
          (define bits (* 8 (value-width it)))
          ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
          (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))

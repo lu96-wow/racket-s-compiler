@@ -93,6 +93,8 @@ layout  list ┘                items          program    program  layout   byte
 
 1. **寄存器一律显式**。远形式写 `(branch-far <cond> a b L)` / `(branch-indirect s <cond> a b L)`；
    没有 `call-far`（它就是 `(jump-far ra L)`）。谁都不许从助记符里猜寄存器。
+   可选 scratch 的位置只有一条规则：**紧跟"写结果"的那个寄存器；没有就放最前** ——
+   `(la rd tmp 链)`、`(jump-far link s L)`、`(branch-indirect s cond a b L)`。
 2. **一个东西只有一种写法**。`.aq` / `.rl` / `.aqrl` 只认规范顺序；`x0` / `zero` / `0` 由
    `riscv-help` 的寄存器表统一。
 3. **尺寸：谁的 item 谁负责**。`li` 由常量精确算，`la` 近形式固定 8，
@@ -120,9 +122,9 @@ layout  list ┘                items          program    program  layout   byte
 | --- | --- |
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
 | 块 + 流 | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
-| layout 输入 | `((segments (segment prog1 code #x100000 #x100FFF 16) …) (place prog1 (prog1 main) …))` |
-| layout 产物 | `((segments (segment (name prog1) … (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))`；`problems` 空的时候就是 `(problems)` |
-| build | `(build (segment (name prog1) (start …) (size …) (bytes #vu8…)) …)` |
+| layout 输入 | `((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)) …) (place prog1 (prog1 main) …))` |
+| layout 产物 | `((segments (segment (name prog1) (kind code) (start …) (end …) (align …) (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))`；`problems` 空的时候就是 `(problems)` |
+| build | `(build (segment (name prog1) (kind code) (start …) (size …) (bytes #vu8…)) …)` |
 
 ## 5. 形式归属
 
@@ -142,8 +144,8 @@ layout  list ┘                items          program    program  layout   byte
 | `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 定端序落字节 | expand-data | analyze / layout / encode |
 | `(label+ 链 加数)` | `sexp.rkt` 定形状（`label-expr?`）；expand-data 归一；analyze 当取地址；layout 解析范围；encode 落值 | 人 / expand-data | expand-data / flatten / analyze / layout / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |
-| `(segments …)` `(place …)` | layout | 人 | layout |
-| `(offset k item)` `(symbols …)` `(problems …)` | layout | layout | relax / encode / 人 |
+| `(segments (segment (name …) (kind …) (start …) (end …) (align …)) …)` `(place 段名 链 …)` | layout | 人 | layout |
+| `(offset k item)` `(symbols (symbol 链 段名 偏移 地址) …)` `(problems …)` | layout | layout | relax / encode / 人 |
 | `(build …)` | encode | encode | 加载器（未做） |
 
 ## 6. 完整流水线（真实输出，由 flow 跑出来）
@@ -184,7 +186,7 @@ segment d start=#x200000 size=11
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
 - 测试条数：expand-data 68 / flatten 65 / expand-pseudo 119 / analyze 176 / dce 46 /
-  layout 176 / relax 30 / encode 68 / flow 24。
+  layout 177 / relax 30 / encode 69 / flow 24。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
 
