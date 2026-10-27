@@ -29,6 +29,8 @@
 ;;; 输出里 label 的链带上完整作用域前缀, 引用改写成完整链。
 ;;; 链 -> id / 偏移 是布局层的事, 本层不碰。
 
+(require "../sexp.rkt")
+
 (provide name?
          path?
          flatten-program
@@ -39,13 +41,11 @@
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
 
-(define (form? x) (and (pair? x) (list? x)))
 
-(define (name? x)
-  (or (symbol? x) (string? x) (number? x)))
 
-(define (path? x)
-  (and (list? x) (pair? x) (andmap name? x)))
+
+
+
 
 (define (module-form? x) (and (form? x) (eq? (car x) 'module)))
 (define (label-form? x)  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
@@ -55,21 +55,7 @@
 (define (relative-path x) (cdr x))
 
 ;; 程序 = 普通 list. 旧写法 (quote ...) / (begin ...) 也收, 但出口一律是 plain list.
-(define (program-items prog)
-  (define body
-    (cond
-      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
-       (cadr prog)]
-      [(list? prog) prog]
-      [else (list prog)]))
-  (define items
-    (cond
-      [(null? body) '()]
-      [(pair? (car body)) body]        ; 头是 list -> item 列表
-      [else (list body)]))             ; 单条 item
-  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
-      (cdar items)
-      items))
+
 
 ;; ---------------------------------------------------------------------------
 ;; 第 1 步: 展平模块结构, 给每个 item 标注它的作用域链
@@ -133,13 +119,29 @@
   (or (resolve-path table scope ref)
       (error 'flatten "undefined label ~s (scope ~s)" ref scope)))
 
-;; 只改写成链的 operand; 裸原子(寄存器/立即数)不动
+;; 地址表达式: (label+ 链 加数) / (label- 链 加数)。链藏在**操作数里面**,
+;; 所以光判"这个操作数是不是链"是不够的(数据里的地址字就是这种)。
+(define (label-expr? x)
+  (and (form? x)
+       (memq (car x) '(label+ label-))
+       (let ([args (cdr x)])
+         (and (memq (length args) '(1 2))
+              (path? (car args))
+              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
+
+(define (rewrite-operand x scope table)
+  (cond
+    [(path? x) (resolve-or-error table scope x)]
+    [(label-expr? x)
+     (cons (car x)
+           (cons (resolve-or-error table scope (cadr x)) (cddr x)))]
+    [else x]))
+
+;; 只改写成链的 operand(以及地址表达式里的链); 裸原子(寄存器/立即数)不动
 (define (rewrite-operands item scope table)
   (cons (car item)
         (for/list ([x (in-list (cdr item))])
-          (if (path? x)
-              (resolve-or-error table scope x)
-              x))))
+          (rewrite-operand x scope table))))
 
 ;; ---------------------------------------------------------------------------
 ;; 第 4 步: 输出

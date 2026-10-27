@@ -4,7 +4,7 @@
 (require rackunit
          "insn.rkt"
          "encode.rkt"
-         "target.rkt"
+         "../target.rkt"
          (only-in "../analyze/analyze.rkt" analyze sexp->program)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program layout-problems)
@@ -147,6 +147,14 @@
 ;; c.addi a0,1 (2B) + c.nop (2B) + ret (4B)
 (check-equal? (build-bytes (encode-layout pad2-out) 's)
               '(#x05 #x05  #x01 #x00  #x67 #x80 #x00 #x00))
+
+;; 填充策略用的 nop 字面量必须和 riscv-asm 编出来的一致(两处事实钉在一起)
+(define nop-word (car (call-with-values (lambda () (encode-instruction 'nop '())) list)))
+(define c-nop-word (car (call-with-values (lambda () (encode-instruction 'c.addi (list 'x0 0))) list)))
+(check-equal? (padding-bytes 'code 4) (integer->bytes 4 nop-word))
+(check-equal? (padding-bytes 'code 2) (integer->bytes 2 c-nop-word))
+(check-equal? (padding-bytes 'code 6)
+              (append (integer->bytes 4 nop-word) (integer->bytes 2 c-nop-word)))
 
 ;; 填充策略本身
 (check-equal? (padding-bytes 'code 0) '())

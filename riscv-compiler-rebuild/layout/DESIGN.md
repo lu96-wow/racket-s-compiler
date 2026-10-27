@@ -45,7 +45,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | 文件 | API |
 | --- | --- |
 | `layout.rkt` | `layout-program` `layout-problems` `program-items` `run` |
-| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `indirect-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload` `label-expr?` `label-expr-chain` `label-expr-addend` `la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
+| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload` `label-expr?` `label-expr-chain` `label-expr-addend` `la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
 
 ## 4. 规则
 
@@ -174,7 +174,7 @@ relax 才能精确改那一条。
 - 分支松弛：relax。补 fallthrough 跳转：目前没有实现。
 - 端序：encode。
 
-## 6. 测试（`layout/test.rkt`，171 条）
+## 6. 测试（`layout/test.rkt`，176 条）
 
 形式表（尺寸 / 类别 / 区间 / 空槽 / 值）、放置、region、对齐（含绝对地址）、
 fallthrough、符号表、每类 problem、expand-data 边界（expand-data 的输出必须能被本层度量）、

@@ -24,7 +24,7 @@
          "../../riscv-asm/generated/lib/info/query.rkt"
          "../../riscv-asm/generated/lib/info/lookup.rkt"
          "../../riscv-help/registers.rkt"
-         "target.rkt")
+         "../target.rkt")
 
 (provide encode-instruction
          instruction-arity

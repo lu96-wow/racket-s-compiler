@@ -31,7 +31,6 @@
 (provide (struct-out stage)
          stage-table
          stage-names
-         stage-doc-of
          providers-of
          run-flow
          flow-value
@@ -53,21 +52,19 @@
 
 (struct stage (name requires provides run doc) #:transparent)
 
-(define (get in k) (hash-ref in k))
-(define (one k v) (hash k v))
-
 (define stage-table
   (hash
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
-          (lambda (in) (one 'data-items (expand-data (get in 'rich-data))))
+          (lambda (in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
    (stage 'flatten '(program-items data-items) '(program-items data-items names)
           (lambda (in)
             (define-values (outs names)
-              (flatten-inputs (list (get in 'program-items) (get in 'data-items))))
+              (flatten-inputs (list (hash-ref in 'program-items)
+                                    (hash-ref in 'data-items))))
             (hash 'program-items (list-ref outs 0)
                   'data-items (list-ref outs 1)
                   'names names))
@@ -75,39 +72,42 @@
 
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
-          (lambda (in) (one 'program-items (rewrite-program (get in 'program-items))))
+          (lambda (in) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
           "伪指令 -> 真指令（按表替换）")
 
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
           (lambda (in)
-            (one 'program (analyze (get in 'program-items) (get in 'data-items))))
+            (hash 'program
+                  (analyze (hash-ref in 'program-items) (hash-ref in 'data-items))))
           "控制流分析: item -> program(blocks + flows)；data 只贡献 roots")
 
    'dce
    (stage 'dce '(program) '(program)
-          (lambda (in) (one 'program (eliminate-dead (get in 'program))))
+          (lambda (in) (hash 'program (eliminate-dead (hash-ref in 'program))))
           "死代码消除（三个 pass 跑到不动点）")
 
    'layout
    (stage 'layout '(program data-items layout-spec) '(layout)
           (lambda (in)
-            (one 'layout (layout-program (get in 'program)
-                                         (get in 'data-items)
-                                         (get in 'layout-spec))))
+            (hash 'layout
+                  (layout-program (hash-ref in 'program)
+                                  (hash-ref in 'data-items)
+                                  (hash-ref in 'layout-spec))))
           "布局计算: 放置 + 度量 + 符号表 + problems")
 
    'relax
    (stage 'relax '(program data-items layout-spec) '(layout)
           (lambda (in)
-            (one 'layout (relax (get in 'program)
-                                (get in 'data-items)
-                                (get in 'layout-spec))))
+            (hash 'layout
+                  (relax (hash-ref in 'program)
+                         (hash-ref in 'data-items)
+                         (hash-ref in 'layout-spec))))
           "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
 
    'encode
    (stage 'encode '(layout) '(build)
-          (lambda (in) (one 'build (encode-layout (get in 'layout))))
+          (lambda (in) (hash 'build (encode-layout (hash-ref in 'layout))))
           "编码: layout -> (build …)；有 problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
@@ -115,8 +115,6 @@
 ;; ---------------------------------------------------------------------------
 
 (define (stage-names) (sort (hash-keys stage-table) symbol<?))
-
-(define (stage-doc-of name) (stage-doc (hash-ref stage-table name)))
 
 (define (providers-of value)
   (sort (for/list ([st (in-list (hash-values stage-table))]

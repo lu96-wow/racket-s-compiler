@@ -54,7 +54,7 @@
 | --- | --- | --- |
 | `run-flow` | 层名列表 + seed 表 | context |
 | `flow-value` | context + 名字 | 值 |
-| `stage-table` / `stage-names` / `stage-doc-of` | — / 名字 | stage / 名字列表 / 说明 |
+| `stage-table` / `stage-names` | — / 名字 | stage 表 / 名字列表（说明用 `stage-doc` 取） |
 | `providers-of` | 值名字 | 能产出它的 stage 名（排好序） |
 | `default-flow` | — | `'(expand-data flatten expand-pseudo analyze dce relax encode)` |
 | `(struct stage name requires provides run doc)` | — | — |

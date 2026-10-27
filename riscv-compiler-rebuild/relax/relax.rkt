@@ -71,9 +71,10 @@
 ;; 只有这一类能被本层改; scratch-hole 原样留着(见文件头)。
 ;; ---------------------------------------------------------------------------
 
-;; 只有代码 item 能被本层改: (code 块 项) 是 layout 在 measure 时记下来的来源
-(define (problem-origin p)
-  (define tail (last p))
+;; needs-far 的最后一个字段是定位: (code 块下标 项下标)，layout 在 measure 时记下来的。
+;; 只有它能被本层改; 其它问题(含 scratch-hole)原样留着。
+(define (needs-far-origin problem)
+  (define tail (last problem))
   (and (pair? tail) (eq? (car tail) 'code) tail))
 
 (define (collect-edits problems)
@@ -81,7 +82,7 @@
    (for/list ([p (in-list problems)]
               #:when (eq? (car p) 'needs-far))
      (define new (far-step (cadddr p)))
-     (define o (problem-origin p))
+     (define o (needs-far-origin p))
      (if (and o new) (list (cons o new)) '()))))
 
 ;; ---------------------------------------------------------------------------

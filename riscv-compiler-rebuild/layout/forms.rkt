@@ -9,9 +9,12 @@
 
 ;; "是不是零寄存器" 只有一个来源: analyze/insn.rkt (x0 / zero / 0)。
 ;; 布局层需要它, 因为 jump-far 要不要 scratch 取决于它的 link。
-(require (only-in "../analyze/insn.rkt" zero-register?)
+(require "../sexp.rkt"
+         (only-in "../analyze/insn.rkt"
+                  zero-register? branch-instruction? jump-instruction?)
+         (only-in "../target.rkt" target-xlen)
          ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
-         ;; 不是上界。li-size 默认 rv64, 和 encode/target.rkt 一致。
+         ;; 不是上界。展开长度和 XLEN 有关, 所以显式传 target-xlen。
          (only-in "../../riscv-help/main.rkt" li-size))
 
 (provide form? name? path? normalize-path
@@ -21,7 +24,7 @@
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size
-         branch-form? jump-form? indirect-form? control-form? control-target
+         branch-form? jump-form? control-form? control-target
          form-range scratch-hole?
          segment-form? segment-kind?)
 
@@ -29,15 +32,14 @@
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
 
-(define (form? x) (and (pair? x) (list? x)))
 
-(define (name? x) (or (symbol? x) (string? x) (number? x)))
 
-(define (path? x) (and (list? x) (pair? x) (andmap name? x)))
+
+
+
 
 ;; 裸原子当单节链
-(define (normalize-path x)
-  (cond [(path? x) x] [(name? x) (list x)] [else #f]))
+
 
 (define (label-form? x)
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
@@ -77,13 +79,14 @@
        #t))
 
 ;; 值里的地址表达式: (label+ 链 加数)。expand-data 会归一成这个形状(加数一定在)。
+(define label-expr-chain cadr)
+(define label-expr-addend caddr)
+
 (define (label-expr? x)
   (and (form? x) (eq? (car x) 'label+) (= 3 (length x))
        (path? (label-expr-chain x))
        (exact-integer? (label-expr-addend x))
        #t))
-(define label-expr-chain cadr)
-(define label-expr-addend caddr)
 
 ;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
 (define (compressed-form? x)
@@ -100,12 +103,11 @@
 ;; 分类
 ;; ---------------------------------------------------------------------------
 
-(define branch-mnemonics   '(beq bne blt bge bltu bgeu c.beqz c.bnez branch-far branch-indirect))
-(define jump-mnemonics     '(jal c.j c.jal jump-far))
-
-(define (branch-form? x)   (and (form? x) (memq (car x) branch-mnemonics) #t))
-(define (jump-form? x)     (and (form? x) (memq (car x) jump-mnemonics) #t))
-(define (indirect-form? x) (and (form? x) (memq (car x) '(branch-indirect jump-far)) #t))
+;; 分支/跳转的名单不在这里重复: 直接借 analyze/insn.rkt 的分类。
+;; (以前这里抄了一份, 加远形式时只改了一边, 块边界全错。)
+;; 名字保留: 这是本层的词汇(尺寸/距离/目标位都按它查)。
+(define (branch-form? x) (branch-instruction? x))
+(define (jump-form? x)   (jump-instruction? x))
 
 ;; 有控制流目标、目标在最后一个操作数
 (define (control-form? x) (or (branch-form? x) (jump-form? x)))
@@ -148,7 +150,7 @@
      (case (car x)
        [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
        [else 4])]
-    [(eq? (car x) 'li) (li-size (caddr x))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
+    [(eq? (car x) 'li) (li-size (caddr x) #:word-size target-xlen)]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
     [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 报 la-too-far
     [else 4]))
 

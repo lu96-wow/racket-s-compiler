@@ -175,4 +175,33 @@
 ;; 链不在操作数里(是链)才算引用: (c.j b) 的 b 是裸原子, 不当引用
 (check-equal? (flat '((label b) (c.j b))) '((label b) (c.j b)))
 
+;; ---------------------------------------------------------------------------
+;; 地址表达式: 链藏在操作数里面, 也要改写
+;;   (label+ 链 加数) / (label- 链 加数) —— 数据里的地址字
+;; ---------------------------------------------------------------------------
+
+(check-equal? (flat '((module m (label d t) (value 8 (label+ (d t) 0)))))
+              '((label m d t) (value 8 (label+ (m d t) 0))))
+
+;; 同一条程序里: 指令操作数、地址字、负加数都要加前缀
+(check-equal? (flat '((module m
+                       (label d t)
+                       (value 8 (label+ (d t) 0))
+                       (label f)
+                       (la t0 (f))
+                       (value 4 (label- (f) 4)))))
+              '((label m d t)
+                (value 8 (label+ (m d t) 0))
+                (label m f)
+                (la t0 (m f))
+                (value 4 (label- (m f) 4))))
+
+;; 两层作用域: 内层优先
+(check-equal? (flat '((module a (label g) (module b (label g) (value 4 (label+ (g) 0))))))
+              '((label a g) (label a b g) (value 4 (label+ (a b g) 0))))
+
+;; 地址表达式里的链查不到 -> 报错(不是静默留短链)
+(check-exn exn:fail?
+           (lambda () (flat '((module m (label f) (value 4 (label+ (nope) 0)))))))
+
 (displayln "flatten tests: ok")

@@ -1,18 +1,24 @@
 #lang racket
-;;; encode/target.rkt
+;; target.rkt
 ;;;
-;;; 目标常量。**端序在整个流水线里只出现在这一个文件**:
-;;; expand-data 只交出"宽度 + 值", layout 只量尺寸, 到这里才变成字节序。
+;;; 目标事实: XLEN、端序、启用的扩展集。
 ;;;
-;;; 换目标(rv32 / 大端)只改这里。
+;;; **XLen 和端序在整个流水线里只出现在这里**:
+;;;   layout 量尺寸要 XLen(li 的展开长度、auipc 的 ±2GB 判据)
+;;;   encode 落字节要端序
+;;; 换目标(rv32 / 大端)只改这个文件。
+;;;
+;;; 放在顶层是因为它既不属于 layout 也不属于 encode —— 它是两边共用的**事实**。
+;;; 由事实派生的小工具(integer->bytes / padding-bytes)也放这里, 免得端序被抄第二份。
 
-(provide target-word-size
+(provide target-xlen
          target-endianness
          target-extensions
          integer->bytes
          padding-bytes)
 
-(define target-word-size 64)
+;; riscv-help 的 li-size / fits-auipc-pair? 用符号表示 XLEN
+(define target-xlen 'rv64)
 
 (define target-endianness 'little)
 
@@ -53,7 +59,8 @@
 (define (padding-bytes kind n)
   (case kind
     [(code) (code-padding-bytes n)]
-    [else (make-list n 0)]))
+    [(data) (make-list n 0)]
+    [else (error 'padding-bytes "unknown segment kind: ~a" kind)]))
 
 (define (code-padding-bytes n)
   (define quads (quotient n 4))

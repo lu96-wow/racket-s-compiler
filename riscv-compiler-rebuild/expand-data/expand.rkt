@@ -36,6 +36,8 @@
 ;;; 值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位。
 ;;; label+ / label- 暂不支持: 遇到就报错。
 
+(require "../sexp.rkt")
+
 (provide expand-data
          expand-item
          program-items
@@ -46,11 +48,11 @@
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
 
-(define (form? x) (and (pair? x) (list? x)))
 
-(define (name? x) (or (symbol? x) (string? x) (number? x)))
 
-(define (path? x) (and (list? x) (pair? x) (andmap name? x)))
+
+
+
 
 (define (label-form? x)
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
@@ -112,7 +114,7 @@
 ;; 整数: 值域检查, 原样返回
 (define (check-value w v)
   (unless (exact-integer? v)
-    (error 'expand-data "value must be an exact integer or a label expression: ~e" v))
+    (error 'expand-data "value must be an exact integer: ~e" v))
   (define bits (* 8 w))
   (define lo (- (expt 2 (sub1 bits))))
   (define hi (expt 2 bits))
@@ -128,7 +130,8 @@
             (check-value w v))))
 
 ;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 layout(它要量宽度), 这里不导出。
-(define (value-item? x)
+;; 和 layout/forms.rkt 的 value-form? 是同一个形状; 本层只做透传, 所以不导出。
+(define (value-form? x)
   (and (form? x) (eq? (car x) 'value) (= 3 (length x))
        (memq (cadr x) '(1 2 4 8))
        (or (exact-integer? (caddr x)) (label-expr? (caddr x)))))
@@ -205,7 +208,7 @@
     [(label-form? it) (list it)]
     [(bytes-form? it) (list it)]
     [(fill-item? it) (list it)]
-    [(value-item? it) (list it)]
+    [(value-form? it) (list it)]
     [(align-form? it) (list it)]
     [(width-form? it) (list (value-item (width-of it) (cadr it)))]
     [(array-form? it)
@@ -219,21 +222,7 @@
 ;; 入口: 旧壳(quote/begin)也收, 出口是普通 item 列表
 ;; ---------------------------------------------------------------------------
 
-(define (program-items prog)
-  (define body
-    (cond
-      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
-       (cadr prog)]
-      [(list? prog) prog]
-      [else (list prog)]))
-  (define items
-    (cond
-      [(null? body) '()]
-      [(pair? (car body)) body]
-      [else (list body)]))
-  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
-      (cdar items)
-      items))
+
 
 (define (expand-data input)
   (append* (for/list ([it (in-list (program-items input))]) (expand-item it))))

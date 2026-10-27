@@ -13,6 +13,8 @@
 ;;;
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
+(require "../sexp.rkt")
+
 (provide form?
          name? path? normalize-path
          label-form? label-path
@@ -22,23 +24,16 @@
          zero-register?)
 
 ;; 真列表(代码形状)
-(define (form? x)
-  (and (pair? x) (list? x)))
+
 
 ;; 名字: label 的链上一节(可以是 symbol / string / number)
-(define (name? x)
-  (or (symbol? x) (string? x) (number? x)))
+
 
 ;; 链: 非空名字列表, 例如 (a g)。label 与跳转目标都用它做身份。
-(define (path? x)
-  (and (list? x) (pair? x) (andmap name? x)))
+
 
 ;; 裸原子当单节链看: g 与 (g) 等价
-(define (normalize-path x)
-  (cond
-    [(path? x) x]
-    [(name? x) (list x)]
-    [else #f]))
+
 
 ;; ---------------------------------------------------------------------------
 ;; 分类表(唯一的名单, 改这里)

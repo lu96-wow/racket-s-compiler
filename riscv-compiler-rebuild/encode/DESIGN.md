@@ -1,4 +1,4 @@
-# encode 编码（`encode/target.rkt` `encode/insn.rkt` `encode/encode.rkt`）
+# encode 编码（`encode/insn.rkt` `encode/encode.rkt`；目标事实在顶层 `target.rkt`）
 
 > 最后一步：`layout -> (build …)`，每个段一坨字节。
 > **端序只出现在这里**；指令编码和位域检查都在 `riscv-asm`。
@@ -26,7 +26,7 @@ layout : relax 产物（segments + symbols + problems）
 
 | 文件 | API |
 | --- | --- |
-| `target.rkt` | `target-word-size` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes`（**填充策略**） |
+| `../target.rkt`（顶层共享） | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes`（**填充策略**） |
 | `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl` |
 | `encode.rkt` | `encode-layout` |
 
@@ -106,7 +106,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 | `code`，余 1 / 余 3 | 报错 —— 没有任何 1 字节指令，这种对齐编不出来 |
 
 `code` 段必须填指令：对齐补出来的字节可能真的会被执行到。
-换目标（比如用 `ebreak` 填、或不允许压缩指令）只改 `encode/target.rkt` 的这张表。
+换目标（比如用 `ebreak` 填、或不允许压缩指令）只改 `target.rkt` 的这张表。
 
 ### 4.6 两条断言
 
@@ -132,7 +132,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 
 ## 6. 测试与 demo
 
-`encode/test.rkt`（57 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
+`encode/test.rkt`（68 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
 本层**不需要** layout 输入，也不需要 program / data）。
 
 单条指令与手算编码对照（含压缩、原子、别名）、`aq`/`rl` 后缀、元数、未知指令、

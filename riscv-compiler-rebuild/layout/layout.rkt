@@ -22,7 +22,9 @@
 ;;;   - 段内顺序 = 源顺序; 不做前缀、不做按 kind 的自动落位
 ;;;   - 放完检查 fallthrough: 顺序后继必须紧挨在后面, 否则 broken-fallthrough
 
-(require "forms.rkt"
+(require "../sexp.rkt"
+         "forms.rkt"
+         (only-in "../target.rkt" target-xlen)
          ;; la 的近形式够不够得着: 和 encode 用同一个判据
          (only-in "../../riscv-help/main.rkt" fits-auipc-pair?)
          (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
@@ -37,21 +39,7 @@
 ;; 输入整形
 ;; ---------------------------------------------------------------------------
 
-(define (program-items input)
-  (define body
-    (cond
-      [(and (form? input) (eq? (car input) 'quote) (= 2 (length input)) (list? (cadr input)))
-       (cadr input)]
-      [(list? input) input]
-      [else (list input)]))
-  (define items
-    (cond
-      [(null? body) '()]
-      [(pair? (car body)) body]
-      [else (list body)]))
-  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
-      (cdar items)
-      items))
+
 
 (define (clauses input key)
   (for/list ([x (in-list (program-items input))]
@@ -312,55 +300,80 @@
 (define (symbol-row symbols path) (and path (assoc path symbols)))
 
 ;; ---------------------------------------------------------------------------
-;; 校验: 目标存在 / 距离够 / scratch 空槽 / 地址字能放进宽度 / la 够得着
+;; 校验: 只报 problems, 不抛异常。
+;; 四类各一个小函数, 由 verify 逐 item 调用:
+;;   control  目标存在 / 距离够
+;;   scratch  空槽(要不要填交给 relax / 未实现的寄存器层)
+;;   la       8 字节的 auipc+addi 够不够得着
+;;   value    数据里的地址字: 链存在 / 放得进宽度
 ;; ---------------------------------------------------------------------------
 
-(define (verify measured-segs symbols problem!)
+;; 一个 item 的上下文: 四个小函数都要这几样, 装起来免得每个都 7 个参数
+(struct site (seg off item here origin symbols report) #:transparent)
+
+(define (report! s p) ((site-report s) p))
+
+(define (check-control s)
+  (define it (site-item s))
+  (when (control-form? it)
+    (define row (symbol-row (site-symbols s) (normalize-path (control-target it))))
+    (cond
+      [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
+      [else
+       ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
+       (define d (- (cadddr row) (site-here s)))
+       (define range (form-range it))
+       (when (and range (not (<= (car range) d (cdr range))))
+         (report! s `(needs-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
+
+(define (check-scratch s)
+  (define it (site-item s))
+  (when (scratch-hole? it)
+    (report! s `(scratch-hole ,(site-seg s) ,(site-off s) ,it ,(site-origin s)))))
+
+;; (la rd [tmp] 链): 近形式够不够得着? 远形式要 scratch 寄存器, 属于未实现的那一层。
+(define (check-la s)
+  (define it (site-item s))
+  (when (la-form? it)
+    (define row (symbol-row (site-symbols s) (normalize-path (last it))))
+    (cond
+      [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
+      [else
+       (define d (- (cadddr row) (site-here s)))
+       (unless (fits-auipc-pair? d target-xlen)
+         (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
+
+;; 数据里的地址字: 链在不在 + 地址放不放得进宽度。
+;; 整数不用查(expand-data 已经按宽度查过值域); 只有 label+ 要等地址才知道。
+(define (check-value s)
+  (define it (site-item s))
+  (when (value-form? it)
+    (define v (value-payload it))
+    (when (label-expr? v)
+      (define row (symbol-row (site-symbols s) (label-expr-chain v)))
+      (cond
+        [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
+        [else
+         (define n (+ (cadddr row) (label-expr-addend v)))
+         (define bits (* 8 (value-width it)))
+         ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
+         (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))
+           (report! s `(value-out-of-range ,(site-seg s) ,(site-off s) ,it ,n)))]))))
+
+(define (verify measured-segs symbols report)
   (for ([m (in-list measured-segs)])
     (define seg (measured-segment m))
     (for ([entry (in-list (measured-items m))])
       (define off (cadr entry))
       (define it (caddr entry))
-      (define here (+ (segment-start seg) off))
-      (define origin (hash-ref (measured-origins m) off #f))
-      (when (control-form? it)
-        (define target (normalize-path (control-target it)))
-        (define row (symbol-row symbols target))
-        (cond
-          [(not row) (problem! `(undefined-target ,(segment-name seg) ,off ,it))]
-          [else
-           (define d (- (cadddr row) here))
-           (define range (form-range it))
-           ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
-           (when (and range (not (<= (car range) d (cdr range))))
-             (problem! `(needs-far ,(segment-name seg) ,off ,it ,d ,origin)))]))
-      (when (scratch-hole? it)
-        (problem! `(scratch-hole ,(segment-name seg) ,off ,it ,origin)))
-      ;; (la rd [tmp] 链): 8 字节的 auipc+addi 够不够得着?
-      ;; 远形式需要 scratch 寄存器, 那属于"动态内存布局 / 寄存器使用"那一层(未实现),
-      ;; 所以这里只报问题, 不做远形式。
-      (when (la-form? it)
-        (define row (symbol-row symbols (normalize-path (last it))))
-        (cond
-          [(not row) (problem! `(undefined-target ,(segment-name seg) ,off ,it))]
-          [else
-           (define d (- (cadddr row) here))
-           (unless (fits-auipc-pair? d 'rv64)
-             (problem! `(la-too-far ,(segment-name seg) ,off ,it ,d ,origin)))]))
-      ;; 数据里的地址字: 解析出绝对地址, 查链在不在 + 能不能放进 宽度 个字节。
-      ;; 整数不用查(expand-data 已经按宽度查过值域); 只有 label+ 需要地址才知道。
-      (when (value-form? it)
-        (define v (value-payload it))
-        (when (label-expr? v)
-          (define row (symbol-row symbols (label-expr-chain v)))
-          (cond
-            [(not row) (problem! `(undefined-target ,(segment-name seg) ,off ,it))]
-            [else
-             (define n (+ (cadddr row) (label-expr-addend v)))
-             (define bits (* 8 (value-width it)))
-             ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
-             (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))
-               (problem! `(value-out-of-range ,(segment-name seg) ,off ,it ,n)))]))))))
+      (define s (site (segment-name seg) off it
+                      (+ (segment-start seg) off)
+                      (hash-ref (measured-origins m) off #f)
+                      symbols report))
+      (check-control s)
+      (check-scratch s)
+      (check-la s)
+      (check-value s))))
 
 ;; ---------------------------------------------------------------------------
 ;; 输出

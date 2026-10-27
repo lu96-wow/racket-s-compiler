@@ -46,10 +46,20 @@ layout  list ┘                items          program    program  layout   byte
 | `dce` | `dce/dce.rkt` | 死代码消除 | `program` | `program` | [`dce/DESIGN.md`](dce/DESIGN.md) |
 | `layout` | `layout/forms.rkt` `layout/layout.rkt` | 布局计算 | `program` `data-items` `layout-spec` | `layout` | [`layout/DESIGN.md`](layout/DESIGN.md) |
 | `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | 同 `layout` | `layout` | [`relax/DESIGN.md`](relax/DESIGN.md) |
-| `encode` | `encode/target.rkt` `encode/insn.rkt` `encode/encode.rkt` | 编码 | `layout` | `build` | [`encode/DESIGN.md`](encode/DESIGN.md) |
+| `encode` | `encode/insn.rkt` `encode/encode.rkt` | 编码 | `layout` | `build` | [`encode/DESIGN.md`](encode/DESIGN.md) |
 | `flow` | `flow/flow.rkt` | 构建流本身 | 层名列表 + seed | context | [`flow/DESIGN.md`](flow/DESIGN.md) |
 
 可选性、顺序、平层（`layout` 与 `relax` 同进同出）都由那张列表表达，见 `flow/DESIGN.md`。
+
+不属于任何层的两个**纯工具/纯事实**模块（顶层）：
+
+| 文件 | 内容 | 谁用 |
+| --- | --- | --- |
+| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `program-items`（旧壳 `quote`/`begin` 也认） | 除了 flow 之外的所有层 |
+| `target.rkt` | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes` | layout（XLEN）、encode（端序/填充/扩展集） |
+
+它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
+所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `program-items` 而冲突。
 
 两个外部包：
 
@@ -87,7 +97,8 @@ layout  list ┘                items          program    program  layout   byte
    `riscv-help` 的寄存器表统一。
 3. **尺寸：谁的 item 谁负责**。`li` 由常量精确算，`la` 近形式固定 8，
    远形式 / 空槽要 scratch → 留给未实现的那一层。数据 `value` 的宽度由作者写死。
-4. **端序只出现一次**：`encode/target.rkt`。expand-data 只管宽度和值，layout 只管字节数。
+4. **目标事实只出现一次**：顶层的 `target.rkt`（XLEN + 端序 + 扩展集）。
+   layout 要 XLEN（`li` 展开长度、auipc 判据），encode 要端序；expand-data 只管宽度和值。
 5. **问题分三级**：本层模型错误（硬）、范围问题（`needs-far` / `value-out-of-range`）、
    交接给下一层（`needs-far` → relax，`scratch-hole` → 未实现的寄存器层）。
 6. **松弛只增不减**：relax 每轮只把 item 变长，所以"太远"的集合单调递增，必然收敛。
@@ -169,8 +180,8 @@ segment d start=#x200000 size=11
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
-- 测试条数：expand-data 62 / flatten 43 / expand-pseudo 119 / analyze 176 / dce 46 /
-  layout 171 / relax 30 / encode 57 / flow 20。
+- 测试条数：expand-data 62 / flatten 47 / expand-pseudo 119 / analyze 176 / dce 46 /
+  layout 176 / relax 30 / encode 68 / flow 20。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
 
@@ -185,7 +196,7 @@ segment d start=#x200000 size=11
 | 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |
 | `fence` / `fence.tso` 的操作数语法 | 没定义 | encode 报 "no operand syntax" |
 | `.bss` / `ascii` 等数据指令 | 没做 | `fill` / `bytes` 够用 |
-| 填充策略的"非 nop"选项（ebreak / 0xFF / trap） | 没做 | 只改 `encode/target.rkt` 的表 |
+| 填充策略的"非 nop"选项（ebreak / 0xFF / trap） | 没做 | 只改 `target.rkt` 的表 |
 
 ## 9. 文档规范
 
@@ -213,3 +224,4 @@ segment d start=#x200000 size=11
 | 换契约 | 本文 §1 表 + §3 铁律 + 相关 `DESIGN.md` |
 | 修掉一个缺口 | 本文 §8 + 该层 §7 |
 | 新增 API | 该层 `DESIGN.md` §3 |
+| 新增跨层共享的形状/事实 | 放顶层（`sexp.rkt` / `target.rkt`），并在本文这一节登记 |

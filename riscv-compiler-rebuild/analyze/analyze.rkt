@@ -33,7 +33,8 @@
 ;;;   程序开头 / 控制转移的目标 label / ends-block? 指令之后。
 ;;; 非目标的 label 不是边界, 它作为位置标记留在块的程序里。
 
-(require "insn.rkt"
+(require "../sexp.rkt"
+         "insn.rkt"
          (prefix-in cfg: "cfg.rkt"))
 
 (provide (struct-out program)
@@ -66,21 +67,7 @@
 ;; 程序 -> item 列表(旧壳 quote/begin 也收)
 ;; ---------------------------------------------------------------------------
 
-(define (program-items prog)
-  (define body
-    (cond
-      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
-       (cadr prog)]
-      [(list? prog) prog]
-      [else (list prog)]))
-  (define items
-    (cond
-      [(null? body) '()]
-      [(pair? (car body)) body]
-      [else (list body)]))
-  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
-      (cdar items)
-      items))
+
 
 ;; ---------------------------------------------------------------------------
 ;; 分析

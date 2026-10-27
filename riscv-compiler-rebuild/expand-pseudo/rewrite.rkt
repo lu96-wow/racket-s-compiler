@@ -21,13 +21,13 @@
 ;;; (一行一个伪指令, 名字平级, 个数不定, 都按同一组规则重写)。
 ;;; 本文件只放逻辑: 建索引、匹配、遍历; 建表时顺手自检。
 
-(require "table.rkt")
+(require "../sexp.rkt"
+         "table.rkt")
 
 (provide
          ;; 数据
          rewrite-rows
          directive-heads
-         reserved-heads
          ;; 表(建好的索引)
          (struct-out table)
          make-table
@@ -55,15 +55,13 @@
          subst)
 
 ;; 保留字: 名字不许占用指令头(flatten 对它们有语义, 例如 quote)
-(define reserved-heads directive-heads)
 
 ;; ---------------------------------------------------------------------------
 ;; sexp 匹配 / 替换
 ;; ---------------------------------------------------------------------------
 
 ;; 是不是一个真列表(代码形式的形状)
-(define (form? x)
-  (and (pair? x) (list? x)))
+
 
 ;; ?x ?d ?off ... 是模式变量; 裸 ? 不算
 (define (pattern-var? x)
@@ -116,7 +114,7 @@
 ;; 建表: 校验整张表
 ;;   名字重复(同行/跨行)、占用保留字、规则形状不对、模板不是 form,
 ;;   或者一行只有名字没规则, 都直接报错。
-(define (make-table rows [reserved reserved-heads])
+(define (make-table rows [reserved directive-heads])
   (define rules-by-name (make-hash))
   (define names '())
   (define all-rules '())
@@ -254,21 +252,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; program-items : 去掉旧壳(quote/begin), 拿到 item 列表
-(define (program-items prog)
-  (define body
-    (cond
-      [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))
-       (cadr prog)]
-      [(list? prog) prog]
-      [else (list prog)]))
-  (define items
-    (cond
-      [(null? body) '()]
-      [(pair? (car body)) body]        ; 头是 list -> item 列表
-      [else (list body)]))             ; 单条 item
-  (if (and (= 1 (length items)) (form? (car items)) (eq? (caar items) 'begin))
-      (cdar items)
-      items))
+
 
 ;; rewrite-program : (listof item) -> (listof item)
 (define (rewrite-program prog [tbl default-table])

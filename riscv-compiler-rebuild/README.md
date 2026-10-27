@@ -28,6 +28,8 @@ layout  list ┘                items          program    program  layout   byte
 | `flow/DESIGN.md` | **构建流**：`(list 层名 ...)`、依赖检查、可选/顺序/平层 |
 | `expand-data/DESIGN.md` … `encode/DESIGN.md` | 每层自己的职责 / 输入输出 / API / 规则 / 边界 / 测试 / 缺口 |
 
+顶层还有两个"不属于任何层"的共享模块：`sexp.rkt`（s-exp 形状工具）和 `target.rkt`（XLEN / 端序 / 扩展集）。
+
 外部依赖（同仓库的兄弟目录）：
 
 | 包 | 管什么 |

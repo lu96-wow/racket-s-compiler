@@ -29,7 +29,7 @@
                   branch-long jump-jal jump-auipc-jalr zero-register?
                   li load-pcrel)
          (only-in "../../riscv-asm/base/register.rkt" register->number register-abi-name)
-         "target.rkt"
+         "../target.rkt"
          "insn.rkt")
 
 (provide encode-layout)
@@ -69,6 +69,9 @@
 ;; 远形式: 交给 riscv-help 展开成真指令
 ;; ---------------------------------------------------------------------------
 
+;; riscv-help 的 jump-auipc-jalr 用 (eq? link 'zero) 判断"link 是不是零寄存器"，
+;; 直接传数字 0 会走错分支、生成 (auipc x0 …)(jalr x0 x0 …) —— 静默跳到小地址。
+;; 所以进 riscv-help 之前统一换成 ABI 名(0 -> 'zero)。等它改成 zero-register? 就能删掉。
 (define (abi-name r) (or (register-abi-name r) r))
 
 (define (branch-distance it here symbols index)
@@ -108,29 +111,25 @@
      (jump-auipc-jalr 'zero d #:scratch (list (caddr it)))]
     [else (jump-auipc-jalr (abi-name link) d)]))
 
-;; 一条真指令 -> (cons 字 字节数)
-(define (encode-one name operands)
-  (define-values (word n) (encode-instruction name operands))
-  (cons word n))
-
-(define (encode-all insns)
-  (for/list ([i (in-list insns)]) (encode-one (car i) (cdr i))))
-
-;; 一条代码 item -> (listof (cons 字 字节数))
-;;   plain: 操作数里可能有链, 先换成偏移
-;;   远形式: riscv-help 已经给出带数字偏移的真指令
-(define (encode-code it here symbols)
-  (cond
-    [(eq? (car it) 'branch-far)      (encode-all (encode-far-branch it here symbols))]
-    [(eq? (car it) 'branch-indirect) (encode-all (encode-indirect-branch it here symbols))]
-    [(eq? (car it) 'jump-far)        (encode-all (encode-far-jump it here symbols))]
+;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。
+;;   plain  : 操作数里可能有链, 先换成偏移
+;;   远形式 / li / la : riscv-help 已经给出带数字偏移的真指令
+(define (encode-code it here symbols emit!)
+  (define (emit-instruction! name operands)
+    (define-values (word n) (encode-instruction name operands))
+    (emit! (integer->bytes n word)))
+  (define (emit-all! insns)
+    (for ([i (in-list insns)]) (emit-instruction! (car i) (cdr i))))
+  (case (car it)
+    [(branch-far)      (emit-all! (encode-far-branch it here symbols))]
+    [(branch-indirect) (emit-all! (encode-indirect-branch it here symbols))]
+    [(jump-far)        (emit-all! (encode-far-jump it here symbols))]
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
-    [(eq? (car it) 'li) (encode-all (li (cadr it) (caddr it)))]
+    [(li) (emit-all! (li (cadr it) (caddr it)))]
     ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
-    [(eq? (car it) 'la)
-     (define d (- (symbol-address symbols (normalize-path (last it)) 0) here))
-     (encode-all (load-pcrel (cadr it) d))]
-    [else (list (encode-one (car it) (operands-at it here symbols)))]))
+    [(la) (define d (- (symbol-address symbols (normalize-path (last it)) 0) here))
+          (emit-all! (load-pcrel (cadr it) d))]
+    [else (emit-instruction! (car it) (operands-at it here symbols))]))
 
 ;; ---------------------------------------------------------------------------
 ;; 段
@@ -165,9 +164,7 @@
       [(bytes-form? it) (emit! (cdr it))]
       [(fill-form? it) (emit! (make-list (cadr it) (caddr it)))]
       [(value-form? it) (emit! (value->bytes (value-width it) (value-payload it) symbols))]
-      [else
-       (for ([e (in-list (encode-code it here symbols))])
-         (emit! (integer->bytes (cdr e) (car e))))]))
+      [else (encode-code it here symbols emit!)]))
 
   (unless (= cursor size)
     (error 'encode "段 ~a 的尺寸不一致: 产物说 ~a, 实际写了 ~a 字节" name size cursor))

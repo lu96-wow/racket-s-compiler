@@ -30,7 +30,7 @@
 | `apply-rule` | 单条 | 单条 / `#f`（只跑一次规则） |
 | `make-table` / `check-rows` | 行表 | table / void |
 | `pseudo-leftover?` / `fully-rewritten?` | item 列表 / 单条 | 布尔 |
-| 数据：`rewrite-rows` `default-table` `rules` `rules-for` `directive-heads` `reserved-heads` | — | — |
+| 数据：`rewrite-rows` `default-table` `rules` `rules-for` `directive-heads` | — | — |
 
 ## 4. 规则
 
@@ -60,4 +60,4 @@
 
 ## 7. 已知缺口
 
-- `directive-heads` 里的 `global` / `reserve` 还没有真正的语义（占位）。
+- `directive-heads` 里的 `global` / `reserve` 还没有真正的语义（只占住名字）。
