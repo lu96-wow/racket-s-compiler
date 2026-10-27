@@ -5,24 +5,31 @@
 ;;;
 ;;; 本层的输出词汇(只有这些):
 ;;;   (label 链...)                 位置
-;;;   (bytes b...)                  已经定顺序的字面字节
-;;;   (fill 字节数 b)               b 重复 字节数 次
+;;;   (bytes b...)                  已经定顺序的字节(字符串 / 人写的)
+;;;   (fill 字节数 b)               b 重复 字节数 次(与端序无关)
+;;;   (value 宽度 值)               宽度个字节, 值的字节序还没定
 ;;;   (align n)                     对齐请求
 ;;;
-;;; rich 形式(人写的):
-;;;   (utf-string "…")               -> (bytes …UTF-8…)
-;;;   (utf-stringz "…")              -> (bytes …UTF-8… 0)
-;;;   (b8 v) (b16 v) (b32 v) (b64 v) -> (bytes …小端…)
-;;;   (bN-array 总数 v...)           -> (fill n b) 或 (bytes …)
+;;; **端序不属于本层**: 它属于"变二进制"那一步(L7)。本层只交宽度 + 值。
 ;;;
-;;; 端序在本层定死: **小端**。下游只认 bytes, 不再有"宽度 + 值"这种没定序的形式:
-;;; 宽度属于本层, 顺序也属于本层。
+;;; rich 形式(人写的):
+;;;   (utf-string "…")               -> (bytes …UTF-8…)     ; 字节序列, 与端序无关
+;;;   (utf-stringz "…")              -> (bytes …UTF-8… 0)
+;;;   (b8 v) (b16 v) (b32 v) (b64 v) -> (value 1|2|4|8 v)
+;;;   (bN-array 总数 v...)           -> (fill …) 或 n 条 (value …)
+;;;
+;;; 值有两种:
+;;;   整数                    值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位
+;;;   (label+ 链 [加数])      地址 + 加数
+;;;   (label- 链 [加数])      地址 - 加数  -> 归一成 (label+ 链 -加数)
+;;; 地址表达式**不在这里求值**: 链的绝对地址要等布局(L5)才定, 字节要等 L7 才落。
+;;; 所以本层只交出"宽度 + 值", 值和字节序都留给后面。
 ;;;
 ;;; 数组: (bN-array 总数 v...)
 ;;;   - 前 k 个位置用 v1..vk, 剩下的全用最后一个 vk
-;;;   - 整个数组是同一个字节时压成 (fill 字节数 b); 否则展开成 bytes
-;;;     (因此 (b8-array 4096 0) 是一条, (b32-array 1000000 7) 会展开)
-;;;
+;;;   - 整个数组与端序无关(宽度 1, 或值全 0)时压成 (fill 字节数 b)
+;;;     其余展开成 n 条 (value 宽度 v) —— 因为字节序还没定, 不能合并成 bytes
+;;
 ;;; 只做数据定义: 宽度、值域、字节顺序、字符串、数组。
 ;;; 段、偏移、地址、代码都不属于本层; 下游怎么用本层不关心。
 ;;;
@@ -80,14 +87,32 @@
   (and (form? x) (assq (car x) array-forms)))
 
 ;; ---------------------------------------------------------------------------
-;; 值: 只收整数; 地址表达式(label+ / label-)未实现
+;; 值: 整数, 或 label 地址表达式
+;;
+;;   (label+ 链)        地址
+;;   (label+ 链 加数)   地址 + 加数
+;;   (label- 链 加数)   地址 - 加数
+;;
+;; 本层只检查形状, 不求值: 链的绝对地址要等布局(L5)才定, 字节要等 L7 才落。
 ;; ---------------------------------------------------------------------------
 
+(define (label-expr? v)
+  (and (form? v)
+       (memq (car v) '(label+ label-))
+       (let ([args (cdr v)])
+         (and (memq (length args) '(1 2))
+              (path? (car args))
+              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
+
+;; 归一: (label- 链 n) => (label+ 链 -n); 加数一定写出来(字段固定)
+(define (normalize-label-expr v)
+  (define a (if (= 3 (length v)) (caddr v) 0))
+  (list 'label+ (cadr v) (if (eq? (car v) 'label-) (- a) a)))
+
+;; 整数: 值域检查, 原样返回
 (define (check-value w v)
-  (when (form? v)
-    (error 'D1 "address expressions (label+ / label-) are not implemented yet: ~e" v))
   (unless (exact-integer? v)
-    (error 'D1 "value must be an exact integer: ~e" v))
+    (error 'D1 "value must be an exact integer or a label expression: ~e" v))
   (define bits (* 8 w))
   (define lo (- (expt 2 (sub1 bits))))
   (define hi (expt 2 bits))
@@ -95,13 +120,18 @@
     (error 'D1 "value ~a does not fit in ~a byte(s)" v w))
   v)
 
-;; 宽度 + 值 -> 定序字节。端序在这里定死: 小端(低位在前)。
-(define (int-bytes w v)
-  (for/list ([i (in-range w)])
-    (bitwise-and (arithmetic-shift v (* -8 i)) #xFF)))
+;; 一个值 -> 一条 (value 宽度 值)。宽度是数据, 不是名字: 下游不用认识 b16。
+(define (value-item w v)
+  (list 'value w
+        (if (label-expr? v)
+            (normalize-label-expr v)
+            (check-value w v))))
 
-(define (width-item w v)
-  (cons 'bytes (int-bytes w (check-value w v))))
+;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 L5(它要量宽度), 这里不导出。
+(define (value-item? x)
+  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
+       (memq (cadr x) '(1 2 4 8))
+       (or (exact-integer? (caddr x)) (label-expr? (caddr x)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串
@@ -139,37 +169,45 @@
        (error 'D1 "array needs at least one init value: ~e" it))
      (when (> (length inits) size)
        (error 'D1 "more init values than the array size: ~e" it))
-     (for ([v (in-list inits)]) (check-value w v))])
+     (for ([v (in-list inits)])
+       (unless (label-expr? v) (check-value w v)))])
   it)
 
 ;; (bN-array 总数 v...): 前 k 个用 v1..vk, 剩下全用 vk
+;;
+;; 端序没定, 所以只有"与端序无关"的数组能压成一条 fill:
+;;   宽度 1        -> 任何值都是一个字节
+;;   值全 0        -> 两种端序下都是全 0
+;; 其余一个元素一条 (value 宽度 v)。地址数组也走这条路(每个元素一条)。
 (define (expand-array w it)
   (define n (cadr it))
   (define inits (cddr it))
   (cond
     [(zero? n) (list (cons 'bytes '()))]
     [else
-     ;; 只有一个初值 = 每个元素都一样。先看它的字节, 不用先把 n 个元素铺出来。
-     (define one (and (= 1 (length inits)) (int-bytes w (car inits))))
+     (define lastv (last inits))
+     ;; 与端序无关 = 宽度 1(一个元素就一个字节) 或值全 0
+     (define same-tail? (and (exact-integer? lastv) (or (= 1 w) (zero? lastv))))
      (cond
-       ;; 每个字节都相同 -> 一条 fill (0 填充就是这条路)
-       [(and one (apply = one)) (list (list 'fill (* n w) (car one)))]
-       ;; 否则逐字节写出来
+       ;; 整个数组就是一个值, 且与端序无关 -> 一条 fill
+       [(and (= 1 (length inits)) same-tail?)
+        (list (list 'fill (* n w) (bitwise-and lastv #xFF)))]
        [else
-        (list (cons 'bytes
-                    (append*
-                     (for/list ([i (in-range n)])
-                       (int-bytes w (if (< i (length inits))
-                                        (list-ref inits i)
-                                        (last inits)))))))])]))
+        ;; 前 k 个逐条给; 尾部(都是 vk)在端序无关时压成 fill, 否则也逐条给
+        (define tail-n (- n (length inits)))
+        (append (for/list ([v (in-list inits)]) (value-item w v))
+                (if (and same-tail? (positive? tail-n))
+                    (list (list 'fill (* tail-n w) (bitwise-and lastv #xFF)))
+                    (for/list ([_ (in-range tail-n)]) (value-item w lastv))))])]))
 
 (define (expand-item it)
   (cond
     [(label-form? it) (list it)]
     [(bytes-form? it) (list it)]
     [(fill-item? it) (list it)]
+    [(value-item? it) (list it)]
     [(align-form? it) (list it)]
-    [(width-form? it) (list (width-item (width-of it) (cadr it)))]
+    [(width-form? it) (list (value-item (width-of it) (cadr it)))]
     [(array-form? it)
      (define w (cdr (assq (car it) array-forms)))
      (expand-array w (check-array w it))]

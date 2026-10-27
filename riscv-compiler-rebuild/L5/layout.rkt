@@ -8,7 +8,8 @@
 ;;;   program : L4 输出的 program
 ;;;             blocks : ((block <头 label 链列表> item ...) ...)   ; 身份 + 程序
 ;;;             flows  : ((flow (succ id ...) (fallthrough id|#f) (root? bool)) ...)
-;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b) (align n) ...)
+;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b)
+;;;                              (value 宽度 值) (align n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
 ;;;              (place 段名 链 ...) ...)
 ;;;
@@ -298,7 +299,7 @@
 (define (symbol-row symbols path) (and path (assoc path symbols)))
 
 ;; ---------------------------------------------------------------------------
-;; 校验: 目标存在 / 距离够 / scratch 空槽
+;; 校验: 目标存在 / 距离够 / scratch 空槽 / 地址字能放进宽度
 ;; ---------------------------------------------------------------------------
 
 (define (verify measured-segs symbols problem!)
@@ -319,7 +320,21 @@
            (when (and range (> (abs d) range))
              (problem! `(needs-far ,(segment-name seg) ,off ,it ,d)))]))
       (when (scratch-hole? it)
-        (problem! `(scratch-hole ,(segment-name seg) ,off ,it))))))
+        (problem! `(scratch-hole ,(segment-name seg) ,off ,it)))
+      ;; 数据里的地址字: 解析出绝对地址, 查链在不在 + 能不能放进 宽度 个字节。
+      ;; 整数不用查(D1 已经按宽度查过值域); 只有 label+ 需要地址才知道。
+      (when (value-form? it)
+        (define v (value-payload it))
+        (when (label-expr? v)
+          (define row (symbol-row symbols (label-expr-chain v)))
+          (cond
+            [(not row) (problem! `(undefined-target ,(segment-name seg) ,off ,it))]
+            [else
+             (define n (+ (cadddr row) (label-expr-addend v)))
+             (define bits (* 8 (value-width it)))
+             ;; 和 D1 同一条规则: 有符号或无符号能放进 bits 位即可
+             (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))
+               (problem! `(value-out-of-range ,(segment-name seg) ,off ,it ,n)))]))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 输出

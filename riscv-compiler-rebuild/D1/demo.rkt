@@ -5,6 +5,7 @@
 
 (define src
   '((label data1 table)
+    (label data1 ptr) (b64 (label+ (data1 table) 8))  ; 数据里的地址字: 值等 L7
     (b8 1)
     (b16 258)
     (b32 #x12345678)
@@ -20,5 +21,5 @@
 (for ([it (in-list src)]) (displayln (format "  ~s" it)))
 
 (newline)
-(displayln ";; D1 输出 (label / bytes / fill / align; 小端已定序)")
+(displayln ";; D1 输出 (label / bytes / fill / value / align; 端序还没定)")
 (for ([it (in-list (expand-data src))]) (displayln (format "  ~s" it)))

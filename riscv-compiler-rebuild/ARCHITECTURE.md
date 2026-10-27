@@ -10,8 +10,9 @@ data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代
 layout  list ┘                      program       program         (layout)     (预留)      (未做)
 ```
 
-D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**定序字节**；
-端序在 D1 定死（小端）。它只吐四种 item：`label` / `bytes` / `fill` / `align`。
+D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**核心 item**：
+`label` / `bytes` / `fill` / `value` / `align`。**端序不归 D1**：`value` 只带"宽度 + 值"，
+字节序在 L7 落字节时才定（端序在整个流水线里只出现这一次）。
 
 L3 只**分析**（s-exp → block list），L4 才开始**改**（block list → block list，会改控制流）。
 
@@ -24,15 +25,17 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | D1 | rich 数据（宽度/数组/字符串/对齐/label） | 不认识就 `error`（它是入口） |
 | L1 / L2 | `module`、`label` 链、替换表里的伪指令名 | 透传 |
 | L3 / L4 | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
-| L5 | 数据 `label` / `bytes` / `fill` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
+| L5 | 数据 `label` / `bytes` / `fill` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
 
 推论（也是本仓的硬规矩）：
 
 - **真实指令是否合法不归 L1–L5 管**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
   都是「变二进制」（L7）那一步的事。中间层不写这类检查。
 - 因此 L5 的 `item-size` / `item-kind` 兜底（`4` 字节 / `'code`）**是设计，不是漏检**。
-- 反过来，谁**输出**了别人的词汇就是 bug：D1 不再输出 `b16`（下游不认识），
-  它必须自己落成 `bytes`。
+- 反过来，谁**输出**了别人的词汇就是 bug：D1 不输出 `b16` 这种"宽度 + 值"的组合名，
+  它输出 `(value 宽度 值)` —— 宽度是**数据**，所以 L5 不需要认识任何宽度名。
+- 数据不是只给 L5：D1 的输出**同时**喂给 L3（只用来找"地址被取过"的链，
+  即 `(value 宽度 (label+ 链 加数))`），否则函数指针表里的函数会被 L4 当死代码删掉。
 - 一个名字只能有一个归属：`fill` 归 L5（padding 需要它），D1 只是它的生产者。
 
 `li` / `la` 是**特殊伪指令**，不进 L2 的替换表，源样一路透传到 L7：
@@ -41,17 +44,18 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 ## 1. 关键 API
 
-### D1 `D1/expand.rkt` — 数据定义（rich 数据 → 定序字节）
+### D1 `D1/expand.rkt` — 数据定义（rich 数据 → 核心 item）
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `expand-data` | rich 数据 item 列表 | `(listof core item)`（`label` / `bytes` / `fill` / `align`） |
+| `expand-data` | rich 数据 item 列表 | `(listof core item)`（`label` / `bytes` / `fill` / `value` / `align`） |
 | `expand-item` | 单条 item | `(listof core item)` |
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
 | 查询：`fill-form?` `width-form?` `width-of` | 单条 item | 布尔 / 宽度 |
 
-端序、宽度、值域、字符串编码、数组压缩都在这层定死；输出**只含定序字节**，
-所以下游不需要知道"宽度"这个概念。
+宽度、值域、字符串编码、数组压缩都在这层定；**端序不在这层**（L7 落字节时才定）。
+`value` 的值可以是整数，也可以是地址字 `(label+ 链 加数)` —— 地址值要等 L5 算完符号表、
+L7 落字节时才定，和代码侧的 `la` / `li` 是同一类"值推后"的 item。
 
 ### L1 `L1/flatten.rkt` — 模块展平 + 链式查表
 
@@ -81,7 +85,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `analyze` | `(listof item)` | **`program`**（blocks + flows） |
+| `analyze` | `(listof item)` + 可选 data items | **`program`**（blocks + flows）；data 只贡献 roots |
 | `block-head` / `block-items` | 块 | 头 label 链列表 / 程序 item |
 | `flow-succ` / `flow-fallthrough` / `flow-root?` | flow | 值 |
 | `program->sexp` / `sexp->program` | program / 字面量 | 字面量 / program |
@@ -90,7 +94,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `cfg-reachable` | `graph` `roots` | `(listof 块 id)` |
 | `cfg->lines` | `graph` | `(listof string)`（给人看） |
 | `referenced-labels` | `(listof item)` | `(listof path)` |
-| `address-taken-paths` | `(listof item)` | `(listof path)` |
+| `address-taken-paths` | `(listof item)` | `(listof path)`（含 `(value w (label+ 链 加数))` 里的链） |
 | 分类：`branch-instruction?` `jump-instruction?` `indirect-instruction?` `trap-instruction?` `ends-block?` `falls-through?` `unconditional-jump?` `jump-target` `jump-register` `zero-register?` | 单条 item | 布尔 / 值 |
 | 形状：`label-form?` `label-path` `name?` `path?` `normalize-path` | 任意 | 布尔 / 值 |
 
@@ -138,7 +142,8 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `layout-problems` | layout 产物 | `(listof problem)` |
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
 | 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离 / 布尔 |
-| 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `fill-form?` `compressed-form?` | 单条 item | 布尔 / 值 |
+| 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `label-expr?` `compressed-form?` | 单条 item | 布尔 / 值 |
+| 地址字：`value-width` `value-payload` `label-expr-chain` `label-expr-addend` | 单条 item | 宽度 / 值 / 链 / 加数 |
 | 显式寄存器：`jump-far-form?` `jump-far-link` `jump-far-scratch` `la-form?` `la-scratch` | 单条 item | 布尔 / 寄存器 |
 
 ### L6 `far`（预留）、L7 `encode`（未做）
@@ -148,7 +153,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 层 | 输入 | 输出 | 职责 |
 | --- | --- | --- | --- |
 | L6 far | layout | layout | 消费 `needs-far` / `scratch-hole`：超范围 item 升成远形式、填 scratch 空槽；尺寸变了要重跑 L5 |
-| L7 encode | layout | `(build ...)` | `li`/`la` 展开（riscv-help）、远形式展开、指令编码、立即数范围检查、有致命 problem 就拒绝出 `(build ...)` |
+| L7 encode | layout | `(build ...)` | `li`/`la` 展开（riscv-help）、远形式展开、指令编码、立即数范围检查、**`(value w …)` 落字节（端序在这一步定）**、`(label+ 链 加数)` 求值、有致命 problem 就拒绝出 `(build ...)` |
 
 **为什么 `li` / `la` 在 L7 才展开**
 
@@ -191,7 +196,9 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `(li rd 常量)` | 源 → L7 | **L7**（`riscv-help` 的 `expand-li` / `li-size`） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(bytes …)` `(fill n b)` `(align n)` | D1 输出 / 数据输入 | **L5**（尺寸 / padding / kind）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 |
-| rich 数据 `b8` `b16` `b64` `bN-array` `utf-string` | 源 | **D1**（宽度 / 值域 / 端序 / 字符串） | 人 | D1 |
+| `(value 宽度 值)` | D1 输出 | **D1** 出宽度+值；**L5** 量尺寸并查地址范围；**L7** 定端序并落字节 | D1 | L3（取地址）/ L5 / L7 |
+| `(label+ 链 加数)` | `value` 的值 / 源 | **D1** 归一形状；**L3** 当取地址；**L5** 解析范围；**L7** 落值 | 人 / D1 | L3 / L5 / L7 |
+| rich 数据 `b8` `b16` `b64` `bN-array` `utf-string` | 源 | **D1**（宽度 / 值域 / 字符串） | 人 | D1 |
 | `(block <头 label> item ...)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(flow …)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(segments …)` `(place …)` | layout 输入 | **L5** | 人 | L5 |
@@ -204,6 +211,8 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 过程 | 用到的层 |
 | --- | --- |
 | 单文件汇编 | L1（可省）→ L2 → L3 → L4 → L5 |
+| 数据（必需） | D1 → L3（只算 roots）→ L5 |
+| 数据里的地址字 | D1 出 `(value w (label+ 链 n))` → L5 查范围 → L7 定端序落字节 |
 | 多模块 / 多文件 | **L1 必用**（作用域前缀 + 跨输入名字表） |
 | 扩伪指令 | L2（加一行表） |
 | 控制流分析/调图 | L3（`analyze` + `cfg->lines`） |
@@ -211,6 +220,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 分段 / 地址布局 | L5（写 `segments` + `place`） |
 | 远跳转 | L6（预留，消费 `needs-far` / `scratch-hole`） |
 | `li` / `la` 展开 | L7（`../riscv-help`；`la` 还要 L5 的符号表） |
+| 端序 / `value` 落字节 | L7（全流水线只有这一处写端序） |
 | 产物 | L7（未做） |
 | 单层测试 | 每层（纯函数；L3 起 IR 是 block list） |
 
@@ -220,9 +230,10 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 
 | demo | 输入 | 输出 |
 | --- | --- | --- |
+| `D1/demo.rkt` | rich 数据 | 核心 item（`label` / `bytes` / `fill` / `value` / `align`） |
 | `L1/demo.rkt` | `(module ...)` 源 | 扁平 item + 名字表 |
 | `L2/demo.rkt` | 扁平 item（含伪指令） | 扁平 item |
-| `L3/demo.rkt` | 扁平 item | block list |
+| `L3/demo.rkt` | 扁平 item（+ 可选 data） | block list |
 | `L4/demo.rkt` | block list（用 `sexp->program` 写字面量） | block list |
 | `L5/demo.rkt` | block list + 数据 item + layout 输入 | `((segments …) (symbols …) (problems …))` |
 
@@ -237,7 +248,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | --- | --- | --- |
 | 替换表 | `L2/table-base.rkt` … `L2/table.rkt` | 伪指令 → 真指令（**不含 `li` / `la`**） |
 | 指令分类表 | `L3/insn.rkt` | 分支 / 跳转 / 间接 / 陷阱 / 是否顺序落下（含 `c.*` 与远形式） |
-| 形式表 | `L5/forms.rkt` | 字节数 / 可达距离 / 是否需要 scratch |
+| 形式表 | `L5/forms.rkt` | 字节数 / 类别 / 可达距离 / 是否需要 scratch / 数据值宽度 |
 | 展开器（外部） | `../riscv-help`：`li` `la-pcrel` `load-pcrel` `branch-long` `jump-*` | `li` / `la` / 远分支 / 远跳转的最终展开；本仓不重复实现 |
 
 `li` / `la` 的展开器不在本仓：它是 `riscv-help` 的公开 API（见其 `main.rkt`），
@@ -256,7 +267,7 @@ L7 只负责「把地址算好、传进去、把结果接回来」。
 | L6 | 目录不存在：`needs-far` / `scratch-hole` 只产不销 | 未做 |
 | L7 | 目录不存在：layout 之后没有消费者；`li`/`la` 展开、编码表、立即数范围检查都在这里 | 未做 |
 | 源 | 缺 `export` / `entry`，外部入口会被 L4 当死代码删掉 | 未做 |
-| 源/数据 | 数据只有 `bytes`；缺 `word` `quad` `ascii` `fill` `zero`、`.bss` | 未做 |
+| 源/数据 | 数据核心词只有 `label`/`bytes`/`fill`/`value`/`align`；缺 `ascii`、`.bss`、真 reloc | 未做 |
 | 链外 | 没有 driver、没有 L1→L7 的整链测试 | 未做 |
 
 ## 8. 代码约定

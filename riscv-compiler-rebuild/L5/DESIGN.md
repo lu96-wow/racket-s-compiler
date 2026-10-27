@@ -57,9 +57,14 @@ L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-e
 
 ```
 program : 块列表（L4 输出）
-data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b) (align n) ...)
-          本层的数据词汇只有这四个; 其余 item 一律当成**不透明的代码 item**
+data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b)
+           (value 宽度 值) (align n) ...)
+          本层的数据词汇只有这五个; 其余 item 一律当成**不透明的代码 item**
           (不查拼写、不查操作数: 那是编码层的事), 尺寸 4 字节, c.* 2 字节。
+
+          同一个 data 列表也要喂给 L3(第二个参数): 数据里的
+          (value 宽度 (label+ 链 加数)) 等于"链的地址被取过", 有间接跳转时它就是 root。
+          L3 只拿它算 roots, 数据 item 不进块、不进 CFG。
 layout  : ((segments (segment 名 kind start end align) ...)
            (place 段名 链 ...) ...)
 ```
@@ -104,6 +109,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | `label` | 0 |
 | `bytes` | 元素个数 |
 | `fill n b` | `n`（重复次数 = 字节数） |
+| `value 宽度 值` | `宽度`（值是什么由 L7 解释） |
 | `align n` | 由游标算（按绝对地址 `start + cursor` 对齐） |
 | `b*` | 4 |
 | `branch-far` | 8 |
@@ -184,6 +190,8 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
  (segment-name-duplicated (a b a))
  (segment-bad-range b)
  (undefined-target s1 0 (jal x0 (ghost)))
+ (undefined-target d 0 (value 8 (label+ (ghost) 0)))    ; 数据里的地址字
+ (value-out-of-range d 0 (value 4 (label+ (d t) 0)) #x100000000)  ; L5 才有的范围
  (needs-far prog1 8 (jal x0 (prog1cold cold)) 2097144)   ; 留给 L6
  (scratch-hole prog1 0 (branch-indirect a0 a1 (done)))   ; 留给 L6
  (scratch-hole prog1 0 (jump-far x0 (done))))            ; link=x0 才需要 base
@@ -192,7 +200,11 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 最后两类不是错误，是远跳转层（L6）的入口。
 
 **不在这个名单里的都不该是本层的事**：拼写、操作数个数、立即数范围、code 段的对齐是否
-合法，都是"变二进制"那一步（L7）自己的检查。L5 只判自己模型里的东西：段、偏移、距离、放置。
+合法，都是"变二进制"那一步（L7）自己的检查。L5 只判自己模型里的东西：段、偏移、距离、放置、
+符号表。
+
+`value-out-of-range` 属于本层：判断"地址能不能放进宽度个字节"要有符号表，只有 L5 有；
+它和 `needs-far` 是同一类（范围），不是指令合法性。整数的值域由 D1 查（它看得到宽度和字面量）。
 
 ## 6. 远跳转层（L6，预留，不实现）
 

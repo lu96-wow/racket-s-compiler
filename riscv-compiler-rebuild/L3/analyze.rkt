@@ -3,7 +3,12 @@
 ;;;
 ;;; 控制流分析: 只分析, 不改程序。
 ;;;
-;;;   (analyze items) -> program
+;;;   (analyze items [data-items]) -> program
+;;;
+;;;   data-items: 数据侧 item(D1 输出)。本层只拿它找"地址被取过"的链:
+;;;   数据里的 (value 宽度 (label+ 链 加数)) 等于把链的地址交给了外部,
+;;;   所以有间接跳转时, 这些链所在的块是 root(否则会被 L4 当死代码删掉)。
+;;;   数据 item 不进块、不进 CFG, 只贡献 roots。
 ;;;
 ;;; 程序被切成**块**, 每块两部分:
 ;;;
@@ -81,7 +86,7 @@
 ;; 分析
 ;; ---------------------------------------------------------------------------
 
-(define (analyze program-or-items)
+(define (analyze program-or-items [data-items '()])
   (define items (program-items program-or-items))
   (define g (cfg:build-cfg items))
   (define cfg-blocks (cfg:graph-blocks g))
@@ -89,8 +94,10 @@
 
   ;; 根只有"外部入口": 入口块 + (有间接跳转时)地址被取过的块。
   ;; 内部引用不是根 —— 它们在 CFG 里就是边。
+  ;; "地址被取过"包含数据侧: 数据里存了某块的地址, 就等于外部能进来。
   (define address-taken (if (cfg:graph-indirect? g)
-                            (cfg:address-taken-paths items)
+                            (append (cfg:address-taken-paths items)
+                                    (cfg:address-taken-paths (program-items data-items)))
                             '()))
 
   (define blocks

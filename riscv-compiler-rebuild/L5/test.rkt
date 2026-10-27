@@ -31,6 +31,16 @@
 (check-equal? (item-size '(label l)) 0)
 (check-equal? (item-size '(bytes 1 2 3)) 3)
 (check-equal? (item-size '(fill 4096 0)) 4096)
+(check-equal? (item-size '(value 8 (label+ (d t) 0))) 8)
+(check-equal? (item-size '(value 4 7)) 4)
+(check-true  (value-form? '(value 2 258)))
+(check-true  (value-form? '(value 8 (label+ (d t) 0))))
+(check-false (value-form? '(value 3 0)))              ; 宽度只认 1/2/4/8
+(check-false (value-form? '(value 8)))                ; 少了值
+(check-true  (label-expr? '(label+ (d t) 0)))
+(check-false (label-expr? '(label+ (d t))))           ; 核心形式里加数必须写
+(check-equal? (label-expr-chain '(label+ (d t) 8)) '(d t))
+(check-equal? (label-expr-addend '(label+ (d t) -8)) -8)
 (check-true  (fill-form? '(fill 4096 0)))
 (check-false (fill-form? '(fill 4096 256)))
 (check-false (fill-form? '(fill 4096)))
@@ -77,6 +87,7 @@
 (check-equal? (item-kind '(align 8)) 'both)
 (check-equal? (item-kind '(bytes 1)) 'data)
 (check-equal? (item-kind '(fill 4 0)) 'data)
+(check-equal? (item-kind '(value 8 (label+ (d t) 0))) 'data)
 (check-equal? (item-kind '(addi a0 a0 1)) 'code)
 
 ;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
@@ -482,22 +493,23 @@
 (define d1-items
   (expand-data '((label d t)
                  (b8 1) (b16 258) (b32 #x12345678) (b64 -1)
+                 (b64 (label+ (d t) 8))          ; 数据里的地址字
                  (utf-string "abc")
                  (b8-array 4096 0)
                  (align 8))))
 
-;; D1 只吐 label / bytes / fill / align
-(check-equal? (filter (lambda (it) (not (memq (car it) '(label bytes fill align)))) d1-items)
+;; D1 只吐 label / bytes / fill / value / align
+(check-equal? (filter (lambda (it) (not (memq (car it) '(label bytes fill value align)))) d1-items)
               '())
 
 ;; 每一条都能度量, 且都是数据
 (check-equal? (for/list ([it (in-list d1-items)] #:when (fill-form? it)) (item-size it))
               '(4096))
 (check-equal? (for/list ([it (in-list d1-items)] #:unless (label-form? it)) (item-kind it))
-              '(data data data data data data both))
+              '(data data data data data data data both))
 (check-equal? (for/list ([it (in-list d1-items)] #:unless (or (label-form? it) (align-form? it)))
                        (item-size it))
-              '(1 2 4 8 3 4096))
+              '(1 2 4 8 8 3 4096))
 
 ;; 和 L5 一起跑: 偏移正确, 没有 problem
 (define d1-laid
@@ -509,14 +521,71 @@
 (check-equal? (problems-of d1-laid) '())
 (check-equal? (items-of-seg d1-laid 'd)
               '((offset 0 (label d t))
-                (offset 0 (bytes 1))
-                (offset 1 (bytes 2 1))
-                (offset 3 (bytes #x78 #x56 #x34 #x12))
-                (offset 7 (bytes #xFF #xFF #xFF #xFF #xFF #xFF #xFF #xFF))
-                (offset 15 (bytes 97 98 99))
-                (offset 18 (fill 4096 0))
-                (offset 4114 (align 8))))
-(check-equal? (size-of-seg d1-laid 'd) 4120)
+                (offset 0 (value 1 1))
+                (offset 1 (value 2 258))
+                (offset 3 (value 4 #x12345678))
+                (offset 7 (value 8 -1))
+                (offset 15 (value 8 (label+ (d t) 8)))
+                (offset 23 (bytes 97 98 99))
+                (offset 26 (fill 4096 0))
+                (offset 4122 (align 8))))
+(check-equal? (size-of-seg d1-laid 'd) 4128)
+
+;; 数据里的地址字: 值由 L7 落, 但 L5 已经能查"链在不在"和"放不放得下"
+(check-equal? (problems-of
+               (lay0 '((label main) (jalr x0 ra 0))
+                     '((label d t) (value 8 (label+ (ghost) 0)))
+                     '((segments (segment s1 code #x1000 #x1FFF 4)
+                                 (segment d data #x10000 #x1FFFF 8))
+                       (place s1 (main)) (place d (d t)))))
+              '((undefined-target d 0 (value 8 (label+ (ghost) 0)))))
+
+;; 4 字节放不下这个地址 -> 和 needs-far 同一批(布局范围问题)
+(check-equal? (problems-of
+               (lay0 '((label main) (jalr x0 ra 0))
+                     '((label d t) (value 4 (label+ (d t) 0)))
+                     '((segments (segment s1 code #x1000 #x1FFF 4)
+                                 (segment d data #x100000000 #x100000FFF 8))
+                       (place s1 (main)) (place d (d t)))))
+              '((value-out-of-range d 0 (value 4 (label+ (d t) 0)) #x100000000)))
+
+;; 放得下就没有 problem
+(check-equal? (problems-of
+               (lay0 '((label main) (jalr x0 ra 0))
+                     '((label d t) (value 8 (label+ (d t) 8)))
+                     '((segments (segment s1 code #x1000 #x1FFF 4)
+                                 (segment d data #x10000 #x1FFFF 8))
+                       (place s1 (main)) (place d (d t)))))
+              '())
+
+;; ---------------------------------------------------------------------------
+;; 端到端: 数据里的函数指针 (数据必须喂给 L3)
+;; ---------------------------------------------------------------------------
+
+(define table-prog
+  '((label main) (la t0 (d table)) (ld t1 t0 0) (jalr ra t1 0)
+    (jalr x0 ra 0)
+    (label f) (addi a0 a0 1) (jalr x0 ra 0)))
+
+(define table-data (expand-data '((label d table) (b64-array 1 (label+ (f) 0)))))
+
+(define table-layout
+  '((segments (segment s code #x100000 #x100FFF 4)
+              (segment t data #x200000 #x2000FF 8))
+    (place s (main) (f)) (place t (d table))))
+
+;; 不把 data 喂给 L3: f 没有外部引用 -> 被 L4 当死块删掉 -> 表里的地址悬空
+(check-equal? (problems-of
+               (layout-program (eliminate-dead (analyze table-prog))
+                               table-data table-layout))
+              '((unmatched-place (f))
+                (undefined-target t 0 (value 8 (label+ (f) 0)))))
+
+;; 喂给 L3: "地址被取过" -> f 成为 root -> 活下来, 没有问题
+(check-equal? (problems-of
+               (layout-program (eliminate-dead (analyze table-prog table-data))
+                               table-data table-layout))
+              '())
 
 ;; ---------------------------------------------------------------------------
 ;; 全程: L1 -> L2 -> L3 -> L4

@@ -12,7 +12,9 @@
 (require (only-in "../L3/insn.rkt" zero-register?))
 
 (provide form? name? path? normalize-path
-         label-form? align-form? bytes-form? fill-form? compressed-form?
+         label-form? align-form? bytes-form? fill-form? value-form? compressed-form?
+         value-width value-payload
+         label-expr? label-expr-chain label-expr-addend
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size
@@ -53,6 +55,27 @@
        (exact-nonnegative-integer? (cadr x))
        (byte? (caddr x))))
 
+;; (value 宽度 值): 宽度个字节, 值是什么由 L7 解释。
+;; 尺寸现在就知道(= 宽度); 本层**不看**值是什么(整数还是地址字):
+;;   整数                 -> L7 按目标端序落字节
+;;   (label+ 链 加数)     -> 本层只解析地址看范围(下面), L7 落字节
+(define value-width   cadr)
+(define value-payload caddr)
+
+(define (value-form? x)
+  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
+       (memq (value-width x) '(1 2 4 8))
+       #t))
+
+;; 值里的地址表达式: (label+ 链 加数)。D1 会归一成这个形状(加数一定在)。
+(define (label-expr? x)
+  (and (form? x) (eq? (car x) 'label+) (= 3 (length x))
+       (path? (label-expr-chain x))
+       (exact-integer? (label-expr-addend x))
+       #t))
+(define label-expr-chain cadr)
+(define label-expr-addend caddr)
+
 ;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
 (define (compressed-form? x)
   (and (form? x) (symbol? (car x))
@@ -84,14 +107,14 @@
 ;;   marker = label(不占字节, 两种段都行)
 ;;   both   = align(两种段都行)
 ;;   code   = 指令
-;;   data   = bytes / fill
+;;   data   = bytes / fill / value
 ;; ---------------------------------------------------------------------------
 
 (define (item-kind x)
   (cond
     [(label-form? x) 'marker]
     [(align-form? x) 'both]
-    [(or (bytes-form? x) (fill-form? x)) 'data]
+    [(or (bytes-form? x) (fill-form? x) (value-form? x)) 'data]
     [else 'code]))                    ; 其余一律当成不透明的代码 item
 
 ;; ---------------------------------------------------------------------------
@@ -104,6 +127,7 @@
     [(align-form? x) #f]              ; 由游标算
     [(bytes-form? x) (length (cdr x))]
     [(fill-form? x) (cadr x)]         ; 字节数 = 重复次数
+    [(value-form? x) (value-width x)] ; 尺寸 = 宽度, 值等 L7
     [(compressed-form? x) 2]          ; c.* 必须先于 branch/jump 判, 也是 2 字节
     [(branch-form? x)
      (case (car x)

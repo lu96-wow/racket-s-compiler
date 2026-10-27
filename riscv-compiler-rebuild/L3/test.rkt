@@ -272,6 +272,24 @@
   (analyze '((label a) (la t0 (b)) (jalr x0 t0 0) (label b) (add t0 t0 t0))))
 (check-true (flow-root? (flow-at (program-flows blocks-indirect) 1)))   ; 地址被取过 + 有 jalr
 
+;; 数据里的地址字也算"取过地址": 函数指针表 / 跳转表
+(define items-with-jalr '((label a) (jalr x0 t0 0) (label b) (add t0 t0 t0)))
+(define no-data (analyze items-with-jalr))
+(define with-data (analyze items-with-jalr
+                           '((label d tbl) (value 8 (label+ (b) 0)))))
+(check-false (flow-root? (flow-at (program-flows no-data) 1)))
+(check-true  (flow-root? (flow-at (program-flows with-data) 1)))
+
+;; 数据 item 只贡献 roots, 不进 CFG
+(check-equal? (length (program-blocks with-data)) 2)
+
+;; 没有间接跳转时, 数据里的地址不会凭空造出 root
+(check-false (flow-root?
+              (flow-at (program-flows
+                        (analyze '((label a) (jal x0 (b)) (label b) (add t1 t1 t1))
+                                 '((value 8 (label+ (b) 0)))))
+                       1)))
+
 ;; 没有被取地址(也没有 jalr)时, 块头的 label 也不是外部入口
 (define blocks-no-taken
   (analyze '((label a) (ebreak) (label b) (add t0 t0 t0))))

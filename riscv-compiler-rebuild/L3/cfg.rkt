@@ -126,6 +126,17 @@
 
 ;; 被当成"值"用过的链(不是控制转移目标的引用), 例如 (la t0 (b)) / (ld t0 (table))。
 ;; 间接跳转的目标只能来自"取过地址"的链, 所以它们是有间接跳转时的候选落点。
+;; 数据侧也算: (value 宽度 (label+ 链 加数)) 把链的地址写进了数据(函数表/跳转表),
+;; 所以 L3 也要吃数据 item —— 见 analyze 的第二个参数。
+(define (value-ref it)
+  (and (form? it)
+       (eq? (car it) 'value)
+       (= 3 (length it))
+       (let ([v (caddr it)])
+         (and (form? v) (eq? (car v) 'label+) (= 3 (length v))
+              (path? (cadr v))
+              (cadr v)))))
+
 (define (address-taken-paths items)
   (remove-duplicates
    (append*
@@ -134,7 +145,8 @@
         (if (or (branch-instruction? it) (jump-instruction? it))
             (drop-right (cdr it) 1)      ; 最后一个操作数是跳转目标, 不算取值
             (cdr it)))
-      (filter path? operands)))))
+      (define refs (filter path? operands))
+      (if (value-ref it) (cons (value-ref it) refs) refs)))))
 
 ;; 从 roots 出发能走到的块下标(升序)
 (define (cfg-reachable g roots)
