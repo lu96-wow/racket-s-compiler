@@ -12,7 +12,7 @@
 (require (only-in "../L3/insn.rkt" zero-register?))
 
 (provide form? name? path? normalize-path
-         label-form? align-form? bytes-form? compressed-form?
+         label-form? align-form? bytes-form? fill-form? compressed-form?
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size
@@ -47,6 +47,12 @@
   (and (form? x) (eq? (car x) 'bytes)
        (andmap byte? (cdr x))))
 
+;; (fill 字节数 b): b 重复 字节数 次。和数据层的同一个名字。
+(define (fill-form? x)
+  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
+       (exact-nonnegative-integer? (cadr x))
+       (byte? (caddr x))))
+
 ;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
 (define (compressed-form? x)
   (and (form? x) (symbol? (car x))
@@ -55,7 +61,8 @@
 ;; layout 输入的子句
 (define (segment-form? x) (and (form? x) (eq? (car x) 'segment)))
 
-(define (segment-kind? k) (memq k '(code data rodata)))
+;; 只认本层真的会区别对待的两种: code 与 data
+(define (segment-kind? k) (memq k '(code data)))
 
 ;; ---------------------------------------------------------------------------
 ;; 分类
@@ -77,15 +84,15 @@
 ;;   marker = label(不占字节, 两种段都行)
 ;;   both   = align(两种段都行)
 ;;   code   = 指令
-;;   data   = bytes
+;;   data   = bytes / fill
 ;; ---------------------------------------------------------------------------
 
 (define (item-kind x)
   (cond
     [(label-form? x) 'marker]
     [(align-form? x) 'both]
-    [(bytes-form? x) 'data]
-    [else 'code]))
+    [(or (bytes-form? x) (fill-form? x)) 'data]
+    [else 'code]))                    ; 其余一律当成不透明的代码 item
 
 ;; ---------------------------------------------------------------------------
 ;; 字节数
@@ -96,6 +103,7 @@
     [(label-form? x) 0]
     [(align-form? x) #f]              ; 由游标算
     [(bytes-form? x) (length (cdr x))]
+    [(fill-form? x) (cadr x)]         ; 字节数 = 重复次数
     [(compressed-form? x) 2]          ; c.* 必须先于 branch/jump 判, 也是 2 字节
     [(branch-form? x)
      (case (car x)

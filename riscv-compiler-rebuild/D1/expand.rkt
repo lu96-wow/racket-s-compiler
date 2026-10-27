@@ -6,20 +6,25 @@
 ;;; 本层的输出词汇(只有这些):
 ;;;   (label 链...)                 位置
 ;;;   (bytes b...)                  已经定顺序的字面字节
-;;;   (b8 v) (b16 v) (b32 v) (b64 v)  宽度 + 整数值
-;;;   (b8-array 总数 v...) …          宽度 + 总数 + 初始化值
+;;;   (fill 字节数 b)               b 重复 字节数 次
 ;;;   (align n)                     对齐请求
 ;;;
 ;;; rich 形式(人写的):
 ;;;   (utf-string "…")               -> (bytes …UTF-8…)
 ;;;   (utf-stringz "…")              -> (bytes …UTF-8… 0)
+;;;   (b8 v) (b16 v) (b32 v) (b64 v) -> (bytes …小端…)
+;;;   (bN-array 总数 v...)           -> (fill n b) 或 (bytes …)
+;;;
+;;; 端序在本层定死: **小端**。下游只认 bytes, 不再有"宽度 + 值"这种没定序的形式:
+;;; 宽度属于本层, 顺序也属于本层。
 ;;;
 ;;; 数组: (bN-array 总数 v...)
 ;;;   - 前 k 个位置用 v1..vk, 剩下的全用最后一个 vk
-;;;   - 不展开成长列表: (b8-array 4096 0) 还是一条 item
+;;;   - 整个数组是同一个字节时压成 (fill 字节数 b); 否则展开成 bytes
+;;;     (因此 (b8-array 4096 0) 是一条, (b32-array 1000000 7) 会展开)
 ;;;
-;; 只做数据定义: 宽度、值域、字符串、数组。
-;;; 段、偏移、地址、端序、代码都不属于本层; 下游怎么用本层不关心。
+;;; 只做数据定义: 宽度、值域、字节顺序、字符串、数组。
+;;; 段、偏移、地址、代码都不属于本层; 下游怎么用本层不关心。
 ;;;
 ;;; 值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位。
 ;;; label+ / label- 暂不支持: 遇到就报错。
@@ -52,6 +57,13 @@
   (and (form? x) (eq? (car x) 'align) (= 2 (length x))
        (exact-positive-integer? (cadr x))))
 
+;; (fill 字节数 b): b 重复 字节数 次。**名字归 L5**(padding 需要它), 本层只是生产者,
+;; 所以这里的谓词不导出: 一个名字只能有一个归属。
+(define (fill-item? x)
+  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
+       (exact-nonnegative-integer? (cadr x))
+       (byte? (caddr x))))
+
 ;; ---------------------------------------------------------------------------
 ;; 宽度表
 ;; ---------------------------------------------------------------------------
@@ -83,16 +95,13 @@
     (error 'D1 "value ~a does not fit in ~a byte(s)" v w))
   v)
 
-(define (width-head w)
-  (case w
-    [(1) 'b8]
-    [(2) 'b16]
-    [(4) 'b32]
-    [(8) 'b64]
-    [else (error 'D1 "bad width: ~a" w)]))
+;; 宽度 + 值 -> 定序字节。端序在这里定死: 小端(低位在前)。
+(define (int-bytes w v)
+  (for/list ([i (in-range w)])
+    (bitwise-and (arithmetic-shift v (* -8 i)) #xFF)))
 
 (define (width-item w v)
-  (list (width-head w) (check-value w v)))
+  (cons 'bytes (int-bytes w (check-value w v))))
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串
@@ -133,15 +142,37 @@
      (for ([v (in-list inits)]) (check-value w v))])
   it)
 
+;; (bN-array 总数 v...): 前 k 个用 v1..vk, 剩下全用 vk
+(define (expand-array w it)
+  (define n (cadr it))
+  (define inits (cddr it))
+  (cond
+    [(zero? n) (list (cons 'bytes '()))]
+    [else
+     ;; 只有一个初值 = 每个元素都一样。先看它的字节, 不用先把 n 个元素铺出来。
+     (define one (and (= 1 (length inits)) (int-bytes w (car inits))))
+     (cond
+       ;; 每个字节都相同 -> 一条 fill (0 填充就是这条路)
+       [(and one (apply = one)) (list (list 'fill (* n w) (car one)))]
+       ;; 否则逐字节写出来
+       [else
+        (list (cons 'bytes
+                    (append*
+                     (for/list ([i (in-range n)])
+                       (int-bytes w (if (< i (length inits))
+                                        (list-ref inits i)
+                                        (last inits)))))))])]))
+
 (define (expand-item it)
   (cond
     [(label-form? it) (list it)]
     [(bytes-form? it) (list it)]
+    [(fill-item? it) (list it)]
     [(align-form? it) (list it)]
     [(width-form? it) (list (width-item (width-of it) (cadr it)))]
     [(array-form? it)
      (define w (cdr (assq (car it) array-forms)))
-     (list (check-array w it))]
+     (expand-array w (check-array w it))]
     [(and (form? it) (memq (car it) '(utf-string utf-stringz)))
      (expand-string it)]
     [else (error 'D1 "unknown data form: ~e" it)]))

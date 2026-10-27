@@ -57,7 +57,9 @@ L4 的 pass：`drop-unreachable` → `drop-transfers-to-next-block` → `merge-e
 
 ```
 program : 块列表（L4 输出）
-data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
+data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b) (align n) ...)
+          本层的数据词汇只有这四个; 其余 item 一律当成**不透明的代码 item**
+          (不查拼写、不查操作数: 那是编码层的事), 尺寸 4 字节, c.* 2 字节。
 layout  : ((segments (segment 名 kind start end align) ...)
            (place 段名 链 ...) ...)
 ```
@@ -77,6 +79,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 
 ```racket
 (segment prog1 code #x100000 #x100FFF 16)   ; 名 kind start end align
+                                            ; kind 只有 code / data 两种
 ```
 
 自检：名字唯一、`start < end`、`start` 按 `align` 对齐、区间不重叠。
@@ -100,6 +103,7 @@ layout  : ((segments (segment 名 kind start end align) ...)
 | --- | --- |
 | `label` | 0 |
 | `bytes` | 元素个数 |
+| `fill n b` | `n`（重复次数 = 字节数） |
 | `align n` | 由游标算（按绝对地址 `start + cursor` 对齐） |
 | `b*` | 4 |
 | `branch-far` | 8 |
@@ -174,7 +178,6 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
  (broken-fallthrough 0 1 ((a)) ((b)))        ; 顺序执行被段/区段剪断
  (code-data-mixed prog1 4 (bytes 1 2))       ; 数据落进 code 段
  (data-code-mixed data1 0 (addi a0 a0 1))    ; 指令落进 data 段
- (code-align-not-4 prog1 8 2)                ; code 段里 align 不是 4 的倍数
  (segment-overflow prog1 8 7)
  (segment-misaligned prog1 #x1002 16)
  (segment-overlap a b)
@@ -187,6 +190,9 @@ L5 不查 `li` / `la` 的目标与范围；写错链目前也不会报 `undefine
 ```
 
 最后两类不是错误，是远跳转层（L6）的入口。
+
+**不在这个名单里的都不该是本层的事**：拼写、操作数个数、立即数范围、code 段的对齐是否
+合法，都是"变二进制"那一步（L7）自己的检查。L5 只判自己模型里的东西：段、偏移、距离、放置。
 
 ## 6. 远跳转层（L6，预留，不实现）
 

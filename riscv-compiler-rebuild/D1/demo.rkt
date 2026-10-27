@@ -20,5 +20,5 @@
 (for ([it (in-list src)]) (displayln (format "  ~s" it)))
 
 (newline)
-(displayln ";; D1 输出 (label / bytes / bN / align; 值还没编码成字节)")
+(displayln ";; D1 输出 (label / bytes / fill / align; 小端已定序)")
 (for ([it (in-list (expand-data src))]) (displayln (format "  ~s" it)))

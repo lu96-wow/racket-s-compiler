@@ -1,20 +1,57 @@
 # 分层与接口一览
 
 ```
-source(多输入)                 每层都是纯函数, 可单独测
-──────────────
-program list ┐
+      rich 数据 ─→ D1 数据定义 ─┐
+                                │
+source(多输入)                  │ 每层都是纯函数, 可单独测
+──────────────                  │
+program list ┐                  ↓
 data    list ├─ L1 展平 ─→ L2 替换 ─→ L3 分析 ─→ L4 死代码消除 ─→ L5 布局 ─→ [L6 far] ─→ [L7 编码]
 layout  list ┘                      program       program         (layout)     (预留)      (未做)
 ```
 
+D1 把 rich 数据（`b8`/`b16`/`b64`/`bN-array`/`utf-string`）落成**定序字节**；
+端序在 D1 定死（小端）。它只吐四种 item：`label` / `bytes` / `fill` / `align`。
+
 L3 只**分析**（s-exp → block list），L4 才开始**改**（block list → block list，会改控制流）。
+
+## 0. 词汇边界（每层只关心自己）
+
+每层只处理**与自己设计的那几种 s-exp** 相关的逻辑，其余一律是**不透明载荷**：
+
+| 层 | 自己认识的 item | 其余 |
+| --- | --- | --- |
+| D1 | rich 数据（宽度/数组/字符串/对齐/label） | 不认识就 `error`（它是入口） |
+| L1 / L2 | `module`、`label` 链、替换表里的伪指令名 | 透传 |
+| L3 / L4 | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
+| L5 | 数据 `label` / `bytes` / `fill` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
+
+推论（也是本仓的硬规矩）：
+
+- **真实指令是否合法不归 L1–L5 管**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
+  都是「变二进制」（L7）那一步的事。中间层不写这类检查。
+- 因此 L5 的 `item-size` / `item-kind` 兜底（`4` 字节 / `'code`）**是设计，不是漏检**。
+- 反过来，谁**输出**了别人的词汇就是 bug：D1 不再输出 `b16`（下游不认识），
+  它必须自己落成 `bytes`。
+- 一个名字只能有一个归属：`fill` 归 L5（padding 需要它），D1 只是它的生产者。
 
 `li` / `la` 是**特殊伪指令**，不进 L2 的替换表，源样一路透传到 L7：
 它们要「最终地址」才能展开（`la` 要 delta、`li` 要常量），所以在 L5 之后由 L7
 调用 `../riscv-help` 展开；L5 只为它们预留字节。
 
 ## 1. 关键 API
+
+### D1 `D1/expand.rkt` — 数据定义（rich 数据 → 定序字节）
+
+| API | 输入 | 输出 |
+| --- | --- | --- |
+| `expand-data` | rich 数据 item 列表 | `(listof core item)`（`label` / `bytes` / `fill` / `align`） |
+| `expand-item` | 单条 item | `(listof core item)` |
+| `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
+| 查询：`fill-form?` `width-form?` `width-of` | 单条 item | 布尔 / 宽度 |
+
+端序、宽度、值域、字符串编码、数组压缩都在这层定死；输出**只含定序字节**，
+所以下游不需要知道"宽度"这个概念。
 
 ### L1 `L1/flatten.rkt` — 模块展平 + 链式查表
 
@@ -101,7 +138,7 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | `layout-problems` | layout 产物 | `(listof problem)` |
 | `program-items` | 任意输入 | `(listof item)`（剥旧壳） |
 | 形式表：`item-size` `item-kind` `form-range` `scratch-hole?` | 单条 item | 字节数 / 类别 / 距离 / 布尔 |
-| 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `compressed-form?` | 单条 item | 布尔 / 值 |
+| 分类：`control-form?` `control-target` `branch-form?` `jump-form?` `indirect-form?` `label-form?` `align-form?` `bytes-form?` `fill-form?` `compressed-form?` | 单条 item | 布尔 / 值 |
 | 显式寄存器：`jump-far-form?` `jump-far-link` `jump-far-scratch` `la-form?` `la-scratch` | 单条 item | 布尔 / 寄存器 |
 
 ### L6 `far`（预留）、L7 `encode`（未做）
@@ -153,7 +190,8 @@ L3 只**分析**（s-exp → block list），L4 才开始**改**（block list �
 | 远形式 `(branch-far a b L)` `(branch-indirect [s] a b L)` `(jump-far link [s] L)` | 源或 L6 | **L5/forms**（尺寸·距离·scratch 槽）；**L3** 分类（link 显式，`falls-through?` 可算） | 人 / L6 | L3 / L5 |
 | `(li rd 常量)` | 源 → L7 | **L7**（`riscv-help` 的 `expand-li` / `li-size`） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
 | `(la rd 链)` / `(la rd tmp 链)` | 源 → L7 | **L7**（`riscv-help` 的 `la-pcrel` / `load-pcrel`；delta = 符号地址 − 当前地址） | 人 | L3 当普通指令 / L5 量尺寸 / L7 展开 |
-| `(bytes …)` `(align n)` | 数据输入 | **L5**（尺寸 / padding / kind） | 人 | L5 |
+| `(bytes …)` `(fill n b)` `(align n)` | D1 输出 / 数据输入 | **L5**（尺寸 / padding / kind）；`fill` 归 L5，D1 是生产者 | D1 / 人 | L5 |
+| rich 数据 `b8` `b16` `b64` `bN-array` `utf-string` | 源 | **D1**（宽度 / 值域 / 端序 / 字符串） | 人 | D1 |
 | `(block <头 label> item ...)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(flow …)` | L3 → L5 | **L3** | L3 | L4 / L5 |
 | `(segments …)` `(place …)` | layout 输入 | **L5** | 人 | L5 |

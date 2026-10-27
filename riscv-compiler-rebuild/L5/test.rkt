@@ -6,6 +6,7 @@
 (require rackunit
          "forms.rkt"
          "layout.rkt"
+         (only-in "../D1/expand.rkt" expand-data)
          (only-in "../L1/flatten.rkt" flatten-inputs)
          (only-in "../L2/rewrite.rkt" rewrite-program)
          (only-in "../L3/analyze.rkt" analyze)
@@ -29,6 +30,10 @@
 (check-equal? (item-size '(la t0 tmp (l))) 8)
 (check-equal? (item-size '(label l)) 0)
 (check-equal? (item-size '(bytes 1 2 3)) 3)
+(check-equal? (item-size '(fill 4096 0)) 4096)
+(check-true  (fill-form? '(fill 4096 0)))
+(check-false (fill-form? '(fill 4096 256)))
+(check-false (fill-form? '(fill 4096)))
 (check-equal? (item-size '(addi a0 a0 1)) 4)
 (check-equal? (item-size '(c.addi a0 1)) 2)
 
@@ -71,6 +76,7 @@
 (check-equal? (item-kind '(label a)) 'marker)
 (check-equal? (item-kind '(align 8)) 'both)
 (check-equal? (item-kind '(bytes 1)) 'data)
+(check-equal? (item-kind '(fill 4 0)) 'data)
 (check-equal? (item-kind '(addi a0 a0 1)) 'code)
 
 ;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
@@ -303,7 +309,20 @@
 (check-equal? (problems-of l-abs-align-code) '())
 
 ;; ---------------------------------------------------------------------------
-;; data 段: bytes / align / label
+;; 数据/代码分界: L5 只认自己的数据词汇, 其余一律"不透明代码, 4 字节"
+;; ---------------------------------------------------------------------------
+
+;; 不是本层的数据词汇 -> 当成不透明代码, 只给尺寸, 不问它是什么
+(check-equal? (item-kind '(addi a0 a0 1)) 'code)
+(check-equal? (item-size '(addi a0 a0 1)) 4)
+(check-equal? (item-size '(lwu t0 sp 8)) 4)          ; 不认识也是 4, 不报错
+(check-equal? (item-size '(c.lwsp t0 4)) 2)          ; c.* 一律 2
+;; 数据词汇只有四个: label / bytes / fill / align
+(for ([it (in-list '((label d t) (bytes 1 2) (fill 8 0) (align 4)))])
+  (check-false (eq? (item-kind it) 'code)))
+
+;; ---------------------------------------------------------------------------
+;; data 段: bytes / fill / align / label
 ;; ---------------------------------------------------------------------------
 
 (define l5 (lay '((label main) (la t0 (data1 table)) (ld t1 t0 0) (jalr x0 ra 0))
@@ -413,6 +432,22 @@
               '((offset 0 (label main)) (offset 0 (label done))
                 (offset 0 (jalr x0 ra 0))))
 
+;; fill 就是"n 个同样的字节", 尺寸由重复次数给
+(check-equal? (items-of-seg
+               (lay '((label main) (jalr x0 ra 0))
+                    '((label d z) (fill 4096 0) (label d e) (bytes 7))
+                    '((segments (segment s1 code #x1000 #x1FFF 4)
+                                (segment d data #x10000 #x1FFFF 8))
+                      (place s1 (main)) (place d (d z) (d e))))
+               'd)
+              '((offset 0 (label d z)) (offset 0 (fill 4096 0))
+                (offset 4096 (label d e)) (offset 4096 (bytes 7))))
+;; fill 落进 code 段 -> 数据/代码混放
+(check-equal? (problems-of (lay '((label main) (fill 4 0)) '()
+                               '((segments (segment s1 code #x1000 #x1FFF 4))
+                                 (place s1 (main)))))
+              '((code-data-mixed s1 0 (fill 4 0))))
+
 ;; ---------------------------------------------------------------------------
 ;; 段表问题
 ;; ---------------------------------------------------------------------------
@@ -439,6 +474,49 @@
                                '((segments (segment s1 code #x1000 #x1007 4))
                                  (place s1 (main)))))
               '((segment-overflow s1 8 7)))
+
+;; ---------------------------------------------------------------------------
+;; 边界: D1 的输出必须能被 L5 原样度量 (D1 的词汇就是 L5 的数据词汇)
+;; ---------------------------------------------------------------------------
+
+(define d1-items
+  (expand-data '((label d t)
+                 (b8 1) (b16 258) (b32 #x12345678) (b64 -1)
+                 (utf-string "abc")
+                 (b8-array 4096 0)
+                 (align 8))))
+
+;; D1 只吐 label / bytes / fill / align
+(check-equal? (filter (lambda (it) (not (memq (car it) '(label bytes fill align)))) d1-items)
+              '())
+
+;; 每一条都能度量, 且都是数据
+(check-equal? (for/list ([it (in-list d1-items)] #:when (fill-form? it)) (item-size it))
+              '(4096))
+(check-equal? (for/list ([it (in-list d1-items)] #:unless (label-form? it)) (item-kind it))
+              '(data data data data data data both))
+(check-equal? (for/list ([it (in-list d1-items)] #:unless (or (label-form? it) (align-form? it)))
+                       (item-size it))
+              '(1 2 4 8 3 4096))
+
+;; 和 L5 一起跑: 偏移正确, 没有 problem
+(define d1-laid
+  (layout-program (analyze '((label main) (jalr x0 ra 0)))
+                  d1-items
+                  '((segments (segment s1 code #x1000 #x1FFF 4)
+                              (segment d data #x10000 #x1FFFF 8))
+                    (place s1 (main)) (place d (d t)))))
+(check-equal? (problems-of d1-laid) '())
+(check-equal? (items-of-seg d1-laid 'd)
+              '((offset 0 (label d t))
+                (offset 0 (bytes 1))
+                (offset 1 (bytes 2 1))
+                (offset 3 (bytes #x78 #x56 #x34 #x12))
+                (offset 7 (bytes #xFF #xFF #xFF #xFF #xFF #xFF #xFF #xFF))
+                (offset 15 (bytes 97 98 99))
+                (offset 18 (fill 4096 0))
+                (offset 4114 (align 8))))
+(check-equal? (size-of-seg d1-laid 'd) 4120)
 
 ;; ---------------------------------------------------------------------------
 ;; 全程: L1 -> L2 -> L3 -> L4

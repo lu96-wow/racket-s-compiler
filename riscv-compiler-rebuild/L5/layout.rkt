@@ -8,7 +8,7 @@
 ;;;   program : L4 输出的 program
 ;;;             blocks : ((block <头 label 链列表> item ...) ...)   ; 身份 + 程序
 ;;;             flows  : ((flow (succ id ...) (fallthrough id|#f) (root? bool)) ...)
-;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (align n) ...)
+;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b) (align n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
 ;;;              (place 段名 链 ...) ...)
 ;;;
@@ -229,8 +229,7 @@
     (cond
       [(align-form? it)
        (define n (cadr it))
-       (when (and (eq? seg-kind 'code) (not (zero? (modulo n 4))))
-         (problem! `(code-align-not-4 ,seg-name ,cursor ,n)))
+       ;; "code 段的 align 必须是 4 的倍数"是 ISA 合法性, 不归本层: 只对齐, 不判。
        ;; align 是**绝对地址**对齐: 段 start 不一定被 item 的 n 整除,
        ;; 所以用 (start + cursor) 算, 不能只用段内 cursor。
        (emit! it (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))]
