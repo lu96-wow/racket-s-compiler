@@ -95,7 +95,11 @@
     (for/list ([b (in-vector cfg-blocks)] [i (in-naturals)])
       (define succ (cfg:basic-block-successors b))
       (define next (and (< (add1 i) n) (add1 i)))
-      (define fallthrough (and next (memv next succ) next))
+      ;; fallthrough 是"会不会顺序落到物理下一条", 不是"下标恰好在 succ 里":
+      ;; (jal x0 L) 的目标可能正好是下一块, 但它不会顺序落下。
+      (define last-insn (and (pair? (cfg:basic-block-items b))
+                             (last (cfg:basic-block-items b))))
+      (define fallthrough (and next (falls-through? last-insn) next))
       ;; 块里所有 label(块头 + 块内位置标记)
       (define all-labels
         (append (cfg:basic-block-labels b)

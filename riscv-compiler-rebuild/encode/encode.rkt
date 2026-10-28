@@ -95,7 +95,8 @@
 ;; (jump-far link [s] L): link 非零时它自己就是 auipc 的落点
 (define (encode-far-jump it here symbols)
   (define link (cadr it))
-  (define hole? (= 3 (length it)))
+  ;; 空槽 = 少一个 scratch **且** link 是零寄存器; link 非零时它自己就是 auipc 的落点。
+  (define hole? (and (= 3 (length it)) (zero-register? link)))
   (define target (normalize-path (last it)))
   (define d (- (resolve-symbol symbols target 0) here))
   (cond

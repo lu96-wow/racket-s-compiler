@@ -253,7 +253,8 @@
        (define local
          (cond
            [renamed (cdr renamed)]
-           [prefix (list (string->symbol (format "~a~a" prefix (car external))))]
+           [prefix (cons (string->symbol (format "~a~a" prefix (car external)))
+                         (cdr external))]
            [else external]))
        (cons local absolute)))))
 
