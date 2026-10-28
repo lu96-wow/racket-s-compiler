@@ -1,5 +1,7 @@
 # analyze 控制流分析（`analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#analyze`](../SEXP.md#analyze)。
+>
 > 只**分析**，不改程序。输出"块 + 流"两份平行数据。
 
 ## 1. 职责

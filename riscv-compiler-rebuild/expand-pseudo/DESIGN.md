@@ -1,5 +1,7 @@
 # expand-pseudo 伪指令替换（`expand-pseudo/rewrite.rkt` + `table*.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#expand-pseudo`](../SEXP.md#expand-pseudo)。
+>
 > 一张表 + 一次统一 rewrite。逻辑在 `rewrite.rkt`，数据在 `table-base.rkt` / `table.rkt`。
 
 ## 1. 职责

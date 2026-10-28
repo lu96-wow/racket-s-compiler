@@ -1,5 +1,7 @@
 # encode 编码（`encode/insn.rkt` `encode/encode.rkt`；目标事实在顶层 `target.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#encode`](../SEXP.md#encode)。
+>
 > 最后一步：`layout -> (build …)`，每个段一坨字节。
 > **端序只出现在这里**；指令编码和位域检查都在 `riscv-asm`。
 

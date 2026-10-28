@@ -1,5 +1,7 @@
 # layout 布局计算（`layout/forms.rkt` `layout/layout.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#layout`](../SEXP.md#layout)。
+>
 > 把"块 + 数据 + 段表"变成"每段的 item 序列 + 偏移 + 符号 + problems"。
 > 只算，不选：不升级远形式、不填 scratch、不补跳、不重排。
 

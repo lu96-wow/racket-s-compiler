@@ -3,7 +3,8 @@
 黑盒契约测试：只通过 `riscv-compiler-rebuild` 的公开 API 验证每一层的 s-exp
 输入/输出、边界、问题交接，以及整条 `flow` 到字节的产物。
 
-实现目录不动；这里只读它。
+实现目录不动；这里只读它。契约来源是
+[`../riscv-compiler-rebuild/SEXP.md`](../riscv-compiler-rebuild/SEXP.md) 和各层 `DESIGN.md`。
 
 ## 跑
 

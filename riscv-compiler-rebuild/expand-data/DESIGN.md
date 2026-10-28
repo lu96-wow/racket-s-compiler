@@ -1,5 +1,7 @@
 # expand-data 数据定义（`expand-data/expand.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#expand-data`](../SEXP.md#expand-data)。
+>
 > 把"人写的数据"变成"核心 item"：宽度、值域、字符串、数组归这里；**端序不归这里**。
 
 ## 1. 职责

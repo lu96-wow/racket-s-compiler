@@ -1,5 +1,7 @@
 # flow 构建流（`flow/flow.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#flow`](../SEXP.md#flow)。
+>
 > 用一张 stage 表和**一个名字列表**决定跑哪些层、什么顺序。
 > `(list 'expand-data 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)`
 > 就是整条流水线；不写进列表的层就是关掉。

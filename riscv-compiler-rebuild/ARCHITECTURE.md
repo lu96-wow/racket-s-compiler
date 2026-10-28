@@ -1,13 +1,14 @@
 # 架构总览（索引 + 规范）
 
 > **本文件只做两件事**：给出全局地图，和写死跨层规矩。
-> 每层的细节在各自的 `DESIGN.md` 里，本文件不重复。
+> 每层速览在 `SEXP.md`，细节在各自的 `DESIGN.md` 里，本文件不重复。
 
 ## 0. 文档地图
 
 | 文档 | 讲什么 |
 | --- | --- |
 | `ARCHITECTURE.md`（本文） | 分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
+| [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
 | `expand-data/DESIGN.md` | 数据定义：宽度 / 值域 / 字符串 / 数组 / 地址字 |
 | `flatten/DESIGN.md` | 模块展平 + 链式查表（只做名字） |
 | `expand-pseudo/DESIGN.md` | 伪指令替换表 |
@@ -37,17 +38,19 @@ layout  list ┘                items          program    program  layout   byte
 (run-flow '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
 ```
 
-| stage | 文件 | 一句话 | 读 | 写 | 细节 |
-| --- | --- | --- | --- | --- | --- |
-| `expand-data` | `expand-data/expand.rkt` | 数据定义 | `rich-data` | `data-items` | [`expand-data/DESIGN.md`](expand-data/DESIGN.md) |
-| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `program-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
-| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `program-items` | `program-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
-| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `program-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
-| `dce` | `dce/dce.rkt` | 死代码消除 | `program` | `program` | [`dce/DESIGN.md`](dce/DESIGN.md) |
-| `layout` | `layout/forms.rkt` `layout/layout.rkt` | 布局计算 | `program` `data-items` `layout-spec` | `layout` | [`layout/DESIGN.md`](layout/DESIGN.md) |
-| `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | 同 `layout` | `layout` | [`relax/DESIGN.md`](relax/DESIGN.md) |
-| `encode` | `encode/insn.rkt` `encode/encode.rkt` | 编码 | `layout` | `build` | [`encode/DESIGN.md`](encode/DESIGN.md) |
-| `flow` | `flow/flow.rkt` | 构建流本身 | 层名列表 + seed | context | [`flow/DESIGN.md`](flow/DESIGN.md) |
+每层吃/吐什么 s-exp、为什么这样设计，看 [`SEXP.md`](SEXP.md)；这里只留功能索引：
+
+| stage | 文件 | 功能 | 细节 |
+| --- | --- | --- | --- |
+| `expand-data` | `expand-data/expand.rkt` | 数据定义 → 核心数据 item | [`expand-data/DESIGN.md`](expand-data/DESIGN.md) |
+| `flatten` | `flatten/flatten.rkt` | 模块系统 + 链式查表（只做名字） | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
+| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
+| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析：块 + 流 + root | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
+| `dce` | `dce/dce.rkt` | 死代码消除 | [`dce/DESIGN.md`](dce/DESIGN.md) |
+| `layout` | `layout/forms.rkt` `layout/layout.rkt` | 放置 + 度量 + 符号表 + problems | [`layout/DESIGN.md`](layout/DESIGN.md) |
+| `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | [`relax/DESIGN.md`](relax/DESIGN.md) |
+| `encode` | `encode/insn.rkt` `encode/encode.rkt` | 编码 → 每段字节 | [`encode/DESIGN.md`](encode/DESIGN.md) |
+| `flow` | `flow/flow.rkt` | 构建流本身 | [`flow/DESIGN.md`](flow/DESIGN.md) |
 
 可选性、顺序、平层（`layout` 与 `relax` 同进同出）都由那张列表表达，见 `flow/DESIGN.md`。
 
@@ -59,7 +62,7 @@ layout  list ┘                items          program    program  layout   byte
 | `target.rkt` | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes` | layout（XLEN）、encode（端序/填充/扩展集） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
-所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `as-items` 而冲突。
+所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `as-items`（同一个函数绑定）而冲突。
 
 两个外部包：
 
@@ -230,6 +233,7 @@ segment d start=#x200000 size=11
 
 ```
 # <层> <名字>（<文件>）
+> 速览（功能 / s-exp / 设计理由）：../SEXP.md#<层>
 > 一句话定位
 ## 1. 职责        —— 做 / 不做 两列
 ## 2. 输入 / 输出  —— s-exp 形状 + 例子
@@ -244,10 +248,10 @@ segment d start=#x200000 size=11
 
 | 改了 | 同步 |
 | --- | --- |
-| 某个 item 的名字 / 形状 | 该层 `DESIGN.md` + 本文 §5 形式归属 + 上/下层的词汇边界 |
+| 某个 item 的名字 / 形状 | `SEXP.md` 对应卡片 + 该层 `DESIGN.md` + 本文 §5 形式归属 + 上/下层词汇边界 |
 | 尺寸或可达距离 | 该层 `DESIGN.md` 的表 + 相邻层的度量说明 |
-| 新增一层 | 建目录（名字=stage 名）+ `DESIGN.md`；在 `flow/flow.rkt` 的 stage 表里登记 requires/provides；本文 §1 表加一行 |
-| 换契约 | 本文 §1 表 + §3 铁律 + 相关 `DESIGN.md` |
+| 新增一层 | 建目录（名字=stage 名）+ `DESIGN.md`；`SEXP.md` 加卡片；在 `flow/flow.rkt` 的 stage 表里登记 requires/provides；本文 §1 表加一行 |
+| 换契约 | `SEXP.md` + 本文 §1 表 + §3 铁律 + 相关 `DESIGN.md` |
 | 修掉一个缺口 | 本文 §8 + 该层 §7 |
 | 新增 API | 该层 `DESIGN.md` §3 |
 | 新增跨层共享的形状/事实 | 放顶层（`sexp.rkt` / `target.rkt`），并在本文这一节登记 |

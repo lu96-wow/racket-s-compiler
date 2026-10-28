@@ -26,9 +26,10 @@ layout  list ┘                items          program    program  layout   byte
 
 | 文档 | 内容 |
 | --- | --- |
+| [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **索引 + 规范**：分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
 | `flow/DESIGN.md` | **构建流**：`(list 层名 ...)`、依赖检查、可选/顺序/平层 |
-| `expand-data/DESIGN.md` … `encode/DESIGN.md` | 每层自己的职责 / 输入输出 / API / 规则 / 边界 / 测试 / 缺口 |
+| `expand-data/DESIGN.md` … `encode/DESIGN.md` | 每层细节：API / 规则 / 边界 / 测试 / 缺口 |
 
 顶层还有两个"不属于任何层"的共享模块：`sexp.rkt`（s-exp 形状工具）和 `target.rkt`（XLEN / 端序 / 扩展集）。
 

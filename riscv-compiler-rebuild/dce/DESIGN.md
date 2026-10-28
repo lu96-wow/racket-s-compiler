@@ -1,5 +1,7 @@
 # dce 死代码消除（`dce/dce.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#dce`](../SEXP.md#dce)。
+>
 > 第一个**改**控制流的层：`program -> program`。只动可达性、冗余转移、空块。
 
 ## 1. 职责

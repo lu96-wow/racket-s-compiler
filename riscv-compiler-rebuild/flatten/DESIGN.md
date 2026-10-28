@@ -1,5 +1,7 @@
 # flatten 模块系统 + 链式查表（`flatten/flatten.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#flatten`](../SEXP.md#flatten)。
+>
 > 只做**名字**，不做指令。把模块结构解析成完整链，之后的层看到的全是 `(模块… 名字)`。
 
 ## 1. 职责

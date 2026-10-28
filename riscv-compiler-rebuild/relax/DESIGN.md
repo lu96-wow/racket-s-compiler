@@ -1,5 +1,7 @@
 # relax 分支松弛（`relax/relax.rkt`）
 
+> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#relax`](../SEXP.md#relax)。
+>
 > 把够不着的控制转移换成"大一号"的形式，直到全部够得着。
 > 只换 item，不造 label、不拆块、不改 CFG、**不填 scratch**。
 
