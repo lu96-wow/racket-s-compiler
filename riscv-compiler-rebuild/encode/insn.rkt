@@ -23,7 +23,7 @@
 (require "../../riscv-asm/generated/lib/instruction_paths.rkt"
          "../../riscv-asm/generated/lib/info/struct.rkt"
          "../../riscv-asm/generated/lib/info/lookup.rkt"
-         "../target.rkt"
+         (only-in "../target.rkt" current-target target-extensions)
          "syntax/suffix.rkt"
          "syntax/plan.rkt")
 
@@ -39,10 +39,12 @@
 (define info-cache (make-hash))
 
 (define (lookup-instruction name)
-  (hash-ref! info-cache name
+  ;; 缓存必须带当前扩展集: 同一个名字在 rv64/rv32 profile 下可能不同。
+  (define exts (target-extensions (current-target)))
+  (hash-ref! info-cache (cons exts name)
              (lambda ()
-               (and (pair? (instruction-info-candidates target-extensions name))
-                    (resolve-instruction-info target-extensions name)))))
+               (and (pair? (instruction-info-candidates exts name))
+                    (resolve-instruction-info exts name)))))
 
 (define (known-instruction? name) (and (lookup-instruction name) #t))
 

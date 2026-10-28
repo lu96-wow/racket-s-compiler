@@ -7,7 +7,8 @@
          (only-in "../relax/relax.rkt" relax)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../analyze/analyze.rkt" analyze)
-         (only-in "../layout/layout.rkt" layout-program))
+         (only-in "../layout/layout.rkt" layout-program)
+         (only-in "../target.rkt" target-rv64-base))
 
 ;; ---------------------------------------------------------------------------
 ;; 素材
@@ -72,6 +73,12 @@
 
 (define out (run-flow default-flow seeds))
 (define build (flow-value out 'build))
+
+;; target seed 可选; 显式给 target 时由 run-flow parameterize current-target
+(define out-with-target
+  (run-flow default-flow (cons (cons 'target target-rv64-base) seeds)))
+(check-equal? (flow-value out-with-target 'build) build)
+(check-equal? (hash-ref out-with-target 'target) target-rv64-base)
 
 (check-true (hash-has-key? out 'names))          ; flatten 的在途值
 (check-true (hash-has-key? out 'program))

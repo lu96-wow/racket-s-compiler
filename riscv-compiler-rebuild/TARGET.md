@@ -1,5 +1,7 @@
 # target profile 设计
 
+> 状态：已实现。`current-target` 由 `run-flow` 从 seed 绑定；旧全局常量已删除。
+
 > 目标：让 rv32 / rv64 / 不同扩展集可切换，但**不把 target 参数塞进每个函数**。
 >
 > 做法：target 是一个简单值 + 一个动态参数 `current-target`；
@@ -104,9 +106,9 @@ target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 
 不单独加 padding 策略字段。以后真需要 ebreak/0xFF 填充时再加。
 
-## 7. 迁移步骤
+## 7. 实施顺序（已完成）
 
-### 1. 加 target 值和参数
+### 1. target 值和参数（已完成）
 
 ```racket
 (struct target ...)
@@ -117,23 +119,22 @@ target-rv32-all
 current-target
 ```
 
-旧的 `target-xlen` / `target-endianness` / `target-extensions` 先保留为
-`target-default` 的兼容值。
 
-### 2. 内部改成读 current-target
+### 2. 内部改读 current-target（已完成）
 
 - `integer->bytes` / `padding-bytes`
 - `layout` 的 `li` / `la`
 - `encode` 的 lookup / `li`
 - lookup 缓存键
+- CSR 表按 XLEN 选择（rv32 才启用 csr32-table）
 
-### 3. flow 绑定 target
+### 3. flow 绑定 target（已完成）
 
 - `run-flow` 从 seed 取 `target`，参数化 `current-target`
 - 测试/demo 想换 target 就加 `(target . target-rv64-all)`
 - 全扩展 profile 用 `syntax-coverage` 看语法缺项
 
-### 4. 删除旧常量
+### 4. 删除旧常量（已完成）
 
 - 删除 `target-xlen` / `target-endianness` / `target-extensions` 兼容导出
 - 统一走 `current-target` + 访问器

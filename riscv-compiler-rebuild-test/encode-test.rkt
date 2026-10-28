@@ -8,7 +8,9 @@
          (only-in "../riscv-compiler-rebuild/encode/encode.rkt"
                   encode-layout)
          (only-in "../riscv-compiler-rebuild/target.rkt"
-                  target-xlen target-endianness integer->bytes padding-bytes))
+                  current-target target-xlen target-endianness target-extensions
+                  target target-default target-rv64-base target-rv64-all target-rv32-all
+                  integer->bytes padding-bytes))
 
 (define (word name . ops)
   (define-values (w n) (encode-instruction name ops))
@@ -23,8 +25,27 @@
 ;; 目标事实
 ;; ---------------------------------------------------------------------------
 
-(check-equal? target-xlen 'rv64)
-(check-equal? target-endianness 'little)
+(check-equal? (target-xlen (current-target)) 'rv64)
+(check-equal? (target-endianness (current-target)) 'little)
+(check-equal? (target-xlen target-rv64-base) 'rv64)
+(check-equal? (target-xlen target-rv32-all) 'rv32)
+(check-false (memq 'rv32_i (target-extensions target-rv64-all)))
+(check-false (memq 'rv64_i (target-extensions target-rv32-all)))
+
+;; target 切换必须影响查表, 不能复用同一个缓存
+(parameterize ([current-target target-rv64-base])
+  (check-true (known-instruction? 'lr.d)))
+(parameterize ([current-target target-rv32-all])
+  (check-false (known-instruction? 'lr.d)))
+(parameterize ([current-target target-rv64-base])
+  (check-true (known-instruction? 'lr.d)))
+
+;; 端序 / 无 C 时的填充由 current-target 决定
+(parameterize ([current-target (target 'rv64 'big '(rv_i))])
+  (check-equal? (integer->bytes 4 #x12345678) '(#x12 #x34 #x56 #x78)))
+(parameterize ([current-target (target 'rv64 'little '(rv_i))])
+  (check-equal? (padding-bytes 'code 4) '(#x13 #x00 #x00 #x00))
+  (check-error "没有 C 就不能补 2 字节" (lambda () (padding-bytes 'code 2))))
 
 (check-equal? (integer->bytes 4 #x12345678) '(#x78 #x56 #x34 #x12))
 (check-equal? (integer->bytes 2 258) '(2 1))
@@ -167,6 +188,8 @@
 (check-equal? (instruction-arity 'fence.i) 0)
 (check-error "unknown CSR" (lambda () (encode-instruction 'csrr '(a0 no-such-csr))))
 (check-error "rv32-only CSR 不在当前 target" (lambda () (encode-instruction 'csrr '(a0 cycleh))))
+(parameterize ([current-target target-rv32-all])
+  (check-equal? (word 'csrr 'a0 'cycleh) (list #xc8002573 4)))
 
 ;; ---------------------------------------------------------------------------
 ;; layout -> build: 代码 + 数据 + 对齐

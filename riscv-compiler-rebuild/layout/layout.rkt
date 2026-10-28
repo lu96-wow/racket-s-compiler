@@ -24,7 +24,7 @@
 
 (require "../sexp.rkt"
          "forms.rkt"
-         (only-in "../target.rkt" target-xlen)
+         (only-in "../target.rkt" current-target target-xlen)
          ;; la 的近形式够不够得着: 和 encode 用同一个判据
          (only-in "../../riscv-help/main.rkt" fits-auipc-pair?)
          (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
@@ -395,7 +395,7 @@
     (define expr (last it))
     (when (check-chains s expr)
       (define d (- (eval-address expr (site-symbols s)) (site-here s)))
-      (unless (fits-auipc-pair? d target-xlen)
+      (unless (fits-auipc-pair? d (target-xlen (current-target)))
         (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
 
 (define (verify measured-segs symbols report)

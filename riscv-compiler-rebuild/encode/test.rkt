@@ -129,8 +129,10 @@
 
 (check-exn exn:fail? (lambda () (encode-instruction 'csrr (list 'a0 'no-such-csr))))
 (check-exn exn:fail? (lambda () (encode-instruction 'csrwi (list 'mstatus 'x))))
-;; csrs32 表只属于未来的 rv32 profile
+;; csrs32 只属于 rv32 profile
 (check-exn exn:fail? (lambda () (encode-instruction 'csrr (list 'a0 'cycleh))))
+(parameterize ([current-target target-rv32-all])
+  (check-equal? (word 'csrr 'a0 'cycleh) (cons #xc8002573 4)))
 
 ;; 本切片自身的扩展覆盖
 (check-equal? (hash-ref (syntax-coverage '(rv_zicsr rv_zifencei)) 'missing) 0)
@@ -370,7 +372,7 @@
 (check-equal? (direct-plan-names) '(fence fence.i fence.tso))
 
 ;; 当前 target 的扩展必须全部有语法计划
-(check-equal? (hash-ref (syntax-coverage target-extensions) 'missing) 0)
+(check-equal? (hash-ref (syntax-coverage (target-extensions (current-target))) 'missing) 0)
 
 ;; 全量 riscv-asm 扩展仍然缺语法; 这是后续工作的清单来源
 (check-true (positive? (hash-ref (syntax-coverage) 'missing)))

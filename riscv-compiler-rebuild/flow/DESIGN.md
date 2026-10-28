@@ -43,6 +43,9 @@
 ```racket
 (run-flow selector seeds)
 ;; -> context (hash)，用 (flow-value ctx 'build) 取出产物
+;;
+;; target 是可选 seed；不写就用 target-default
+;;   (run-flow default-flow '((target . target-rv64-all) ...))
 ```
 
 `seeds` 有两种写法：
@@ -62,6 +65,7 @@
 | 名字 | 是什么 | 谁产 |
 | --- | --- | --- |
 | `rich-data` | 人写的 rich 数据（seed） | — |
+| `target` | 目标 profile（seed，可选） | — |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
 | `program-items` | 扁平程序 item（可含 `(module …)`） | seed / `flatten` / `expand-pseudo` |
 | `names` | `flatten` 建的名字表 | `flatten` |

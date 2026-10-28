@@ -119,7 +119,7 @@
     [(branch-indirect) (emit-all! (encode-indirect-branch it here symbols))]
     [(jump-far)        (emit-all! (encode-far-jump it here symbols))]
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
-    [(li) (emit-all! (li (cadr it) (caddr it)))]
+    [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen (current-target))))]
     ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
     [(la) (define d (- (eval-address (last it) symbols) here))
           (emit-all! (load-pcrel (cadr it) d))]

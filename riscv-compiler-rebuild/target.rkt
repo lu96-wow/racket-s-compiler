@@ -1,36 +1,77 @@
 #lang racket
-;; target.rkt
+;;; target.rkt
 ;;;
-;;; 目标事实: XLEN、端序、启用的扩展集。
+;;; 目标配置: XLEN、端序、扩展集。
 ;;;
-;;; **XLen 和端序在整个流水线里只出现在这里**:
-;;;   layout 量尺寸要 XLen(li 的展开长度、auipc 的 ±2GB 判据)
-;;;   encode 落字节要端序
-;;; 换目标(rv32 / 大端)只改这个文件。
+;;; 目标不再写死。`run-flow` 可以从 seed 里取 target 并 parameterize
+;;; `current-target`; 各层函数签名保持不变, 需要时读 current-target。
 ;;;
-;;; 放在顶层是因为它既不属于 layout 也不属于 encode —— 它是两边共用的**事实**。
-;;; 由事实派生的小工具(integer->bytes / padding-bytes)也放这里, 免得端序被抄第二份。
+;;;   (parameterize ([current-target target-rv64-all])
+;;;     (layout-program ...)
+;;;     (encode-layout ...))
+;;;
+;;; target 只放事实: 多少位、什么端序、开了哪些扩展。
+;;; padding 由扩展集推导; 操作数语法、栈、ABI、reloc 都不在这里。
 
-(provide target-xlen
-         target-endianness
-         target-extensions
+(require racket/string
+         "../riscv-asm/generated/gen/riscv/info/extensions.rkt")
+
+(provide (struct-out target)
+         target-default
+         target-rv64-base
+         target-rv64-all
+         target-rv32-all
+         current-target
          integer->bytes
          padding-bytes)
 
-;; riscv-help 的 li-size / fits-auipc-pair? 用符号表示 XLEN
-(define target-xlen 'rv64)
+(struct target (xlen endianness extensions) #:transparent)
 
-(define target-endianness 'little)
+;; 当前默认目标: rv64 + 目前已经接入的扩展。
+(define target-rv64-base
+  (target 'rv64 'little
+          '(rv_i rv_m rv_a
+            rv64_i rv64_m rv64_a
+            rv_c rv64_c
+            rv_zicsr rv_zifencei)))
 
-;; 目标 ISA 子集: 这个集合同时喂给 riscv-asm 的查表(它负责编码和所有位域检查)
-(define target-extensions
-  '(rv_i rv_m rv_a
-    rv64_i rv64_m rv64_a
-    rv_c rv64_c
-    rv_zicsr rv_zifencei))
+(define target-default target-rv64-base)
 
-;; 整数 -> width 个字节(按目标端序)。值必须能放进 width 个字节。
+;; 全扩展 profile:
+;;   rv64-all = 非 rv32_* 的所有扩展
+;;   rv32-all = 非 rv64_* 的所有扩展
+;; 不做依赖闭包; 这是显式的扩展集合。
+(define (extension-prefix? prefix e)
+  (string-prefix? (symbol->string e) prefix))
+
+(define target-rv64-all
+  (target 'rv64 'little
+          (sort (filter (lambda (e) (not (extension-prefix? "rv32_" e))) extensions)
+                symbol<?)))
+
+(define target-rv32-all
+  (target 'rv32 'little
+          (sort (filter (lambda (e) (not (extension-prefix? "rv64_" e))) extensions)
+                symbol<?)))
+
+;; 当前运行目标。只在 flow 入口/测试里 parameterize。
+(define current-target (make-parameter target-default))
+
+;; ---------------------------------------------------------------------------
+;; 目标事实
+;; ---------------------------------------------------------------------------
+
+(define (target-has-extension? t e)
+  (and (memq e (target-extensions t)) #t))
+
+(define (target-compressed? t)
+  (or (target-has-extension? t 'rv_c)
+      (target-has-extension? t 'rv32_c)
+      (target-has-extension? t 'rv64_c)))
+
+;; 整数 -> width 个字节(按当前 target 的端序)。
 (define (integer->bytes width value)
+  (define endianness (target-endianness (current-target)))
   (define bits (* 8 width))
   (unless (<= (- (expt 2 (sub1 bits))) value (sub1 (expt 2 bits)))
     (error 'integer->bytes
@@ -39,38 +80,41 @@
     (for/list ([i (in-range width)])
       (bitwise-and (arithmetic-shift value (- (* 8 i))) #xFF)))
   (cond
-    [(eq? target-endianness 'little) bs]
-    [(eq? target-endianness 'big) (reverse bs)]
-    [else (error 'integer->bytes "unknown endianness: ~a" target-endianness)]))
+    [(eq? endianness 'little) bs]
+    [(eq? endianness 'big) (reverse bs)]
+    [else (error 'integer->bytes "unknown endianness: ~a" endianness)]))
 
 ;; ---------------------------------------------------------------------------
-;; 填充策略（这就是"芯片相关"的那部分：补什么字节）
+;; 填充策略
 ;;
-;;   data 段: 0
-;;   code 段: 合法指令 —— 会顺着落下来执行, 不能留 0
-;;            4 字节优先用 nop(addi x0,x0,0), 余 2 用 c.nop(c.addi x0,0)
-;;            奇数字节 >>> 编不出来(没有任何 1 字节指令), 报错
-;;
-;; 换目标(比如用 ebreak 填空、或不允许压缩指令)只改这里。
+;;   data : 0
+;;   code : 4 字节 nop; 余 2 字节只在当前 target 有 C 扩展时用 c.nop
+;;          奇数字节报错(没有任何 1 字节指令)
 ;; ---------------------------------------------------------------------------
 
-(define nop-word     #x00000013)   ; addi x0, x0, 0    (4 字节)
-(define c-nop-word   #x0001)       ; c.addi x0, 0      (2 字节, C 扩展)
+(define nop-word     #x00000013)   ; addi x0, x0, 0
+(define c-nop-word   #x0001)       ; c.addi x0, 0
 
 (define (padding-bytes kind n)
   (case kind
-    [(code) (code-padding-bytes n)]
+    [(code) (code-padding-bytes (current-target) n)]
     [(data) (make-list n 0)]
     [else (error 'padding-bytes "unknown segment kind: ~a" kind)]))
 
-(define (code-padding-bytes n)
+(define (code-padding-bytes t n)
   (define quads (quotient n 4))
   (define rest (remainder n 4))
   (append
    (append* (for/list ([_ (in-range quads)]) (integer->bytes 4 nop-word)))
    (case rest
      [(0) '()]
-     [(2) (integer->bytes 2 c-nop-word)]
-     [else (error 'padding-bytes
-                  "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"
-                  n rest)])))
+     [(2)
+      (unless (target-compressed? t)
+        (error 'padding-bytes
+               "code 段需要补 2 字节, 但当前 target 没有 C 扩展: ~a"
+               (target-extensions t)))
+      (integer->bytes 2 c-nop-word)]
+     [else
+      (error 'padding-bytes
+             "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"
+             n rest)])))

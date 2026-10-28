@@ -65,7 +65,7 @@ layout  list ┘                items          program    program  layout   byte
 | 文件 | 内容 | 谁用 |
 | --- | --- | --- |
 | `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）地址表达式 `arith-head?` / `arith-form?` / `address-expr?` / `address-expr-chains` | 除了 flow 之外的所有层 |
-| `target.rkt` | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes` | layout（XLEN）、encode（端序/填充/扩展集） |
+| `target.rkt` | `(struct target)` `current-target` `target-default` / `target-rv64-base` / `target-rv64-all` / `target-rv32-all` `integer->bytes` `padding-bytes` | flow（seed）、layout（XLEN）、encode（端序/填充/扩展集） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
 所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `as-items`（同一个函数绑定）而冲突。
@@ -119,7 +119,8 @@ layout  list ┘                items          program    program  layout   byte
 3. **尺寸：谁的 item 谁负责**。`li` 由常量精确算，`la` 近形式固定 8，
    远形式 / 空槽要 scratch → 留给未实现的那一层。数据 `value` 的宽度由作者写死。
 4. **目标事实只出现一次**：顶层的 `target.rkt`（XLEN + 端序 + 扩展集）。
-   layout 要 XLEN（`li` 展开长度、auipc 判据），encode 要端序；expand-data 只管宽度和值。
+   `flow` 从 seed 绑定 `current-target`；layout / encode 只读当前 target。
+   expand-data 只管宽度和值。
 5. **问题分三级**：本层模型错误（硬）、范围问题（`needs-far` / `value-out-of-range`）、
    交接给下一层（`needs-far` → relax，`scratch-hole` → 未实现的寄存器层）。
 6. **松弛只增不减**：relax 每轮只把 item 变长，所以"太远"的集合单调递增，必然收敛。

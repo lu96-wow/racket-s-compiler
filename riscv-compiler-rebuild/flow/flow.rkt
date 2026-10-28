@@ -26,7 +26,8 @@
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
          (only-in "../relax/relax.rkt" relax)
-         (only-in "../encode/encode.rkt" encode-layout))
+         (only-in "../encode/encode.rkt" encode-layout)
+         (only-in "../target.rkt" current-target target-default))
 
 (provide (struct-out stage)
          stage-table
@@ -201,17 +202,18 @@
 (define (run-flow selector [seeds '()])
   (define names (select-stages selector))
   (define ctx (seed-context seeds))
-  (for ([n (in-list names)] [step (in-naturals)])
-    (define st (hash-ref stage-table n))
-    (for ([r (in-list (stage-requires st))])
-      (unless (hash-has-key? ctx r)
-        (error 'run-flow
-               "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
-               step n r
-               (let ([ps (providers-of r)])
-                 (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
-    (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
-    (for ([(k v) (in-hash ((stage-run st) in))]) (hash-set! ctx k v)))
+  (parameterize ([current-target (hash-ref ctx 'target target-default)])
+    (for ([n (in-list names)] [step (in-naturals)])
+      (define st (hash-ref stage-table n))
+      (for ([r (in-list (stage-requires st))])
+        (unless (hash-has-key? ctx r)
+          (error 'run-flow
+                 "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
+                 step n r
+                 (let ([ps (providers-of r)])
+                   (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
+      (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
+      (for ([(k v) (in-hash ((stage-run st) in))]) (hash-set! ctx k v))))
   ctx)
 
 ;; 单层: 只返回这层 provides 的值, 不带 seed 和其它上下文。

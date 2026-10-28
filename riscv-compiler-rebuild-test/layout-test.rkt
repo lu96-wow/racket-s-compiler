@@ -13,7 +13,9 @@
                   form-range scratch-hole?)
          (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
                   layout-program layout-problems
-                  symbol-row symbol-address eval-address))
+                  symbol-row symbol-address eval-address)
+         (only-in "../riscv-compiler-rebuild/target.rkt"
+                  current-target target-rv64-base target-rv32-all))
 
 (define (lay prog data spec) (layout-program prog data spec))
 
@@ -50,6 +52,14 @@
 (check-equal? (item-size '(li a0 2048)) 8)
 (check-equal? (item-size '(li a0 #x80000000)) 12)
 (check-equal? (item-size '(la a0 (x))) 8)
+
+;; li 的尺寸跟着 current-target 的 XLEN 走
+(parameterize ([current-target target-rv64-base])
+  (check-equal? (item-size '(li a0 #x80000000)) 12))
+(parameterize ([current-target target-rv32-all])
+  (check-equal? (item-size '(li a0 #x80000000)) 4)
+  (check-error "rv32 放不下 64 位常量"
+               (lambda () (item-size '(li a0 #x100000000)))))
 
 (check-equal? (item-kind '(label a)) 'marker)
 (check-equal? (item-kind '(align 8)) 'both)
