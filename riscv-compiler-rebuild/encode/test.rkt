@@ -81,19 +81,24 @@
 (check-equal? (word 'amoadd.d.rl 'a0 'a2 'a1) (cons #x02c5b52f 4))
 (check-equal? (word 'sc.d.aq 'a0 'a1 'a2) (cons #x1cb6352f 4))
 
-;; fence: (fence pred succ); pred/succ 是 i,o,r,w 的规范顺序组合
+;; fence: (fence) = 完整 fence; (fence pred succ) = 显式 pred/succ
+;; pred/succ 是 i,o,r,w 的规范顺序组合; 0 表示空集 (LLVM 接受)
+(check-equal? (word 'fence) (cons #x0ff0000f 4))
 (check-equal? (word 'fence 'rw 'rw) (cons #x0330000f 4))
 (check-equal? (word 'fence 'iorw 'iorw) (cons #x0ff0000f 4))
 (check-equal? (word 'fence 'r 'w) (cons #x0210000f 4))
+(check-equal? (word 'fence 0 0) (cons #x0000000f 4))
+(check-equal? (word 'fence 0 'rw) (cons #x0030000f 4))
 (check-equal? (word 'fence.tso) (cons #x8330000f 4))
+(check-equal? (word 'pause) (cons #x0100000f 4))   ; fence w, 0 的别名
 
-(check-equal? (instruction-arity 'fence) 2)
+(check-equal? (instruction-arity 'fence) 2)        ; 显式形式
 (check-equal? (instruction-arity 'fence.tso) 0)
-(check-exn exn:fail? (lambda () (encode-instruction 'fence '())))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rw 'rw 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'wr 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rwx 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence (list 1 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence.tso (list 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence.tso.aq '())))
 

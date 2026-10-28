@@ -102,17 +102,27 @@ A 扩展的全部原子指令都走这条规则：
 只暴露有语义的 `pred` / `succ`：
 
 ```racket
-(fence pred succ)      ; pred/succ = i,o,r,w 的规范顺序组合
+(fence)                ; 完整 fence = fence iorw, iorw -> 0x0ff0000f
+(fence pred succ)      ; pred/succ = i,o,r,w 的规范顺序组合；0 = 空集
 (fence rw rw)          ; 0x0330000f
 (fence iorw iorw)      ; 0x0ff0000f
 (fence r w)            ; 0x0210000f
+(fence 0 0)            ; 0x0000000f
 (fence.tso)            ; 0x8330000f
 ```
 
-- 只接受 `i`, `o`, `r`, `w` 的规范顺序，每个字符最多一次：`rw` / `iorw` 合法，
-  `wr` / `rwx` / 空串报错。
-- `fence` 固定 2 个操作数；`fence.tso` 固定 0 个，`fm/pred/succ` 由指令本身固定。
+- `(fence)` 是 GAS/LLVM 的 no-operand 别名，等价于 `fence iorw, iorw`。
+- 显式形式只接受 `i`, `o`, `r`, `w` 的规范顺序，每个字符最多一次：`rw` / `iorw` 合法，
+  `wr` / `rwx` / 空串报错；数值只接受 `0`（空集，LLVM 也接受）。
+- `fence` 接受 0 或 2 个操作数；`fence.tso` 固定 0 个，`fm/pred/succ` 由指令本身固定。
 - `fence` / `fence.tso` 都不接受 `.aq` / `.rl` 后缀。
+
+固定值已对照 `riscv-asm`、LLVM 和 GAS：
+
+- `fence`：`imm12 = {0000,pred,succ}`，`rs1 = rd = 0`
+- `fence.tso`：`imm12 = {1000,0011,0011}`，`rs1 = rd = 0`
+- `pred/succ` 位：`I=8, O=4, R=2, W=1`
+- 原子：`funct5[31:27]`，`aq[26]`，`rl[25]`；`lr` 是 `rd,rs1`，`sc/amo` 是 `rd,rs2,rs1`
 
 ### 4.4 字节规则
 

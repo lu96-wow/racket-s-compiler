@@ -131,11 +131,14 @@
   (define-values (_w size) (encode-instruction n '(a0 a2 a1)))
   (check-equal? size 4 (format "size ~a" n)))
 
-;; fence: pred/succ 按 i,o,r,w 规范顺序; fence.tso 无操作数
+;; fence: (fence) = 完整 fence; pred/succ 按 i,o,r,w 规范顺序; 0 = 空集
+(check-equal? (word 'fence) (list #x0ff0000f 4))
 (check-equal? (word 'fence 'rw 'rw) (list #x0330000f 4))
 (check-equal? (word 'fence 'iorw 'iorw) (list #x0ff0000f 4))
 (check-equal? (word 'fence 'r 'w) (list #x0210000f 4))
+(check-equal? (word 'fence 0 0) (list #x0000000f 4))
 (check-equal? (word 'fence.tso) (list #x8330000f 4))
+(check-equal? (word 'pause) (list #x0100000f 4))
 
 (check-equal? (instruction-arity 'add) 3)
 (check-equal? (instruction-arity 'addi) 3)
@@ -148,6 +151,7 @@
 (check-error "元数不对" (lambda () (encode-instruction 'add '(a0 a1))))
 (check-error "fence 元数不对" (lambda () (encode-instruction 'fence '(rw))))
 (check-error "fence pred/succ 顺序" (lambda () (encode-instruction 'fence '(wr rw))))
+(check-error "fence 只允许 0 作为数值" (lambda () (encode-instruction 'fence '(1 rw))))
 (check-error "fence.tso 不接受操作数" (lambda () (encode-instruction 'fence.tso '(rw))))
 (check-error "fence.tso 不接受后缀" (lambda () (encode-instruction 'fence.tso.aq '())))
 
