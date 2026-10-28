@@ -9,7 +9,7 @@
 | --- | --- |
 | 逐 item 出字节（数据 + 代码） | 选指令 / 优化 |
 | 端序、对齐补齐 | 布局（属于 layout） |
-| `value` / `label+` 求值 | 松弛（属于 relax） |
+| `value` / `ref` 求值 | 松弛（属于 relax） |
 | `li` / `la` / 远形式展开 | 填 scratch 空槽（未实现的那一层） |
 | 断言"写出的字节数 = layout 的偏移" | 加载器格式 / ELF / 分区镜像 |
 | 有 problem 就拒绝出产物 | — |
@@ -90,7 +90,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 | `label` | 无 |
 | `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
 | `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按目标端序；整数直接写，`(label+ 链 加数)` 用符号表求值 |
+| `value w 值` | `w` 字节按目标端序；整数直接写，`(ref 链 加数)` 用符号表求值 |
 | 真指令 | `riscv-asm` 编码（`width/8` 字节） |
 | 远形式 | `riscv-help` 展开后再编码 |
 | `li` / `la` | `riscv-help` 展开后再编码 |

@@ -26,7 +26,7 @@
 (define data
   '((label data1 table) (align 8) (bytes 1 2 3 4 5 6 7 8)
     ;; 数据里的地址字: 尺寸现在就知道(8), 值要等 encode
-    (label data1 ptr) (value 8 (label+ (data1 table) 0))))
+    (label data1 ptr) (value 8 (ref (data1 table) 0))))
 
 (define layout-input
   '((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16))

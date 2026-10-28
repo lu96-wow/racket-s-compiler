@@ -14,7 +14,7 @@
 ;;;   pad n     补 n 字节: code 段填合法指令(nop / c.nop), 其余填 0
 ;;;   bytes     原样
 ;;;   fill n b  n 个 b
-;;;   value w v w 字节, 端序由 target.rkt 定; v 是整数或 (label+ 链 加数)
+;;;   value w v w 字节, 端序由 target.rkt 定; v 是整数或 (ref 链 加数)
 ;;;   真指令    riscv-asm 编码; 目标地址 = 符号表 + 加数, 分支/跳转取相对偏移
 ;;;   远形式 / li / la   先由 riscv-help 展开成几条真指令, 再逐条编码
 ;;;
@@ -49,7 +49,7 @@
   (define n
     (cond
       [(exact-integer? v) v]
-      [(label-expr? v) (resolve-symbol symbols (label-expr-chain v) (label-expr-addend v))]
+      [(ref-expr? v) (resolve-symbol symbols (ref-chain v) (ref-addend v))]
       [else (error 'encode "bad value: ~e" v)]))
   (integer->bytes w n))
 

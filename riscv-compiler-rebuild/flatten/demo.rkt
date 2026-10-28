@@ -28,7 +28,7 @@
       (provide (rename-out ((d table) table)))   ; 导出时改名
       (require (prefix-in p: prog))              ; 带前缀
       (label d table)
-      (b64 (label+ (p:f) 0))                     ; 引用 prog 的 f
+      (b64 (ref (p:f) 0))                       ; 引用 prog 的 f
       (utf-stringz "hi"))))
 
 (displayln ";; 输入: 两个输入，各自有模块")

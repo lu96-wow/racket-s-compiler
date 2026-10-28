@@ -359,17 +359,17 @@
          (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
 
 ;; 数据里的地址字: 链在不在 + 地址放不放得进宽度。
-;; 整数不用查(expand-data 已经按宽度查过值域); 只有 label+ 要等地址才知道。
+;; 整数不用查(expand-data 已经按宽度查过值域); 只有 ref 要等地址才知道。
 (define (check-value s)
   (define it (site-item s))
   (when (value-form? it)
     (define v (value-payload it))
-    (when (label-expr? v)
-      (define row (symbol-row (site-symbols s) (label-expr-chain v)))
+    (when (ref-expr? v)
+      (define row (symbol-row (site-symbols s) (ref-chain v)))
       (cond
         [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
         [else
-         (define n (+ (symbol-address row) (label-expr-addend v)))
+         (define n (+ (symbol-address row) (ref-addend v)))
          (define bits (* 8 (value-width it)))
          ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
          (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))

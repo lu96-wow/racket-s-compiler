@@ -10,7 +10,7 @@
 | 整数值域检查 | 段 / 地址 / 偏移（属于 layout） |
 | 字符串 → UTF-8 字节 | 代码 |
 | 数组压缩 | 取地址求值（属于 encode） |
-| `label+` / `label-` 归一成地址字（形状判定用 `sexp.rkt` 的 `label-expr?`） | 真 reloc / 外部符号 |
+| `(ref 链 [加数])` 归一成地址字（形状判定用 `sexp.rkt` 的 `ref-expr?`） | 真 reloc / 外部符号 |
 | `(module …)` 结构壳：**递归展开内容，壳原样留着** | 给 label 加模块前缀（属于 flatten） |
 
 ## 2. 输入 / 输出
@@ -26,8 +26,7 @@ rich item                        核心 item（输出的全部词汇）
 (bytes b...)                     (bytes b...)
 (fill 字节数 b)                   (fill 字节数 b)          ; 透传（幂等）
 (align n)                        (align n)                 ; layout 会换算成 (pad n)
-(b64 (label+ 链 加数))            (value 8 (label+ 链 加数))
-(b64 (label- 链 加数))            (value 8 (label+ 链 (- 加数)))
+(b64 (ref 链 加数))               (value 8 (ref 链 加数))
 ```
 
 旧壳 `(quote …)` / `(begin …)` 入口接受，出口一律 plain list。
@@ -35,7 +34,7 @@ rich item                        核心 item（输出的全部词汇）
 **值**只有两种：
 
 - 整数：`v ∈ [-2^(8N-1), 2^(8N))`（有符号或无符号放得下即可），按补码取低 8N 位；
-- 地址字：`(label+ 链 加数)`。**不求值**——链的绝对地址要等 layout 算完符号表，字节要等 encode。
+- 地址字：`(ref 链 加数)`。**不求值**——链的绝对地址要等 layout 算完符号表，字节要等 encode。
 
 ## 3. API
 
@@ -52,10 +51,10 @@ rich item                        核心 item（输出的全部词汇）
    ```
    (b16 258) -> (value 2 258)      ; 不是 (bytes 2 1)：端序还没定
    ```
-2. **地址表达式归一**：`label-` → 负加数；核心形式里加数一定写出来（字段固定，`equal?` 稳定）。
+2. **地址表达式归一**：只有一个 tag `ref`，负加数就是减法；核心形式里加数一定写出来（字段固定，`equal?` 稳定）。
    ```
-   (b64 (label+ (d t)))     -> (value 8 (label+ (d t) 0))
-   (b64 (label- (d t) 8))   -> (value 8 (label+ (d t) -8))
+   (b64 (ref (d t)))        -> (value 8 (ref (d t) 0))
+   (b64 (ref (d t) -8))     -> (value 8 (ref (d t) -8))
    ```
 3. **数组压缩只看"与端序无关"**：宽度 1（一个元素就是一个字节）或值全 0 时压成一条
    `(fill 字节数 b)`；其余一个元素一条 `(value 宽度 v)`，因为字节序还没定、不能合并成 `bytes`。
@@ -76,11 +75,11 @@ rich item                        核心 item（输出的全部词汇）
 - `segment` / `place` / 未知形式：直接 `error`（本层是数据入口）。
 - `(module …)`：只当结构壳递归进去，**不解释它的名字** —— 前缀是 flatten 的事。
 
-## 6. 测试（`expand-data/test.rkt`，68 条）
+## 6. 测试（`expand-data/test.rkt`，67 条）
 
 宽度/值域、地址表达式、字符串、数组压缩、`(module …)` 递归、幂等、错误路径、输出词汇封闭。
 
 ## 7. 已知缺口
 
-- 两个 label 的差（`label- 链 链`）不支持，只有 `链 ± 整数`。
+- 两个 label 的差（`(ref 链1 链2)`）不支持，只有 `链 + 整数`（负数即减）。
 - 没有 `.bss` / `.zero` / `.ascii` 这类指令式数据；`fill` 足够表达。

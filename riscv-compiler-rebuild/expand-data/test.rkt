@@ -27,16 +27,15 @@
 ;; 地址值: 只留"宽度 + 链 + 加数", 值和字节序都等后面
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (ex '((b32 (label+ (d t) 8)))) '((value 4 (label+ (d t) 8))))
-;; label- 归一成负加数; 加数一定写出来(字段固定)
-(check-equal? (ex '((b32 (label- (d t) 8)))) '((value 4 (label+ (d t) -8))))
-(check-equal? (ex '((b64 (label+ (d t))))) '((value 8 (label+ (d t) 0))))
-(check-equal? (ex '((b64 (label- (d t))))) '((value 8 (label+ (d t) 0))))
-(check-equal? (ex '((b64 (label+ (d t) 0)))) '((value 8 (label+ (d t) 0))))
+(check-equal? (ex '((b32 (ref (d t) 8)))) '((value 4 (ref (d t) 8))))
+;; 负加数就是减法; 核心形式里加数一定写出来(字段固定)
+(check-equal? (ex '((b32 (ref (d t) -8)))) '((value 4 (ref (d t) -8))))
+(check-equal? (ex '((b64 (ref (d t))))) '((value 8 (ref (d t) 0))))
+(check-equal? (ex '((b64 (ref (d t) 0)))) '((value 8 (ref (d t) 0))))
 ;; 错误
-(check-exn exn:fail? (lambda () (ex '((b64 (label+))))))              ; 没链
-(check-exn exn:fail? (lambda () (ex '((b64 (label+ (d t) "x"))))))   ; 加数不是整数
-(check-exn exn:fail? (lambda () (ex '((b64 (label+ (d t) 1 2))))))   ; 参数过多
+(check-exn exn:fail? (lambda () (ex '((b64 (ref))))))                ; 没链
+(check-exn exn:fail? (lambda () (ex '((b64 (ref (d t) "x"))))))   ; 加数不是整数
+(check-exn exn:fail? (lambda () (ex '((b64 (ref (d t) 1 2))))))   ; 参数过多
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串: 在 expand-data 落成 bytes(UTF-8 是定序字节, 不涉及端序)
@@ -67,10 +66,10 @@
 (check-equal? (ex '((b16-array 3 1 2)))
               '((value 2 1) (value 2 2) (value 2 2)))
 ;; 地址数组(跳转表): 每个元素一条 value
-(check-equal? (ex '((b64-array 2 (label+ (f) 0))))
-              '((value 8 (label+ (f) 0)) (value 8 (label+ (f) 0))))
-(check-equal? (ex '((b64-array 3 (label+ (f) 0) 7)))
-              '((value 8 (label+ (f) 0)) (value 8 7) (value 8 7)))
+(check-equal? (ex '((b64-array 2 (ref (f) 0))))
+              '((value 8 (ref (f) 0)) (value 8 (ref (f) 0))))
+(check-equal? (ex '((b64-array 3 (ref (f) 0) 7)))
+              '((value 8 (ref (f) 0)) (value 8 7) (value 8 7)))
 ;; 空数组
 (check-equal? (ex '((b8-array 0))) '((bytes)))
 ;; 幂等
@@ -84,8 +83,8 @@
 (check-exn exn:fail? (lambda () (ex '((b8-array -1 0)))))       ; 总数非法
 (check-exn exn:fail? (lambda () (ex '((b8-array 2 1 300)))))    ; 值越界
 (check-exn exn:fail? (lambda () (ex '((b8-array 0 1)))))        ; size 0 却有值
-(check-equal? (ex '((b32-array 2 1 (label+ (d t) 4))))
-              '((value 4 1) (value 4 (label+ (d t) 4))))
+(check-equal? (ex '((b32-array 2 1 (ref (d t) 4))))
+              '((value 4 1) (value 4 (ref (d t) 4))))
 
 ;; ---------------------------------------------------------------------------
 ;; (module …) 是结构壳: 递归展开内容, 名字前缀留给 flatten
@@ -100,8 +99,8 @@
 (check-equal? (ex '((module m (label d t) (b16-array 2 1 2))))
               '((module m (label d t) (value 2 1) (value 2 2))))
 ;; 壳里的地址字照常归一
-(check-equal? (ex '((module m (b64 (label- (d t) 8)))))
-              '((module m (value 8 (label+ (d t) -8)))))
+(check-equal? (ex '((module m (b64 (ref (d t) -8)))))
+              '((module m (value 8 (ref (d t) -8)))))
 ;; 模块子句 provide/require 原样透传(名字解析是 flatten 的事)
 (check-equal? (ex '((module m (provide t) (require d) (label d t))))
               '((module m (provide t) (require d) (label d t))))
@@ -146,7 +145,7 @@
 ;; fill / value 也是本层的核心形式: 透传 + 幂等(形状判定归 layout, 见 layout/test.rkt)
 (check-equal? (ex '((fill 5 0))) '((fill 5 0)))
 (check-equal? (ex (ex '((b32-array 8 0)))) '((fill 32 0)))
-(check-equal? (ex '((value 4 (label+ (d t) 0)))) '((value 4 (label+ (d t) 0))))
+(check-equal? (ex '((value 4 (ref (d t) 0)))) '((value 4 (ref (d t) 0))))
 
 ;; 宽度表
 (check-equal? (map width-of '((b8 0) (b16 0) (b32 0) (b64 0))) '(1 2 4 8))

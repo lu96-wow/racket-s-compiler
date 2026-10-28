@@ -40,7 +40,7 @@
 ;;; 之后的层看到的全是完整链, 不知道模块存在。链 -> 偏移 是 layout 的事。
 
 (require (only-in "../sexp.rkt"
-                  form? name? path? normalize-path as-items label-expr?))
+                  form? name? path? normalize-path as-items ref-expr?))
 
 (provide name?
          path?
@@ -345,7 +345,7 @@
         (error 'flatten "undefined label ~s (module ~s)" ref scope)))
   (cond
     [(path? x) (resolve x)]
-    [(label-expr? x) (cons (car x) (cons (resolve (cadr x)) (cddr x)))]
+    [(ref-expr? x) (cons (car x) (cons (resolve (cadr x)) (cddr x)))]
     [else x]))
 
 (define (rewrite-operands item scope st)

@@ -5,7 +5,7 @@
 
 (define src
   '((label data1 table)
-    (label data1 ptr) (b64 (label+ (data1 table) 8))  ; 数据里的地址字: 值等 encode
+    (label data1 ptr) (b64 (ref (data1 table) 8))  ; 数据里的地址字: 值等 encode
     (b8 1)
     (b16 258)
     (b32 #x12345678)

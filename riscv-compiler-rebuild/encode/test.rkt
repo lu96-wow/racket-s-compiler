@@ -89,7 +89,7 @@
   '((label d t)
     (value 4 42)
     (value 2 258)
-    (value 8 (label+ (d t) 8))       ; 数据里的地址字
+    (value 8 (ref (d t) 8))       ; 数据里的地址字
     (fill 3 0)
     (bytes 9 9)))
 
@@ -112,7 +112,7 @@
 (check-equal? (build-bytes build 'd)
               '(42 0 0 0                 ; value 4 42
                 2 1                      ; value 2 258
-                8 #x80 0 0 0 0 0 0       ; value 8 (label+ (d t) 8) = 0x8008, 小端
+                8 #x80 0 0 0 0 0 0       ; value 8 (ref (d t) 8) = 0x8008, 小端
                 0 0 0                    ; fill 3 0
                 9 9))                    ; bytes
 

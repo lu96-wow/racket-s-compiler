@@ -20,8 +20,7 @@
 ;;;
 ;;; 值有两种:
 ;;;   整数                    值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位
-;;;   (label+ 链 [加数])      地址 + 加数
-;;;   (label- 链 [加数])      地址 - 加数  -> 归一成 (label+ 链 -加数)
+;;;   (ref 链 [加数])          地址 + 加数（负加数就是减法）
 ;;; 地址表达式**不在这里求值**: 链的绝对地址要等布局(layout)才定, 字节要等 encode 才落。
 ;;; 所以本层只交出"宽度 + 值", 值和字节序都留给后面。
 ;;;
@@ -34,7 +33,7 @@
 ;;; 段、偏移、地址、代码都不属于本层; 下游怎么用本层不关心。
 ;;;
 ;;; 值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位。
-;;; label+ / label- 暂不支持: 遇到就报错。
+
 
 (require "../sexp.rkt")
 
@@ -96,9 +95,8 @@
 ;; ---------------------------------------------------------------------------
 ;; 值: 整数, 或 label 地址表达式
 ;;
-;;   (label+ 链)        地址
-;;   (label+ 链 加数)   地址 + 加数
-;;   (label- 链 加数)   地址 - 加数
+;;   (ref 链)           地址
+;;   (ref 链 加数)      地址 + 加数（可以是负数）
 ;;
 ;; 本层只检查形状, 不求值: 链的绝对地址要等布局(layout)才定, 字节要等 encode 才落。
 ;; ---------------------------------------------------------------------------
@@ -117,8 +115,8 @@
 ;; 一个值 -> 一条 (value 宽度 值)。宽度是数据, 不是名字: 下游不用认识 b16。
 (define (value-item w v)
   (list 'value w
-        (if (label-expr? v)
-            (normalize-label-expr v)
+        (if (ref-expr? v)
+            (normalize-ref v)
             (check-value w v))))
 
 ;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 layout(它要量宽度), 这里不导出。
@@ -126,7 +124,7 @@
 (define (value-form? x)
   (and (form? x) (eq? (car x) 'value) (= 3 (length x))
        (memq (cadr x) '(1 2 4 8))
-       (or (exact-integer? (caddr x)) (label-expr? (caddr x)))))
+       (or (exact-integer? (caddr x)) (ref-expr? (caddr x)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串
@@ -165,7 +163,7 @@
      (when (> (length inits) size)
        (error 'expand-data "more init values than the array size: ~e" it))
      (for ([v (in-list inits)])
-       (unless (label-expr? v) (check-value w v)))])
+       (unless (ref-expr? v) (check-value w v)))])
   it)
 
 ;; (bN-array 总数 v...): 前 k 个用 v1..vk, 剩下全用 vk

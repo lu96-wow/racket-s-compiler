@@ -20,7 +20,7 @@
 (provide form? name? path? normalize-path
          label-form? align-form? pad-form? bytes-form? fill-form? value-form? compressed-form?
          value-width value-payload
-         label-expr? label-expr-chain label-expr-addend
+         ref-expr? ref-chain ref-addend
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size
@@ -69,7 +69,7 @@
 ;; (value 宽度 值): 宽度个字节, 值是什么由 encode 解释。
 ;; 尺寸现在就知道(= 宽度); 本层**不看**值是什么(整数还是地址字):
 ;;   整数                 -> encode 按目标端序落字节
-;;   (label+ 链 加数)     -> 本层只解析地址看范围(下面), encode 落字节
+;;   (ref 链 加数)        -> 本层只解析地址看范围(下面), encode 落字节
 (define value-width   cadr)
 (define value-payload caddr)
 

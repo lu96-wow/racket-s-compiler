@@ -16,10 +16,10 @@
          path?
          normalize-path
          as-items
-         label-expr?
-         label-expr-chain
-         label-expr-addend
-         normalize-label-expr)
+         ref-expr?
+         ref-chain
+         ref-addend
+         normalize-ref)
 
 ;; 真列表(代码/数据形式的形状)。'(a . b) 和 '() 都不是 form。
 (define (form? x) (and (pair? x) (list? x)))
@@ -37,27 +37,26 @@
     [(name? x) (list x)]
     [else #f]))
 
-;; 地址表达式: 数据里的"符号 + 加数"。 (label+ 链) / (label+ 链 加数) / (label- 链 加数)
-;; 它出现在 item 的**值**里（(value w (label+ 链 0)) 或 rich 的 (b64 (label+ 链 0))），
-;; 所以判"这个操作数是不是链"是不够的 —— expand-data / flatten / layout 都靠这三个函数。
-(define (label-expr? x)
+;; 地址表达式: (ref 链 [加数]) —— 数据里的"符号 + 加数"。
+;; 它出现在 item 的**值**里（(value w (ref 链 0))），所以判"这个操作数是不是链"是不够的。
+;;
+;; 只有一个 tag: 负加数就是减法（(ref x -8)），不再有 label+ / label- 两个拼写，
+;; 也不会和位置标记 (label 链 ...) 只差一个字符。
+;; 加数可省（= 0）；expand-data 输出时一定写出来。
+(define (ref-expr? x)
   (and (form? x)
-       (memq (car x) '(label+ label-))
+       (eq? (car x) 'ref)
        (let ([args (cdr x)])
          (and (memq (length args) '(1 2))
               (path? (car args))
               (or (= 1 (length args)) (exact-integer? (cadr args)))))))
 
-(define (label-expr-chain x) (cadr x))
+(define (ref-chain x) (cadr x))
 
-;; (label- 链 n) 的加数是 -n；加数省略就是 0
-(define (label-expr-addend x)
-  (define a (if (= 3 (length x)) (caddr x) 0))
-  (if (eq? (car x) 'label-) (- a) a))
+(define (ref-addend x) (if (= 3 (length x)) (caddr x) 0))
 
-;; 归一成 (label+ 链 加数): 加数一定写出来, 下游只需认这一种形状
-(define (normalize-label-expr x)
-  (list 'label+ (label-expr-chain x) (label-expr-addend x)))
+;; 归一成 (ref 链 加数): 加数一定写出来, 下游只需认这一种形状
+(define (normalize-ref x) (list 'ref (ref-chain x) (ref-addend x)))
 
 ;; 任意输入 -> item 列表。宽容收旧壳 (quote …) / (begin …)，单条 item 也收。
 ;; 出口一律 plain list。

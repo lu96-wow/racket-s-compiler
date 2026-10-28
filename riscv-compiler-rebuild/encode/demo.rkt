@@ -27,7 +27,7 @@
               (items (offset 0 (label data1 table))
                      (offset 0 (bytes 72 101 108 108 111 0))          ; "Hello\0"
                      (offset 6 (pad 2))                               ; 对齐补的 2 字节
-                     (offset 8 (value 8 (label+ (data1 table) 0)))    ; 指向自己
+                     (offset 8 (value 8 (ref (data1 table) 0)))    ; 指向自己
                      (offset 16 (value 4 #x12345678))
                      (offset 20 (fill 4 #xAA)))
               (size 24)))
