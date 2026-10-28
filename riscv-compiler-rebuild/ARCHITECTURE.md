@@ -41,6 +41,7 @@ layout  list ┘                items          program    program  layout   byte
 (run-flow target-rv64-base 'frontend seeds)    ; 层组
 (run-flow target-rv64-base 'analyze seeds)     ; 单层
 (run-stage target-rv64-base 'flatten seeds)    ; 只跑一层, 只要它的输出
+(compile target-rv64-base seeds)               ; 统一出口: 直接得到 (build …)
 ```
 
 每层吃/吐什么 s-exp、为什么这样设计，看 [`SEXP.md`](SEXP.md)；这里只留功能索引：

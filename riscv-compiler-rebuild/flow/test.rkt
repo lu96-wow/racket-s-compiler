@@ -73,6 +73,9 @@
 (define out (run-flow default-flow seeds))
 (define build (flow-value out 'build))
 
+;; 统一出口
+(check-equal? (compile test-target seeds) build)
+
 ;; target 是 run-flow 的显式参数
 (define out-with-target (run-flow* target-rv64-base default-flow seeds))
 (check-equal? (flow-value out-with-target 'build) build)

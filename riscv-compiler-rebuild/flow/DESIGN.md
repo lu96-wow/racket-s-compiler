@@ -43,6 +43,9 @@
 ```racket
 (run-flow target selector seeds)
 ;; -> context (hash)，用 (flow-value ctx 'build) 取出产物
+
+(compile target seeds)
+;; -> 直接返回 (build …)，等价于 default-flow 的最终产物
 ```
 
 `seeds` 有两种写法：
@@ -88,6 +91,7 @@
 | --- | --- | --- |
 | `run-flow` | target + 选择器 + seed 表/context | context |
 | `run-stage` | target + 单个层名 + seed 表/context | 该层 `provides` 的值（hash），不含 seed |
+| `compile` | target + seed 表/context（可选 flow） | `(build …)` |
 | `select-stages` | 选择器 | 扁平层名列表 |
 | `flow-value` | context + 名字 | 值 |
 | `stage-table` / `stage-names` | — / 名字 | stage 表 / 层名列表 |
@@ -107,6 +111,7 @@
 5. **外部输入必须显式给**：没有数据也要写 `(cons 'data-items '())`。
 6. **context 可以续跑**：`run-flow` 会复制 seed/context 到新的可变 hash，不修改传入的 context。
 7. **`run-stage` 只跑一层**：适合单层单元测试；它只返回该层 `provides` 的值。
+8. **`compile` 是统一出口**：只做 `run-flow + flow-value 'build`，不增加层语义。
 
 ## 6. 不归本层管
 

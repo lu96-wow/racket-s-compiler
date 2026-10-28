@@ -5,6 +5,7 @@
          "helpers.rkt"
          (rename-in "../riscv-compiler-rebuild/flow/flow.rkt"
                     [run-flow run-flow*] [run-stage run-stage*])
+         (only-in "../riscv-compiler-rebuild/flow/flow.rkt" compile)
          (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base))
 
 (define test-target target-rv64-base)
@@ -74,6 +75,7 @@
 (check-true (hash-has-key? ctx 'layout))
 (check-true (hash-has-key? ctx 'build))
 (check-equal? (build-size (flow-value ctx 'build) 'c) 8)
+(check-equal? (compile test-target simple-seeds) (flow-value ctx 'build))
 
 ;; 单独跑一层（层名可以直接写，不一定包成列表）
 (check-equal? (flow-value (run-flow 'expand-data (list (cons 'rich-data '((b8 1)))))

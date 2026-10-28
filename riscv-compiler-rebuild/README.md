@@ -21,6 +21,7 @@ layout  list ┘                items          program    program  layout   byte
 (run-flow target-rv64-base 'frontend seeds)    ; 层组 frontend
 (run-flow target-rv64-base 'analyze seeds)     ; 单层
 (run-stage target-rv64-base 'flatten seeds)    ; 只跑一层，只返回它的输出
+(compile target-rv64-base seeds)              ; 统一出口: 直接得到 (build …)
 ```
 
 不写进选择器的层就是关掉；`layout` 和 `relax` 是平层（同进同出），写 `relax` 就够了。

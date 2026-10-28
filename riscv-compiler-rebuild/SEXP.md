@@ -209,7 +209,7 @@ data-items ────┘                                │         │       
 
 | 项 | 内容 |
 | --- | --- |
-| 输入 | target + 选择器 + seed 表/context，例如 `(run-flow target-rv64-base 'analyze seeds)`、`(run-flow target-rv64-base '(frontend ir backend) seeds)`、`(run-stage target-rv64-base 'flatten seeds)` |
+| 输入 | target + 选择器 + seed 表/context，例如 `(run-flow target-rv64-base 'analyze seeds)`、`(run-flow target-rv64-base '(frontend ir backend) seeds)`、`(run-stage target-rv64-base 'flatten seeds)`；统一出口是 `(compile target seeds)` |
 | 输出 | `run-flow` → context（hash）；`run-stage` → 该层 `provides` 的值（hash） |
 
 **预定义层组**
