@@ -96,11 +96,11 @@
 - `(module …)` 里的**数据展开**（expand-data 会把壳递归展开、壳留着）。
 - 运行时：模块系统是**编译期纯名字解析**，不产生 GOT / 间接跳转之类的东西。
 
-## 8. 测试（`flatten/test.rkt`，65 条）
+## 8. 测试（`flatten/test.rkt`，67 条）
 
 嵌套与遮蔽、跨输入共享、`provide` / `require` / `prefix-in` / `rename-in` / `rename-out` /
 `(provide *)` / re-export、多 require 叠加、私有性、七类报错、循环 require（合法与无 base）、
-地址表达式（`(ref 链 加数)`，形状判定在 `sexp.rkt`）里的链、压缩指令不动、幂等。
+地址表达式（`(链)` / `(+ …)` / `(- …)`，形状判定在 `sexp.rkt`）里的链（**一个表达式里可能有多条**）、压缩指令不动、幂等。
 
 ## 9. 已知缺口
 

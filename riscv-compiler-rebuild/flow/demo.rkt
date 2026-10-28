@@ -52,7 +52,7 @@
 
 (define rich
   '((label g tab)
-    (b64 (ref (main) 0))          ; 数据里的地址字
+    (b64 (main))          ; 数据里的地址字
     (utf-stringz "hi")))
 
 (define layout-spec

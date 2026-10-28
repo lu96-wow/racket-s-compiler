@@ -20,7 +20,7 @@
 (provide form? name? path? normalize-path
          label-form? align-form? pad-form? bytes-form? fill-form? value-form? compressed-form?
          value-width value-payload
-         ref-expr? ref-chain ref-addend
+         arith-head? arith-form? address-expr? address-expr-chains
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size
@@ -69,7 +69,7 @@
 ;; (value 宽度 值): 宽度个字节, 值是什么由 encode 解释。
 ;; 尺寸现在就知道(= 宽度); 本层**不看**值是什么(整数还是地址字):
 ;;   整数                 -> encode 按目标端序落字节
-;;   (ref 链 加数)        -> 本层只解析地址看范围(下面), encode 落字节
+;;   (链) / (+ …) / (- …)  -> 本层求值看范围(下面), encode 落字节
 (define value-width   cadr)
 (define value-payload caddr)
 
@@ -211,11 +211,12 @@
     [else #f]))
 
 ;; (la rd 链) / (la rd tmp 链): 带"可选 scratch"的形式
+;; (la rd 地址表达式) / (la rd tmp 地址表达式)
 (define (la-form? x)
   (and (form? x)
        (eq? (car x) 'la)
        (memq (length x) '(3 4))
-       (and (normalize-path (last x)) #t)))
+       (address-expr? (last x))))
 
 ;; 显式给出的 scratch; #f = 没写(不等于"不需要")
 (define (la-scratch x)

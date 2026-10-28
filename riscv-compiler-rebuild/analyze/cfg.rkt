@@ -23,7 +23,8 @@
 ;;;
 ;;; 目标 label 不存在时不加边(交给布局层报 undefined-target)。
 
-(require "insn.rkt")
+(require (only-in "../sexp.rkt" address-expr-chains)
+         "insn.rkt")
 
 (provide (struct-out basic-block)
          (struct-out graph)
@@ -126,27 +127,22 @@
 
 ;; 被当成"值"用过的链(不是控制转移目标的引用), 例如 (la t0 (b)) / (ld t0 (table))。
 ;; 间接跳转的目标只能来自"取过地址"的链, 所以它们是有间接跳转时的候选落点。
-;; 数据侧也算: (value 宽度 (ref 链 加数)) 把链的地址写进了数据(函数表/跳转表),
-;; 所以 analyze 也要吃数据 item —— 见 analyze 的第二个参数。
-(define (value-ref it)
-  (and (form? it)
-       (eq? (car it) 'value)
-       (= 3 (length it))
-       (let ([v (caddr it)])
-         (and (form? v) (eq? (car v) 'ref) (= 3 (length v))
-              (path? (cadr v))
-              (cadr v)))))
+;; 数据侧也算（analyze 的第二个参数就是 data items）。什么算"取过地址":
+;;   (la rd [tmp] 地址表达式)     表达式里的所有链
+;;   (value 宽度 地址表达式)       数据里的所有链（差值也算: 那两个 label 必须存在）
+;;   其它指令:                              操作数里出现的裸链
+(define (item-address-chains it)
+  (cond
+    [(eq? (car it) 'la) (address-expr-chains (last it))]
+    [(eq? (car it) 'value) (address-expr-chains (caddr it))]
+    [(or (branch-instruction? it) (jump-instruction? it))
+     (filter path? (drop-right (cdr it) 1))]   ; 最后一个操作数是跳转目标, 不算取值
+    [else (filter path? (cdr it))]))
 
 (define (address-taken-paths items)
   (remove-duplicates
-   (append*
-    (for/list ([it (in-list items)] #:when (form? it))
-      (define operands
-        (if (or (branch-instruction? it) (jump-instruction? it))
-            (drop-right (cdr it) 1)      ; 最后一个操作数是跳转目标, 不算取值
-            (cdr it)))
-      (define refs (filter path? operands))
-      (if (value-ref it) (cons (value-ref it) refs) refs)))))
+   (append* (for/list ([it (in-list items)] #:when (form? it))
+              (item-address-chains it)))))
 
 ;; 从 roots 出发能走到的块下标(升序)
 (define (cfg-reachable g roots)

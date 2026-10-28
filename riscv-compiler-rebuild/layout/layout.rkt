@@ -33,8 +33,9 @@
 (provide layout-program
          as-items
          layout-problems
-         symbol-row       ; 符号行查找 (enable 也要用)
+         symbol-row       ; 符号行查找
          symbol-address
+         eval-address     ; 地址表达式求值 (encode 也要用)
          (struct-out run))
 
 ;; ---------------------------------------------------------------------------
@@ -314,6 +315,21 @@
 ;; 绝对地址在最后一列
 (define (symbol-address row) (last row))
 
+;; 地址表达式求值: 整数 | (链) | (+ …) | (- …)
+;; 链都该在符号表里（verify 已经查过 undefined-target）；查不到就是内部错误。
+(define (eval-address expr symbols)
+  (cond
+    [(exact-integer? expr) expr]
+    [(arith-head? expr)
+     (if (eq? (car expr) '+)
+         (for/sum ([a (in-list (cdr expr))]) (eval-address a symbols))
+         (- (eval-address (cadr expr) symbols)
+            (for/sum ([a (in-list (cddr expr))]) (eval-address a symbols))))]
+    [else
+     (define row (symbol-row symbols expr))
+     (or (and row (symbol-address row))
+         (error 'layout "undefined symbol in address expression: ~s" expr))]))
+
 ;; ---------------------------------------------------------------------------
 ;; 校验: 只报 problems, 不抛异常。
 ;; 四类各一个小函数, 由 verify 逐 item 调用:
@@ -346,34 +362,41 @@
   (when (scratch-hole? it)
     (report! s `(scratch-hole ,(site-seg s) ,(site-off s) ,it ,(site-origin s)))))
 
-;; (la rd [tmp] 链): 近形式够不够得着? 远形式要 scratch 寄存器, 属于未实现的那一层。
-(define (check-la s)
-  (define it (site-item s))
-  (when (la-form? it)
-    (define row (symbol-row (site-symbols s) (normalize-path (last it))))
-    (cond
-      [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
-      [else
-       (define d (- (symbol-address row) (site-here s)))
-       (unless (fits-auipc-pair? d target-xlen)
-         (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
+;; 地址表达式里的链都在符号表里吗? 缺了就报 undefined-target（每条缺的报一次）
+(define (check-chains s expr)
+  (define ok? #t)
+  (for ([c (in-list (address-expr-chains expr))])
+    (unless (symbol-row (site-symbols s) c)
+      (set! ok? #f)
+      (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,(site-item s)))))
+  ok?)
 
-;; 数据里的地址字: 链在不在 + 地址放不放得进宽度。
-;; 整数不用查(expand-data 已经按宽度查过值域); 只有 ref 要等地址才知道。
+(define (fits-width? n width)
+  (define bits (* 8 width))
+  ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
+  (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits))))
+
+;; 数据里的值: 整数在 expand-data 已经查过; 地址表达式查"链都在 + 值放得进宽度"。
+;; 注意查的是**表达式的值**: (- (end) (start)) 差 24 能放进 4 字节, 哪怕两个地址都在 4GB。
 (define (check-value s)
   (define it (site-item s))
   (when (value-form? it)
     (define v (value-payload it))
-    (when (ref-expr? v)
-      (define row (symbol-row (site-symbols s) (ref-chain v)))
-      (cond
-        [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
-        [else
-         (define n (+ (symbol-address row) (ref-addend v)))
-         (define bits (* 8 (value-width it)))
-         ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
-         (unless (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits)))
-           (report! s `(value-out-of-range ,(site-seg s) ,(site-off s) ,it ,n)))]))))
+    (when (and (not (exact-integer? v)) (check-chains s v))
+      (define n (eval-address v (site-symbols s)))
+      (unless (fits-width? n (value-width it))
+        (report! s `(value-out-of-range ,(site-seg s) ,(site-off s) ,it ,n))))))
+
+;; (la rd [tmp] 地址表达式): 近形式 8 字节够不够得着?
+;; 远形式需要 scratch 寄存器, 属于未实现的那一层。
+(define (check-la s)
+  (define it (site-item s))
+  (when (la-form? it)
+    (define expr (last it))
+    (when (check-chains s expr)
+      (define d (- (eval-address expr (site-symbols s)) (site-here s)))
+      (unless (fits-auipc-pair? d target-xlen)
+        (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
 
 (define (verify measured-segs symbols report)
   (for ([m (in-list measured-segs)])

@@ -37,17 +37,23 @@
 (check-equal? (item-size '(label l)) 0)
 (check-equal? (item-size '(bytes 1 2 3)) 3)
 (check-equal? (item-size '(fill 4096 0)) 4096)
-(check-equal? (item-size '(value 8 (ref (d t) 0))) 8)
+(check-equal? (item-size '(value 8 (d t))) 8)
 (check-equal? (item-size '(value 4 7)) 4)
 (check-true  (value-form? '(value 2 258)))
-(check-true  (value-form? '(value 8 (ref (d t) 0))))
+(check-true  (value-form? '(value 8 (d t))))
 (check-false (value-form? '(value 3 0)))              ; 宽度只认 1/2/4/8
 (check-false (value-form? '(value 8)))                ; 少了值
-(check-true  (ref-expr? '(ref (d t) 0)))
-(check-true  (ref-expr? '(ref (d t))))           ; 加数可省, 默认 0
-(check-equal? (ref-addend '(ref (d t))) 0)
-(check-equal? (ref-chain '(ref (d t) 8)) '(d t))
-(check-equal? (ref-addend '(ref (d t) -8)) -8)
+;; 地址表达式: 整数 | (链) | (+ …) | (- …)
+(check-true  (address-expr? 42))
+(check-true  (address-expr? '(d t)))                  ; 裸链 = 地址
+(check-true  (address-expr? '(+ (d t) 8)))
+(check-true  (address-expr? '(- (d end) (d start))))
+(check-true  (address-expr? '(+ (- (d end) (d start)) 4)))
+(check-false (address-expr? '(+ (d t))))              ; + 至少两个操作数
+(check-false (address-expr? '(* (d t) 8)))            ; 只认 + 和 -
+(check-equal? (address-expr-chains '(- (d end) (d start))) '((d end) (d start)))
+(check-equal? (address-expr-chains '(+ (- (d end) (d start)) 4)) '((d end) (d start)))
+(check-equal? (address-expr-chains 42) '())
 (check-true  (fill-form? '(fill 4096 0)))
 (check-false (fill-form? '(fill 4096 256)))
 (check-false (fill-form? '(fill 4096)))
@@ -91,9 +97,10 @@
 (check-true  (la-form? '(la t0 (l))))
 (check-true  (la-form? '(la t0 tmp (l))))
 (check-true  (la-form? '(la t0 (a b))))
-(check-true  (la-form? '(la t0 l)))
+(check-false (la-form? '(la t0 l)))        ; 裸原子不是引用, 要写 (l)
 (check-false (la-form? '(la t0)))
-(check-true  (la-form? '(la t0 tmp)))      ; 3 项时最后一项就是链(裸原子)
+(check-false (la-form? '(la t0 tmp)))      ; 3 项时最后一项是地址表达式, 不是寄存器
+(check-true  (la-form? '(la t0 (+ (d t) 8))))   ; 可以是表达式
 (check-false (la-scratch '(la t0 (l))))
 (check-equal? (la-scratch '(la t0 tmp (l))) 'tmp)
 (check-false (scratch-hole? '(la t0 (l))))
@@ -108,7 +115,7 @@
 (check-false (pad-form? '(pad)))
 (check-equal? (item-kind '(bytes 1)) 'data)
 (check-equal? (item-kind '(fill 4 0)) 'data)
-(check-equal? (item-kind '(value 8 (ref (d t) 0))) 'data)
+(check-equal? (item-kind '(value 8 (d t))) 'data)
 (check-equal? (item-kind '(addi a0 a0 1)) 'code)
 
 ;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
@@ -529,7 +536,7 @@
 (define d1-items
   (expand-data '((label d t)
                  (b8 1) (b16 258) (b32 #x12345678) (b64 -1)
-                 (b64 (ref (d t) 8))          ; 数据里的地址字
+                 (b64 (+ (d t) 8))          ; 数据里的地址字
                  (utf-string "abc")
                  (b8-array 4096 0)
                  (align 8))))
@@ -561,7 +568,7 @@
                 (offset 1 (value 2 258))
                 (offset 3 (value 4 #x12345678))
                 (offset 7 (value 8 -1))
-                (offset 15 (value 8 (ref (d t) 8)))
+                (offset 15 (value 8 (+ (d t) 8)))
                 (offset 23 (bytes 97 98 99))
                 (offset 26 (fill 4096 0))
                 (offset 4122 (pad 6))))
@@ -570,25 +577,44 @@
 ;; 数据里的地址字: 值由 encode 落, 但 layout 已经能查"链在不在"和"放不放得下"
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
-                     '((label d t) (value 8 (ref (ghost) 0)))
+                     '((label d t) (value 8 (ghost)))
                      '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
                                  (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
-              '((undefined-target d 0 (value 8 (ref (ghost) 0)))))
+              '((undefined-target d 0 (value 8 (ghost)))))
 
 ;; 4 字节放不下这个地址 -> 和 needs-far 同一批(布局范围问题)
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
-                     '((label d t) (value 4 (ref (d t) 0)))
+                     '((label d t) (value 4 (d t)))
                      '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
                                  (segment (name d) (kind data) (start #x100000000) (end #x100000FFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
-              '((value-out-of-range d 0 (value 4 (ref (d t) 0)) #x100000000)))
+              '((value-out-of-range d 0 (value 4 (d t)) #x100000000)))
+
+;; 判的是**表达式的值**, 不是绝对地址: 两个 label 都在 4GB, 差 24 也能放进 4 字节
+(check-equal? (problems-of
+               (lay0 '((label main) (jalr x0 ra 0))
+                     '((label d start) (bytes 24)
+                       (label d end)
+                       (value 4 (- (d end) (d start))))
+                     '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x100000000) (end #x100001000) (align 8)))
+                       (place s (main)) (place d (d start) (d end)))))
+              '())
+;; 差值的两端都得存在
+(check-equal? (problems-of
+               (lay0 '((label main) (jalr x0 ra 0))
+                     '((label d start) (bytes 1) (value 4 (- (d nope) (d start))))
+                     '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                 (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
+                       (place s (main)) (place d (d start)))))
+              '((undefined-target d 1 (value 4 (- (d nope) (d start))))))
 
 ;; 放得下就没有 problem
 (check-equal? (problems-of
                (lay0 '((label main) (jalr x0 ra 0))
-                     '((label d t) (value 8 (ref (d t) 8)))
+                     '((label d t) (value 8 (+ (d t) 8)))
                      '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
                                  (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
@@ -603,7 +629,7 @@
     (jalr x0 ra 0)
     (label f) (addi a0 a0 1) (jalr x0 ra 0)))
 
-(define table-data (expand-data '((label d table) (b64-array 1 (ref (f) 0)))))
+(define table-data (expand-data '((label d table) (b64-array 1 (f)))))
 
 (define table-layout
   '((segments (segment (name s) (kind code) (start #x100000) (end #x100FFF) (align 4))
@@ -615,7 +641,7 @@
                (layout-program (eliminate-dead (analyze table-prog))
                                table-data table-layout))
               '((unmatched-place (f))
-                (undefined-target t 0 (value 8 (ref (f) 0)))))
+                (undefined-target t 0 (value 8 (f)))))
 
 ;; 喂给 analyze: "地址被取过" -> f 成为 root -> 活下来, 没有问题
 (check-equal? (problems-of

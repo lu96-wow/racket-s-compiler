@@ -90,7 +90,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 | `label` | 无 |
 | `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
 | `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按目标端序；整数直接写，`(ref 链 加数)` 用符号表求值 |
+| `value w 值` | `w` 字节按目标端序；整数直接写，地址表达式用符号表求值（`eval-address`，与 layout 共用） |
 | 真指令 | `riscv-asm` 编码（`width/8` 字节） |
 | 远形式 | `riscv-help` 展开后再编码 |
 | `li` / `la` | `riscv-help` 展开后再编码 |
@@ -132,7 +132,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 
 ## 6. 测试与 demo
 
-`encode/test.rkt`（69 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
+`encode/test.rkt`（70 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
 本层**不需要** layout 输入，也不需要 program / data）。
 
 单条指令与手算编码对照（含压缩、原子、别名）、`aq`/`rl` 后缀、元数、未知指令、

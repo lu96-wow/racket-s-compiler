@@ -14,7 +14,7 @@
 ;;;   pad n     补 n 字节: code 段填合法指令(nop / c.nop), 其余填 0
 ;;;   bytes     原样
 ;;;   fill n b  n 个 b
-;;;   value w v w 字节, 端序由 target.rkt 定; v 是整数或 (ref 链 加数)
+;;;   value w v w 字节, 端序由 target.rkt 定; v 是整数或地址表达式
 ;;;   真指令    riscv-asm 编码; 目标地址 = 符号表 + 加数, 分支/跳转取相对偏移
 ;;;   远形式 / li / la   先由 riscv-help 展开成几条真指令, 再逐条编码
 ;;;
@@ -46,12 +46,7 @@
   (+ (symbol-address row) addend))
 
 (define (value->bytes w v symbols)
-  (define n
-    (cond
-      [(exact-integer? v) v]
-      [(ref-expr? v) (resolve-symbol symbols (ref-chain v) (ref-addend v))]
-      [else (error 'encode "bad value: ~e" v)]))
-  (integer->bytes w n))
+  (integer->bytes w (eval-address v symbols)))
 
 ;; 操作数: 寄存器名/立即数原样交给 insn.rkt;
 ;; 控制转移的最后一项是链 -> 换成相对当前 item 的偏移。
@@ -125,7 +120,7 @@
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
     [(li) (emit-all! (li (cadr it) (caddr it)))]
     ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
-    [(la) (define d (- (resolve-symbol symbols (normalize-path (last it)) 0) here))
+    [(la) (define d (- (eval-address (last it) symbols) here))
           (emit-all! (load-pcrel (cadr it) d))]
     [else (emit-instruction! (car it) (operands-at it here symbols))]))
 

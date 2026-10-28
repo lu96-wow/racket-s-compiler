@@ -78,6 +78,10 @@
 (check-exn exn:fail? (lambda () (encode-instruction 'addi (list 'a0 'a1 5000))))
 (check-exn exn:fail? (lambda () (encode-instruction 'c.beqz (list 's2 8))))
 
+;; layout -> build 的小工具: src + data + layout 输入 -> build
+(define (encode-one-layout src data layout)
+  (encode-layout (layout-program (eliminate-dead (analyze src)) data layout)))
+
 ;; ---------------------------------------------------------------------------
 ;; layout -> build: 代码 + 数据
 ;; ---------------------------------------------------------------------------
@@ -89,7 +93,7 @@
   '((label d t)
     (value 4 42)
     (value 2 258)
-    (value 8 (ref (d t) 8))       ; 数据里的地址字
+    (value 8 (+ (d t) 8))       ; 数据里的地址字
     (fill 3 0)
     (bytes 9 9)))
 
@@ -112,9 +116,25 @@
 (check-equal? (build-bytes build 'd)
               '(42 0 0 0                 ; value 4 42
                 2 1                      ; value 2 258
-                8 #x80 0 0 0 0 0 0       ; value 8 (ref (d t) 8) = 0x8008, 小端
+                8 #x80 0 0 0 0 0 0       ; value 8 (+ (d t) 8) = 0x8008, 小端
                 0 0 0                    ; fill 3 0
                 9 9))                    ; bytes
+
+;; 差值: (d end) - (d start) = 4, 落字节 04 00 00 00
+(check-equal? (build-bytes (encode-one-layout
+                            '((label main) (ret))
+                            '((label d start) (fill 4 0) (label d end)
+                              (value 4 (- (d end) (d start)))
+                              (value 4 (+ (- (d end) (d start)) 2))
+                              (value 4 (- (d end) (d start) 2)))
+                            '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4))
+                                        (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
+                              (place c (main)) (place d (d start) (d end))))
+                             'd)
+              '(0 0 0 0               ; fill 4 0（表的 4 个字节）
+                4 0 0 0               ; end - start = 4
+                6 0 0 0               ; 4 + 2
+                2 0 0 0))             ; 4 - 2
 
 ;; ---------------------------------------------------------------------------
 ;; 对齐: code 补 nop(会顺着执行), data 补 0
@@ -223,8 +243,6 @@
 ;; li / la
 ;; ---------------------------------------------------------------------------
 
-(define (encode-one-layout src data layout)
-  (encode-layout (layout-program (eliminate-dead (analyze src)) data layout)))
 
 ;; li 的尺寸由常量决定(4/8/16…), 编码就是 riscv-help 的展开
 (check-equal? (build-bytes (encode-one-layout '((label main) (li t0 0)) '()

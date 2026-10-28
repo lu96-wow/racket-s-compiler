@@ -276,9 +276,24 @@
 (define items-with-jalr '((label a) (jalr x0 t0 0) (label b) (add t0 t0 t0)))
 (define no-data (analyze items-with-jalr))
 (define with-data (analyze items-with-jalr
-                           '((label d tbl) (value 8 (ref (b) 0)))))
+                           '((label d tbl) (value 8 (b)))))
 (check-false (flow-root? (flow-at (program-flows no-data) 1)))
 (check-true  (flow-root? (flow-at (program-flows with-data) 1)))
+
+;; 差值里的链同样算取地址: 那两个 label 必须存在, 差值才算得出来
+(check-true
+ (flow-root?
+  (flow-at (program-flows
+            (analyze items-with-jalr
+                     '((label d t) (value 4 (- (b) (a))))))
+           1)))
+;; 表达式里的链不止一个时, 每条都算
+(check-true
+ (flow-root?
+  (flow-at (program-flows
+            (analyze items-with-jalr
+                     '((label d t) (value 4 (+ (- (b) (a)) 8)))))
+           1)))
 
 ;; 数据 item 只贡献 roots, 不进 CFG
 (check-equal? (length (program-blocks with-data)) 2)
@@ -287,7 +302,7 @@
 (check-false (flow-root?
               (flow-at (program-flows
                         (analyze '((label a) (jal x0 (b)) (label b) (add t1 t1 t1))
-                                 '((value 8 (ref (b) 0)))))
+                                 '((value 8 (b)))))
                        1)))
 
 ;; 没有被取地址(也没有 jalr)时, 块头的 label 也不是外部入口

@@ -6,7 +6,7 @@
 ;;;   (analyze items [data-items]) -> program
 ;;;
 ;;;   data-items: 数据侧 item(expand-data 输出)。本层只拿它找"地址被取过"的链:
-;;;   数据里的 (value 宽度 (ref 链 加数)) 等于把链的地址交给了外部,
+;;;   数据里的 (value 宽度 …) 等于把链的地址交给了外部,
 ;;;   所以有间接跳转时, 这些链所在的块是 root(否则会被 dce 当死代码删掉)。
 ;;;   数据 item 不进块、不进 CFG, 只贡献 roots。
 ;;;

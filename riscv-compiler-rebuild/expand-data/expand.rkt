@@ -21,7 +21,7 @@
 ;;;
 ;;; 值有两种:
 ;;;   整数                    值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位
-;;;   (ref 链 [加数])          地址 + 加数（负加数就是减法）
+;;    (链) / (+ …) / (- …)          地址表达式（值推后）
 ;;; 地址表达式**不在这里求值**: 链的绝对地址要等布局(layout)才定, 字节要等 encode 才落。
 ;;; 所以本层只交出"宽度 + 值", 值和字节序都留给后面。
 ;;;
@@ -103,8 +103,9 @@
 ;; ---------------------------------------------------------------------------
 ;; 值: 整数, 或 label 地址表达式
 ;;
-;;   (ref 链)           地址
-;;   (ref 链 加数)      地址 + 加数（可以是负数）
+;;   值: 整数 | (链) | (+ 表达式 …) | (- 表达式 …)
+;;   (+ (d t) 8)                 地址 + 8
+;;   (- (d end) (d start))       两个 label 的差（长度/大小）
 ;;
 ;; 本层只检查形状, 不求值: 链的绝对地址要等布局(layout)才定, 字节要等 encode 才落。
 ;; ---------------------------------------------------------------------------
@@ -120,19 +121,24 @@
     (error 'expand-data "value ~a does not fit in ~a byte(s)" v w))
   v)
 
+;; 一个值: 整数查值域, 地址表达式只查形状(求值是 layout / encode 的事)
+(define (check-value-shape w v)
+  (cond
+    [(exact-integer? v) (check-value w v)]
+    [(address-expr? v) v]
+    [else (error 'expand-data "value must be an integer or an address expression: ~e" v)]))
+
 ;; 一个值 -> 一条 (value 宽度 值)。宽度是数据, 不是名字: 下游不用认识 b16。
+;; 值可以是整数或地址表达式（rich 和 core 同形，原样透传）。
 (define (value-item w v)
-  (list 'value w
-        (if (ref-expr? v)
-            (normalize-ref v)
-            (check-value w v))))
+  (list 'value w (check-value-shape w v)))
 
 ;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 layout(它要量宽度), 这里不导出。
 ;; 和 layout/forms.rkt 的 value-form? 是同一个形状; 本层只做透传, 所以不导出。
 (define (value-form? x)
   (and (form? x) (eq? (car x) 'value) (= 3 (length x))
        (memq (cadr x) '(1 2 4 8))
-       (or (exact-integer? (caddr x)) (ref-expr? (caddr x)))))
+       (address-expr? (caddr x))))
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串
@@ -170,8 +176,7 @@
        (error 'expand-data "array needs at least one init value: ~e" it))
      (when (> (length inits) size)
        (error 'expand-data "more init values than the array size: ~e" it))
-     (for ([v (in-list inits)])
-       (unless (ref-expr? v) (check-value w v)))])
+     (for ([v (in-list inits)]) (check-value-shape w v))])
   it)
 
 ;; (bN-array 总数 v...): 前 k 个用 v1..vk, 剩下全用 vk

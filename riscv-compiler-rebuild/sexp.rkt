@@ -16,10 +16,10 @@
          path?
          normalize-path
          as-items
-         ref-expr?
-         ref-chain
-         ref-addend
-         normalize-ref)
+         arith-head?
+         arith-form?
+         address-expr?
+         address-expr-chains)
 
 ;; 真列表(代码/数据形式的形状)。'(a . b) 和 '() 都不是 form。
 (define (form? x) (and (pair? x) (list? x)))
@@ -37,26 +37,46 @@
     [(name? x) (list x)]
     [else #f]))
 
-;; 地址表达式: (ref 链 [加数]) —— 数据里的"符号 + 加数"。
-;; 它出现在 item 的**值**里（(value w (ref 链 0))），所以判"这个操作数是不是链"是不够的。
+;; 地址表达式（"值推后"）: 只有三种，就是一个很小的算术语言
 ;;
-;; 只有一个 tag: 负加数就是减法（(ref x -8)），不再有 label+ / label- 两个拼写，
-;; 也不会和位置标记 (label 链 ...) 只差一个字符。
-;; 加数可省（= 0）；expand-data 输出时一定写出来。
-(define (ref-expr? x)
-  (and (form? x)
-       (eq? (car x) 'ref)
-       (let ([args (cdr x)])
-         (and (memq (length args) '(1 2))
-              (path? (car args))
-              (or (= 1 (length args)) (exact-integer? (cadr args)))))))
+;;   整数                         值就是它
+;;   (链)                         链的地址（裸链 = 取地址，和 (la rd (f)) 一致）
+;;   (+ 表达式 表达式 ...)         求和（≥2 个操作数）
+;;   (- 表达式 表达式 ...)         第一个减后面所有（≥2 个）
+;;
+;; 例子:
+;;   (d t)                        (d t) 的地址
+;;   (+ (d t) 8)                  地址 + 8
+;;   (- (d t) 8)                  地址 - 8
+;;   (- (d end) (d start))        两个 label 的差（长度/大小）
+;;   (+ (- (d end) (d start)) 4)  差 + 4
+;;
+;; 求值要等 label 的地址定下来:
+;;   数据 label 在 layout 排完就定; 代码 label 要等 relax 收敛后的那次 layout。
+;; 所以求值函数在 layout（它持有符号表），encode 复用它落字节。
 
-(define (ref-chain x) (cadr x))
+;; 头是 + 或 - 就算"算术形式"——**先判这个**，否则 (+ 8 4) 会被当成"名字叫 + 的链"。
+;; 代价: 链的首节不能是 + / -（谁也不会拿它当 label 名）。
+(define (arith-head? x) (and (form? x) (memq (car x) '(+ -))))
 
-(define (ref-addend x) (if (= 3 (length x)) (caddr x) 0))
+;; 合法的算术形式: ≥2 个操作数, 每个操作数都是地址表达式
+(define (arith-form? x)
+  (and (arith-head? x) (>= (length x) 3) (andmap address-expr? (cdr x))))
 
-;; 归一成 (ref 链 加数): 加数一定写出来, 下游只需认这一种形状
-(define (normalize-ref x) (list 'ref (ref-chain x) (ref-addend x)))
+(define (address-expr? x)
+  (cond
+    [(exact-integer? x) #t]
+    [(arith-head? x) (arith-form? x)]
+    [(path? x) #t]
+    [else #f]))
+
+;; 表达式里出现的所有链（去重，保留首次出现的顺序）
+(define (address-expr-chains x)
+  (remove-duplicates
+   (cond
+     [(exact-integer? x) '()]
+     [(arith-head? x) (append* (for/list ([a (in-list (cdr x))]) (address-expr-chains a)))]
+     [else (list x)])))
 
 ;; 任意输入 -> item 列表。宽容收旧壳 (quote …) / (begin …)，单条 item 也收。
 ;; 出口一律 plain list。

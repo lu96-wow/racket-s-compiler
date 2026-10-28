@@ -55,7 +55,7 @@ layout  list ┘                items          program    program  layout   byte
 
 | 文件 | 内容 | 谁用 |
 | --- | --- | --- |
-| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）`ref-expr?` / `ref-chain` / `ref-addend` / `normalize-ref`（地址表达式 `(ref 链 [加数])`） | 除了 flow 之外的所有层 |
+| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）地址表达式 `arith-head?` / `arith-form?` / `address-expr?` / `address-expr-chains` | 除了 flow 之外的所有层 |
 | `target.rkt` | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes` | layout（XLEN）、encode（端序/填充/扩展集） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
@@ -90,7 +90,7 @@ layout  list ┘                items          program    program  layout   byte
 | `(branch-far cond a b L)` | relax 自动选的档 | 这条转移**固定 8 字节** | 写普通分支，够不着时 relax 自动升 |
 | `(branch-indirect s cond a b L)` | relax 自动选的档 | **我自己给 scratch** | 没人能给 → 编不出来 |
 | `(jump-far link s L)` | relax 自动选的档 | 同上 | 同上 |
-| `(ref 链 加数)` | expand-data 归一后的地址字 | 我写一个地址字 | — |
+| `(链)` / `(+ …)` / `(- …)` | expand-data 原样透传的地址表达式 | 我写一个地址/差值 | — |
 
 推论：
 
@@ -120,8 +120,10 @@ layout  list ┘                items          program    program  layout   byte
 9. **label 链是身份**：`(label a f)` 是一个位置多个名字；跳转目标是链；`place` 按精确链匹配。
 10. **模块边界只由 provide/require 决定**：默认私有，跨模块引用必须 require，
     写全名不是后门；`provide`/`require` 可以成环（只是名字解析，没有初始化顺序）。
-11. **一个 tag 一种含义**：地址表达式只有 `(ref 链 [加数])`（负加数即减法），
-    不再有 `label+` / `label-` —— 也避免和位置标记 `(label 链 …)` 只差一个字符。
+11. **地址表达式是一个很小的算术语言**：整数 | `(链)` | `(+ a b …)` | `(- a b …)`（≥2 个操作数，可嵌套）。
+    裸链就是"取这个 label 的地址"，和 `(la rd (f))` 一致；不再有 `label-ref` / `label-diff`
+    这类专用 tag，也没有"加数写成负数"的契约。
+    求值在 layout（它持有符号表）：数据 label 排完就定，代码 label 要等 relax 收敛。
 12. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
 13. **产物词汇可写，但那是"请求"**：`pad` / 远形式 / `ref` 都能写在源码里，
@@ -158,7 +160,7 @@ layout  list ┘                items          program    program  layout   byte
 | `(bytes …)` `(fill n b)` `(align n)` | layout（尺寸/类别）；`fill` 归 layout，expand-data 是生产者 | expand-data / 人 | layout / encode |
 | `(pad n)` | layout（`align` 换算成它；源码也可直接写"精确插 n 字节"） | layout / 人 | encode |
 | `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 定端序落字节 | expand-data | analyze / layout / encode |
-| `(ref 链 [加数])` | `sexp.rkt` 定形状（`ref-expr?`）；expand-data 归一；analyze 当取地址；layout 解析范围；encode 落值 | 人 / expand-data | expand-data / flatten / analyze / layout / encode |
+| `(链)` / `(+ …)` / `(- …)` | `sexp.rkt` 定形状（`address-expr?`）；analyze 取其中**所有链**当取地址；layout 求值 + 查范围；encode 求值落字节 | 人 | expand-data / flatten / analyze / layout / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |
 | `(segments (segment (name …) (kind …) (start …) (end …) (align …)) …)` `(place 段名 链 …)` | layout | 人 | layout |
 | `(offset k item)` `(symbols (symbol 链 段名 偏移 地址) …)` `(problems …)` | layout | layout | relax / encode / 人 |
@@ -170,7 +172,7 @@ layout  list ┘                items          program    program  layout   byte
 src  = ((label main) (move a0 a1) (ble a0 a1 (hot)) (jal x0 (end))
         (label hot) (addi a0 a0 1) (jalr x0 ra 0)
         (label end) (ld t0 sp 8))
-data = (expand-data '((label g tab) (value 8 (ref (main) 0)) (utf-stringz "hi")))
+data = (expand-data '((label g tab) (value 8 (main)) (utf-stringz "hi")))
 ```
 
 默认流 `(expand-data flatten expand-pseudo analyze dce relax encode)`：
@@ -192,7 +194,7 @@ segment c start=#x100000 size=24
   100010  67 80 00 00   ; jalr x0,ra,0
   100014  83 32 81 00   ; ld t0,8(sp)
 segment d start=#x200000 size=11
-  200000  00 00 10 00 00 00 00 00   ; (value 8 (ref (main) 0)) = 0x100000
+  200000  00 00 10 00 00 00 00 00   ; (value 8 (main)) = 0x100000
   200008  68 69 00                  ; "hi\0"
 ```
 
@@ -201,8 +203,8 @@ segment d start=#x200000 size=11
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
-- 测试条数：expand-data 67 / flatten 65 / expand-pseudo 119 / analyze 176 / dce 46 /
-  layout 177 / relax 30 / encode 69 / flow 24。
+- 测试条数：expand-data 75 / flatten 67 / expand-pseudo 119 / analyze 178 / dce 46 /
+  layout 185 / relax 30 / encode 70 / flow 24。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
 

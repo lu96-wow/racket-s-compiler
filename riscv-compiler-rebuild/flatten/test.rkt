@@ -183,32 +183,42 @@
 
 ;; ---------------------------------------------------------------------------
 ;; 地址表达式: 链藏在操作数里面, 也要改写
-;;   (ref 链 加数) —— 数据里的地址字
+;;   … / (+ …) / (- …) —— 数据里的地址字
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (flat '((module m (label d t) (value 8 (ref (d t) 0)))))
-              '((label m d t) (value 8 (ref (m d t) 0))))
+(check-equal? (flat '((module m (label d t) (value 8 (d t)))))
+              '((label m d t) (value 8 (m d t))))
 
 ;; 同一条程序里: 指令操作数、地址字、负加数都要加前缀
 (check-equal? (flat '((module m
                        (label d t)
-                       (value 8 (ref (d t) 0))
+                       (value 8 (d t))
                        (label f)
                        (la t0 (f))
-                       (value 4 (ref (f) -4)))))
+                       (value 4 (- (f) 4)))))
               '((label m d t)
-                (value 8 (ref (m d t) 0))
+                (value 8 (m d t))
                 (label m f)
                 (la t0 (m f))
-                (value 4 (ref (m f) -4))))
+                (value 4 (- (m f) 4))))
+
+;; 两条链的地址表达式两条都要加前缀
+(check-equal? (flat '((module m (label d start) (label d end)
+                       (value 4 (- (d end) (d start))))))
+              '((label m d start) (label m d end)
+                (value 4 (- (m d end) (m d start)))))
+(check-equal? (flat '((module m (label d start) (label d end)
+                       (value 4 (- (d end) (d start) 4)))))
+              '((label m d start) (label m d end)
+                (value 4 (- (m d end) (m d start) 4))))
 
 ;; 两层作用域: 内层优先
-(check-equal? (flat '((module a (label g) (module b (label g) (value 4 (ref (g) 0))))))
-              '((label a g) (label a b g) (value 4 (ref (a b g) 0))))
+(check-equal? (flat '((module a (label g) (module b (label g) (value 4 (g))))))
+              '((label a g) (label a b g) (value 4 (a b g))))
 
 ;; 地址表达式里的链查不到 -> 报错(不是静默留短链)
 (check-exn exn:fail?
-           (lambda () (flat '((module m (label f) (value 4 (ref (nope) 0)))))))
+           (lambda () (flat '((module m (label f) (value 4 (nope)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 模块系统: provide / require / prefix-in / rename-in / rename-out
@@ -272,11 +282,11 @@
                                (module c (require a) (require b) (la t0 (f)))))))
 ;; 循环 require 是**允许**的（地址引用不涉及初始化顺序）: 数据 <-> 代码 就是这样
 (check-equal? (flat '((module a (provide fa) (require b)
-                                 (label fa) (b64 (ref (fb) 0)))
+                                 (label fa) (b64 (fb)))
                       (module b (provide fb) (require a)
-                                 (label fb) (b64 (ref (fa) 0)))))
-              '((label a fa) (b64 (ref (b fb) 0))       ; rich 数据本层不展开
-                (label b fb) (b64 (ref (a fa) 0))))
+                                 (label fb) (b64 (fa)))))
+              '((label a fa) (b64 (b fb))       ; rich 数据本层不展开
+                (label b fb) (b64 (a fa))))
 ;; 环里没有 base(全靠 re-export) -> 解不出来, 报错
 (check-exn exn:fail?
            (lambda () (flat '((module a (provide fa) (require b))

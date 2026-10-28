@@ -18,7 +18,7 @@
     (label hot) (addi a0 a0 1) (jalr x0 ra 0)
     (label end) (ld t0 sp 8)))
 
-(define rich '((label g tab) (value 8 (ref (main) 0)) (utf-stringz "hi")))
+(define rich '((label g tab) (value 8 (main)) (utf-stringz "hi")))
 
 (define layout-spec
   '((segments (segment (name c) (kind code) (start #x100000) (end #x100FFF) (align 16))
@@ -189,7 +189,7 @@
       (provide (rename-out ((d table) table)))  ; 内部叫 (d table), 对外叫 table
       (require prog)                         ; 数据侧也要 require 才能引用 (prog f)
       (label d table)
-      (b64 (ref (f) 0))                   ; 数据里指向程序模块的函数: 用短名
+      (b64 (f))                   ; 数据里指向程序模块的函数: 用短名
       (utf-stringz "hi"))))
 
 ;; 程序侧 f 也要能被 data 引用
@@ -221,7 +221,7 @@
 
 ;; 数据里的地址字 = (prog f) 的绝对地址 0x100014, 小端
 (check-equal? (bytes-of-seg (flow-value mmod 'build) 'd)
-              (append '(#x14 #x00 #x10 #x00 0 0 0 0)   ; (value 8 (ref (prog f) 0))
+              (append '(#x14 #x00 #x10 #x00 0 0 0 0)   ; (value 8 (prog f))
                       '(#x68 #x69 0)))                 ; "hi\0"
 
 ;; 程序里的 la 指向 (data d table)
