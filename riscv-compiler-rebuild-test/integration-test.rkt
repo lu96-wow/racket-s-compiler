@@ -184,6 +184,27 @@
                 #x67 #x80 #x00 #x00))     ; ret
 
 ;; ---------------------------------------------------------------------------
+;; CSR + fence.i 走完整流
+;; ---------------------------------------------------------------------------
+
+(define csr-src
+  '((label main)
+    (csrrw a0 mstatus a1)
+    (fence.i)
+    (ret)))
+
+(define csr-out
+  (run-flow default-flow
+            (list (cons 'rich-data '())
+                  (cons 'program-items csr-src)
+                  (cons 'layout-spec atomic-spec))))
+
+(check-equal? (build-bytes (flow-value csr-out 'build) 'c)
+              '(#x73 #x95 #x05 #x30    ; csrrw a0, mstatus, a1
+                #x0f #x10 #x00 #x00    ; fence.i
+                #x67 #x80 #x00 #x00))  ; ret
+
+;; ---------------------------------------------------------------------------
 ;; 完整流里的松弛: >4KB 的普通分支升成 branch-far
 ;; ---------------------------------------------------------------------------
 

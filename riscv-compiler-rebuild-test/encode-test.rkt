@@ -155,6 +155,19 @@
 (check-error "fence.tso 不接受操作数" (lambda () (encode-instruction 'fence.tso '(rw))))
 (check-error "fence.tso 不接受后缀" (lambda () (encode-instruction 'fence.tso.aq '())))
 
+;; CSR / Zifencei
+(check-equal? (word 'csrrw 'a0 'mstatus 'a1) (list #x30059573 4))
+(check-equal? (word 'csrrs 'a0 'mstatus 'a1) (list #x3005a573 4))
+(check-equal? (word 'csrrc 'a0 'mstatus 'a1) (list #x3005b573 4))
+(check-equal? (word 'csrr 'a0 'mstatus) (list #x30002573 4))
+(check-equal? (word 'csrw 'mstatus 'a1) (list #x30059073 4))
+(check-equal? (word 'csrrwi 'a0 'mstatus 3) (list #x3001d573 4))
+(check-equal? (word 'csrwi 'mstatus 3) (list #x3001d073 4))
+(check-equal? (word 'fence.i) (list #x0000100f 4))
+(check-equal? (instruction-arity 'fence.i) 0)
+(check-error "unknown CSR" (lambda () (encode-instruction 'csrr '(a0 no-such-csr))))
+(check-error "rv32-only CSR 不在当前 target" (lambda () (encode-instruction 'csrr '(a0 cycleh))))
+
 ;; ---------------------------------------------------------------------------
 ;; layout -> build: 代码 + 数据 + 对齐
 ;; ---------------------------------------------------------------------------

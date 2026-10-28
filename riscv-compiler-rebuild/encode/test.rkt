@@ -4,6 +4,9 @@
 (require rackunit
          "insn.rkt"
          "encode.rkt"
+         "syntax/order.rkt"
+         "syntax/direct.rkt"
+         "syntax/coverage.rkt"
          "../target.rkt"
          (only-in "../analyze/analyze.rkt" analyze sexp->program)
          (only-in "../dce/dce.rkt" eliminate-dead)
@@ -101,6 +104,36 @@
 (check-exn exn:fail? (lambda () (encode-instruction 'fence (list 1 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence.tso (list 'rw))))
 (check-exn exn:fail? (lambda () (encode-instruction 'fence.tso.aq '())))
+
+;; ---------------------------------------------------------------------------
+;; CSR / fence.i
+;; ---------------------------------------------------------------------------
+
+(check-equal? (word 'csrrw 'a0 'mstatus 'a1) (cons #x30059573 4))
+(check-equal? (word 'csrrs 'a0 'mstatus 'a1) (cons #x3005a573 4))
+(check-equal? (word 'csrrc 'a0 'mstatus 'a1) (cons #x3005b573 4))
+(check-equal? (word 'csrr 'a0 'mstatus) (cons #x30002573 4))
+(check-equal? (word 'csrw 'mstatus 'a1) (cons #x30059073 4))
+(check-equal? (word 'csrrwi 'a0 'mstatus 3) (cons #x3001d573 4))
+(check-equal? (word 'csrwi 'mstatus 3) (cons #x3001d073 4))
+(check-equal? (word 'fence.i) (cons #x0000100f 4))
+
+;; CSR 也可以直接写 12 位编号
+(check-equal? (word 'csrr 'a0 #x300) (cons #x30002573 4))
+
+(check-equal? (instruction-arity 'csrrw) 3)
+(check-equal? (instruction-arity 'csrr) 2)
+(check-equal? (instruction-arity 'csrw) 2)
+(check-equal? (instruction-arity 'csrrwi) 3)
+(check-equal? (instruction-arity 'fence.i) 0)
+
+(check-exn exn:fail? (lambda () (encode-instruction 'csrr (list 'a0 'no-such-csr))))
+(check-exn exn:fail? (lambda () (encode-instruction 'csrwi (list 'mstatus 'x))))
+;; csrs32 表只属于未来的 rv32 profile
+(check-exn exn:fail? (lambda () (encode-instruction 'csrr (list 'a0 'cycleh))))
+
+;; 本切片自身的扩展覆盖
+(check-equal? (hash-ref (syntax-coverage '(rv_zicsr rv_zifencei)) 'missing) 0)
 
 ;; ---------------------------------------------------------------------------
 ;; 后缀 / 元数 / 未知指令
@@ -327,5 +360,19 @@
                                                (place s (main)) (place d (d t))))
                              's)
               '(#x97 #x72 #x00 #x00 #x93 #x82 #x02 #x00))
+
+;; ---------------------------------------------------------------------------
+;; 语法拆分: 局部表 + 覆盖报告
+;; ---------------------------------------------------------------------------
+
+(check-not-false (member "rd rs1 rs2 aq rl" (order-plan-keys)))
+(check-not-false (member "bimm12 rs1 rs2" (order-plan-keys)))
+(check-equal? (direct-plan-names) '(fence fence.i fence.tso))
+
+;; 当前 target 的扩展必须全部有语法计划
+(check-equal? (hash-ref (syntax-coverage target-extensions) 'missing) 0)
+
+;; 全量 riscv-asm 扩展仍然缺语法; 这是后续工作的清单来源
+(check-true (positive? (hash-ref (syntax-coverage) 'missing)))
 
 (displayln "encode tests: ok")

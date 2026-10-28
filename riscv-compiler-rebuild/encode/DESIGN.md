@@ -1,6 +1,7 @@
 # encode 编码（`encode/insn.rkt` `encode/encode.rkt`；目标事实在顶层 `target.rkt`）
 
 > 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#encode`](../SEXP.md#encode)。
+> 语法局部拆分：[`syntax/DESIGN.md`](syntax/DESIGN.md)。
 >
 > 最后一步：`layout -> (build …)`，每个段一坨字节。
 > **端序只出现在这里**；指令编码和位域检查都在 `riscv-asm`。
@@ -29,7 +30,8 @@ layout : relax 产物（segments + symbols + problems）
 | 文件 | API |
 | --- | --- |
 | `../target.rkt`（顶层共享） | `target-xlen` `target-endianness` `target-extensions` `integer->bytes` `padding-bytes`（**填充策略**） |
-| `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl` |
+| `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl`（组合入口） |
+| `syntax/*.rkt` | 后缀 / 操作数值 / 顺序表 / direct form / plan / coverage，见 [`syntax/DESIGN.md`](syntax/DESIGN.md) |
 | `encode.rkt` | `encode-layout` |
 
 ## 4. 规则
@@ -176,7 +178,7 @@ A 扩展的全部原子指令都走这条规则：
 `encode/test.rkt`（70 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
 本层**不需要** layout 输入，也不需要 program / data）。
 
-单条指令与手算编码对照（含压缩、全部原子、`fence`/`fence.tso`、别名）、`aq`/`rl` 后缀、元数、未知指令、
+单条指令与手算编码对照（含压缩、全部原子、`fence`/`fence.tso`/`fence.i`、CSR、别名）、`aq`/`rl` 后缀、元数、未知指令、
 layout → build 字节精确、`code`/`data` 对齐补齐、`li`（4 / 8 字节）、`la`（auipc+addi 的
 hi/lo 拆分）、`branch-far` 展开后的位域、拒绝出产物。
 

@@ -28,7 +28,7 @@ racket integration-test.rkt
 | `dce-test.rkt` | 不可达块、转移到下一块、空块合并、重新编号 |
 | `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、符号、problems |
 | `relax-test.rkt` | 提升阶梯、区间边界、收敛、`scratch-hole` 交接 |
-| `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`、aq/rl、填充策略、`li`/`la`/远形式、断言 |
+| `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la`/远形式、断言 |
 | `flow-test.rkt` | stage 表、依赖检查、可选层、`layout`/`relax` 平层、层组/选择器、`run-stage`、context 续跑 |
 | `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、完整流松弛、错误 |
 

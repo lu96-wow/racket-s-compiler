@@ -26,7 +26,8 @@
 (define target-extensions
   '(rv_i rv_m rv_a
     rv64_i rv64_m rv64_a
-    rv_c rv64_c))
+    rv_c rv64_c
+    rv_zicsr rv_zifencei))
 
 ;; 整数 -> width 个字节(按目标端序)。值必须能放进 width 个字节。
 (define (integer->bytes width value)

@@ -17,6 +17,7 @@
 | `layout/DESIGN.md` | 布局：放置、度量、符号表、范围检查、problems |
 | `relax/DESIGN.md` | 分支松弛（只升形式） |
 | `encode/DESIGN.md` | 编码：操作数顺序、端序、字节规则 |
+| `encode/syntax/DESIGN.md` | encode 的语法局部拆分：后缀 / 操作数 / 顺序 / 特殊形式 / 覆盖 |
 | `../riscv-asm/README.md` | 指令编码表（生成器 + 运行时），encode 的编码来源 |
 | `../riscv-help/DESIGN.md` | `li` / `la` / 远分支 / 远跳转的展开器 |
 
