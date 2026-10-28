@@ -78,7 +78,7 @@
 ;;   值: 每个调用参数取自哪里
 ;;        整数 = s-exp 的第几项
 ;;        'aq / 'rl = 助记符后缀带来的常量
-;;   没有登记的形状 = 我们还没给语法(目前是 fence / fence.tso)。
+;;   没有登记的形状 = 我们还没给语法; fence / fence.tso 走下面的 direct-plans。
 ;; ---------------------------------------------------------------------------
 
 (define (plan-key names) (string-join names " "))
@@ -86,7 +86,7 @@
 (define operand-plans
   (hash
    ;; --- 32 位 ---
-   ""                            '()          ; 无操作数 (nop ret ebreak fence)
+   ""                            '()          ; 无操作数 (nop ret ebreak/pause)
    "rd"                          '(0)
    "rs1"                         '(0)          ; jr
    "jimm20"                      '(0)          ; j
@@ -134,6 +134,57 @@
    "rs1_p rs2_p c_uimm7"         '(1 0 2)      ; c.sw: (c.sw 值 基址 偏移)
    "rs1_p rs2_p c_uimm8"         '(1 0 2)))     ; c.sd
 
+;; ---------------------------------------------------------------------------
+;; 直接参数表单: 不是"第几个操作数", 而是由本层自己解释操作数。
+;;
+;; fence / fence.tso 的 fm/rs1/rd 在基础 ISA 里是固定/保留字段, 不暴露给
+;; s-exp 让用户乱填; 只暴露真正有语义的 pred/succ。
+;;
+;;   (fence pred succ)   pred/succ = i,o,r,w 的规范顺序组合 (rw / iorw / ...)
+;;   (fence.tso)         固定 fm=8, pred=succ=rw
+;; ---------------------------------------------------------------------------
+
+;; i=8, o=4, r=2, w=1; 只接受 i,o,r,w 的规范顺序, 不接受 wr / rwx / 空串。
+(define (fence-mode-value x)
+  (unless (symbol? x)
+    (error 'encode-instruction
+           "fence pred/succ 必须是 rw / iorw 这样的符号: ~e" x))
+  (define s (symbol->string x))
+  (when (zero? (string-length s))
+    (error 'encode-instruction "fence pred/succ 不能为空"))
+  (let loop ([chars (string->list s)] [last-bit 16] [mask 0])
+    (cond
+      [(null? chars) mask]
+      [else
+       (define bit
+         (case (car chars)
+           [(#\i) 8]
+           [(#\o) 4]
+           [(#\r) 2]
+           [(#\w) 1]
+           [else #f]))
+       (unless (and bit (< bit last-bit))
+         (error 'encode-instruction
+                "fence pred/succ 只能包含 i,o,r,w，且按这个顺序、不能重复: ~a" x))
+       (loop (cdr chars) bit (bitwise-ior mask bit))])))
+
+(define (fence-args operands)
+  (define pred (fence-mode-value (car operands)))
+  (define succ (fence-mode-value (cadr operands)))
+  (list 0 pred succ 0 0))                 ; fm pred succ rs1 rd
+
+(define (fence-tso-args _operands)
+  (list 0 0))                             ; rs1 rd; fm/pred/succ 由指令固定
+
+(struct direct-plan (arity build) #:transparent)
+
+(define direct-plans
+  (hash
+   'fence     (direct-plan 2 fence-args)
+   'fence.tso (direct-plan 0 fence-tso-args)))
+
+(define (direct-plan-of base) (hash-ref direct-plans base #f))
+
 (define (plan-of info)
   (hash-ref operand-plans (plan-key (instruction-info-operands info)) #f))
 
@@ -146,8 +197,11 @@
   (define-values (base _aq _rl) (split-aqrl name))
   (define info (lookup-instruction base))
   (and info
-       (let ([plan (plan-of info)])
-         (and plan (operand-arity plan)))))
+       (cond
+         [(direct-plan-of base) => direct-plan-arity]
+         [else
+          (let ([plan (plan-of info)])
+            (and plan (operand-arity plan)))])))
 
 ;; ---------------------------------------------------------------------------
 ;; 编码
@@ -165,22 +219,34 @@
   (define-values (base aq rl) (split-aqrl name))
   (define info (or (lookup-instruction base)
                    (error 'encode-instruction "unknown instruction: ~a" name)))
-  (define plan (or (plan-of info)
-                   (error 'encode-instruction
-                          "no operand syntax for ~a (operands ~s)"
-                          base (instruction-info-operands info))))
-  (define has-flags? (ormap (lambda (p) (memq p '(aq rl))) plan))
-  (when (and (positive? (+ aq rl)) (not has-flags?))
-    (error 'encode-instruction "~a does not take .aq/.rl" name))
-  (define arity (operand-arity plan))
-  (unless (= arity (length operands))
-    (error 'encode-instruction
-           "~a takes ~a operand(s), got ~a: ~e" base arity (length operands) operands))
-  (define args
-    (for/list ([p (in-list plan)])
-      (case p
-        [(aq) aq]
-        [(rl) rl]
-        [else (operand-value (list-ref operands p))])))
-  (values (apply (instruction-proc info) args)
-          (quotient (instruction-info-width info) 8)))
+  (define direct (direct-plan-of base))
+  (cond
+    [direct
+     (when (positive? (+ aq rl))
+       (error 'encode-instruction "~a does not take .aq/.rl" name))
+     (define arity (direct-plan-arity direct))
+     (unless (= arity (length operands))
+       (error 'encode-instruction
+              "~a takes ~a operand(s), got ~a: ~e" base arity (length operands) operands))
+     (values (apply (instruction-proc info) ((direct-plan-build direct) operands))
+             (quotient (instruction-info-width info) 8))]
+    [else
+     (define plan (or (plan-of info)
+                      (error 'encode-instruction
+                             "no operand syntax for ~a (operands ~s)"
+                             base (instruction-info-operands info))))
+     (define has-flags? (ormap (lambda (p) (memq p '(aq rl))) plan))
+     (when (and (positive? (+ aq rl)) (not has-flags?))
+       (error 'encode-instruction "~a does not take .aq/.rl" name))
+     (define arity (operand-arity plan))
+     (unless (= arity (length operands))
+       (error 'encode-instruction
+              "~a takes ~a operand(s), got ~a: ~e" base arity (length operands) operands))
+     (define args
+       (for/list ([p (in-list plan)])
+         (case p
+           [(aq) aq]
+           [(rl) rl]
+           [else (operand-value (list-ref operands p))])))
+     (values (apply (instruction-proc info) args)
+             (quotient (instruction-info-width info) 8))]))

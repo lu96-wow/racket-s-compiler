@@ -51,6 +51,52 @@
 (check-equal? (word 'lr.d.aq 'a0 'a1) (cons #x1405b52f 4))
 (check-equal? (word 'lr.d 'a0 'a1) (cons #x1005b52f 4))
 
+;; 所有 A 扩展原子指令都有 s-exp 语法: lr 2 个操作数, sc/amo 3 个
+(define atomic-unary '(lr.w lr.d))
+(define atomic-binary
+  '(sc.w amoswap.w amoadd.w amoxor.w amoand.w amoor.w
+    amomin.w amomax.w amominu.w amomaxu.w
+    sc.d amoswap.d amoadd.d amoxor.d amoand.d amoor.d
+    amomin.d amomax.d amominu.d amomaxu.d))
+(for ([n (in-list atomic-unary)])
+  (check-equal? (instruction-arity n) 2 (format "arity ~a" n))
+  (define-values (_w size) (encode-instruction n (list 'a0 'a1)))
+  (check-equal? size 4 (format "size ~a" n)))
+(for ([n (in-list atomic-binary)])
+  (check-equal? (instruction-arity n) 3 (format "arity ~a" n))
+  (define-values (_w size) (encode-instruction n (list 'a0 'a2 'a1)))
+  (check-equal? size 4 (format "size ~a" n)))
+
+;; 后缀对每个原子指令都生效
+(for ([n (in-list (append atomic-unary atomic-binary))])
+  (define n* (string->symbol (format "~a.aqrl" n)))
+  (define arity (instruction-arity n*))
+  (define ops (if (= arity 2) '(a0 a1) '(a0 a2 a1)))
+  (define-values (w _size) (encode-instruction n* ops))
+  (check-equal? (bitwise-and w #x06000000) #x06000000
+                (format "aqrl bits ~a" n*)))
+
+;; aq/rl 只改两位
+(check-equal? (word 'amoadd.d.aq 'a0 'a2 'a1) (cons #x04c5b52f 4))
+(check-equal? (word 'amoadd.d.rl 'a0 'a2 'a1) (cons #x02c5b52f 4))
+(check-equal? (word 'sc.d.aq 'a0 'a1 'a2) (cons #x1cb6352f 4))
+
+;; fence: (fence pred succ); pred/succ 是 i,o,r,w 的规范顺序组合
+(check-equal? (word 'fence 'rw 'rw) (cons #x0330000f 4))
+(check-equal? (word 'fence 'iorw 'iorw) (cons #x0ff0000f 4))
+(check-equal? (word 'fence 'r 'w) (cons #x0210000f 4))
+(check-equal? (word 'fence.tso) (cons #x8330000f 4))
+
+(check-equal? (instruction-arity 'fence) 2)
+(check-equal? (instruction-arity 'fence.tso) 0)
+(check-exn exn:fail? (lambda () (encode-instruction 'fence '())))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rw 'rw 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'wr 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence (list 'rwx 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence.tso (list 'rw))))
+(check-exn exn:fail? (lambda () (encode-instruction 'fence.tso.aq '())))
+
 ;; ---------------------------------------------------------------------------
 ;; 后缀 / 元数 / 未知指令
 ;; ---------------------------------------------------------------------------

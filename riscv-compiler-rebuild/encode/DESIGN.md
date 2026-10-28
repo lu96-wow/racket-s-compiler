@@ -72,7 +72,7 @@ riscv-opcodes 的声明顺序（= rebuilt 函数参数顺序）不是汇编写�
 ("rd" "rs1" "rs2" "aq" "rl")-> (0 2 1 aq rl); (amoadd.d rd rs2 rs1)
 ```
 
-没有登记的形状 = 还没给语法（目前是 `fence` / `fence.tso`），报错而不是猜。
+没有登记的形状 = 还没给语法，报错而不是猜。`fence` / `fence.tso` 的字段不是普通操作数顺序，走下面的直接参数表单。
 
 ### 4.3 aq / rl 是助记符后缀
 
@@ -84,6 +84,35 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 ```
 
 `.rlaq` 是拼错 → 落到"未知助记符"。非原子指令带后缀也报错。
+
+A 扩展的全部原子指令都走这条规则：
+
+```racket
+(lr.w rd rs1)              (lr.d.aq rd rs1)
+(sc.w rd rs2 rs1)          (sc.d.aqrl rd rs2 rs1)
+(amoswap.w rd rs2 rs1)     (amoadd.d.rl rd rs2 rs1)
+(amoand.d.aqrl rd rs2 rs1) ...
+```
+
+`lr` 是 2 个 s-exp 操作数，`sc` / `amo*` 是 3 个；`.aq` / `.rl` / `.aqrl` 不进操作数列表。
+
+### 4.3.1 fence / fence.tso
+
+`fence` 的 `fm` / `rs1` / `rd` 是基础 ISA 的固定/保留字段，不暴露给源码；
+只暴露有语义的 `pred` / `succ`：
+
+```racket
+(fence pred succ)      ; pred/succ = i,o,r,w 的规范顺序组合
+(fence rw rw)          ; 0x0330000f
+(fence iorw iorw)      ; 0x0ff0000f
+(fence r w)            ; 0x0210000f
+(fence.tso)            ; 0x8330000f
+```
+
+- 只接受 `i`, `o`, `r`, `w` 的规范顺序，每个字符最多一次：`rw` / `iorw` 合法，
+  `wr` / `rwx` / 空串报错。
+- `fence` 固定 2 个操作数；`fence.tso` 固定 0 个，`fm/pred/succ` 由指令本身固定。
+- `fence` / `fence.tso` 都不接受 `.aq` / `.rl` 后缀。
 
 ### 4.4 字节规则
 
@@ -137,7 +166,7 @@ riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认
 `encode/test.rkt`（70 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
 本层**不需要** layout 输入，也不需要 program / data）。
 
-单条指令与手算编码对照（含压缩、原子、别名）、`aq`/`rl` 后缀、元数、未知指令、
+单条指令与手算编码对照（含压缩、全部原子、`fence`/`fence.tso`、别名）、`aq`/`rl` 后缀、元数、未知指令、
 layout → build 字节精确、`code`/`data` 对齐补齐、`li`（4 / 8 字节）、`la`（auipc+addi 的
 hi/lo 拆分）、`branch-far` 展开后的位域、拒绝出产物。
 
@@ -145,4 +174,3 @@ hi/lo 拆分）、`branch-far` 展开后的位域、拒绝出产物。
 
 - `la` 的远形式（需要 scratch）、真 reloc、外部符号。
 - 没有加载器格式（`(build …)` 还只是数据结构）。
-- `fence` / `fence.tso` 的操作数语法没定义。

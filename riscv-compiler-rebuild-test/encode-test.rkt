@@ -115,15 +115,41 @@
 (check-error "非原子指令不能带 .aq" (lambda () (encode-instruction 'add.aq '(a0 a1 a2))))
 (check-error "未知指令" (lambda () (encode-instruction 'nope '(a0))))
 
+;; 所有 A 扩展原子指令: lr 2 个操作数, sc/amo 3 个
+(define atomic-unary '(lr.w lr.d))
+(define atomic-binary
+  '(sc.w amoswap.w amoadd.w amoxor.w amoand.w amoor.w
+    amomin.w amomax.w amominu.w amomaxu.w
+    sc.d amoswap.d amoadd.d amoxor.d amoand.d amoor.d
+    amomin.d amomax.d amominu.d amomaxu.d))
+(for ([n (in-list atomic-unary)])
+  (check-equal? (instruction-arity n) 2 (format "arity ~a" n))
+  (define-values (_w size) (encode-instruction n '(a0 a1)))
+  (check-equal? size 4 (format "size ~a" n)))
+(for ([n (in-list atomic-binary)])
+  (check-equal? (instruction-arity n) 3 (format "arity ~a" n))
+  (define-values (_w size) (encode-instruction n '(a0 a2 a1)))
+  (check-equal? size 4 (format "size ~a" n)))
+
+;; fence: pred/succ 按 i,o,r,w 规范顺序; fence.tso 无操作数
+(check-equal? (word 'fence 'rw 'rw) (list #x0330000f 4))
+(check-equal? (word 'fence 'iorw 'iorw) (list #x0ff0000f 4))
+(check-equal? (word 'fence 'r 'w) (list #x0210000f 4))
+(check-equal? (word 'fence.tso) (list #x8330000f 4))
+
 (check-equal? (instruction-arity 'add) 3)
 (check-equal? (instruction-arity 'addi) 3)
 (check-equal? (instruction-arity 'sw) 3)
 (check-equal? (instruction-arity 'beq) 3)
 (check-equal? (instruction-arity 'c.addi) 2)
 (check-equal? (instruction-arity 'amoadd.d.aqrl) 3)
-(check-false (instruction-arity 'fence))
+(check-equal? (instruction-arity 'fence) 2)
+(check-equal? (instruction-arity 'fence.tso) 0)
 (check-error "元数不对" (lambda () (encode-instruction 'add '(a0 a1))))
-(check-error "fence 还没有操作数语法" (lambda () (encode-instruction 'fence '())))
+(check-error "fence 元数不对" (lambda () (encode-instruction 'fence '(rw))))
+(check-error "fence pred/succ 顺序" (lambda () (encode-instruction 'fence '(wr rw))))
+(check-error "fence.tso 不接受操作数" (lambda () (encode-instruction 'fence.tso '(rw))))
+(check-error "fence.tso 不接受后缀" (lambda () (encode-instruction 'fence.tso.aq '())))
 
 ;; ---------------------------------------------------------------------------
 ;; layout -> build: 代码 + 数据 + 对齐
@@ -198,6 +224,23 @@
 (check-equal? (build-bytes (encode-layout addr-layout) 'd)
               '(#x04 #x20 #x00 #x00
                 #x08 #x00 #x00 #x00 #x00 #x00 #x00 #x00))
+
+;; 原子 + fence 走完整 layout -> build
+(define atomic-fence-layout
+  (laid
+   (list (list 'segment
+               '(name c) '(kind code) '(start #x1000) '(end #x1100) '(align 4)
+               (cons 'items '((offset 0 (label main))
+                              (offset 0 (fence rw rw))
+                              (offset 4 (amoadd.d.aqrl a0 a2 a1))
+                              (offset 8 (fence.tso))))
+               '(size 12)))
+   '((symbol (main) c 0 #x1000))))
+
+(check-equal? (build-bytes (encode-layout atomic-fence-layout) 'c)
+              '(#x0f #x00 #x30 #x03       ; fence rw, rw
+                #x2f #xb5 #xc5 #x06       ; amoadd.d.aqrl a0, a2, (a1)
+                #x0f #x00 #x30 #x83))      ; fence.tso
 
 ;; ---------------------------------------------------------------------------
 ;; li / la / 远形式

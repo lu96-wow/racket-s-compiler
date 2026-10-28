@@ -157,6 +157,33 @@
                 #x00 #x00 #x00))         ; b8-array 3 0 -> fill
 
 ;; ---------------------------------------------------------------------------
+;; 原子指令 + fence 走完整流
+;; ---------------------------------------------------------------------------
+
+(define atomic-src
+  '((label main)
+    (fence rw rw)
+    (amoadd.d.aqrl a0 a2 a1)
+    (fence.tso)
+    (ret)))
+
+(define atomic-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4)))
+    (place c (main))))
+
+(define atomic-out
+  (run-flow default-flow
+            (list (cons 'rich-data '())
+                  (cons 'program-items atomic-src)
+                  (cons 'layout-spec atomic-spec))))
+
+(check-equal? (build-bytes (flow-value atomic-out 'build) 'c)
+              '(#x0f #x00 #x30 #x03       ; fence rw, rw
+                #x2f #xb5 #xc5 #x06       ; amoadd.d.aqrl a0, a2, (a1)
+                #x0f #x00 #x30 #x83       ; fence.tso
+                #x67 #x80 #x00 #x00))     ; ret
+
+;; ---------------------------------------------------------------------------
 ;; 完整流里的松弛: >4KB 的普通分支升成 branch-far
 ;; ---------------------------------------------------------------------------
 

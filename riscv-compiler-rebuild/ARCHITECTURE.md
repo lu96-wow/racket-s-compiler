@@ -227,7 +227,6 @@ segment d start=#x200000 size=11
 | 真 reloc / 外部符号 | 没做 | 栈顶 / `malloc` 区要它 |
 | 补 fallthrough 跳转、trampoline、块重排 | 没做 | layout 只报 `broken-fallthrough` |
 | 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |
-| `fence` / `fence.tso` 的操作数语法 | 没定义 | encode 报 "no operand syntax" |
 | `.bss` / `ascii` 等数据指令 | 没做 | `fill` / `bytes` 够用 |
 | 填充策略的"非 nop"选项（ebreak / 0xFF / trap） | 没做 | 只改 `target.rkt` 的表 |
 
