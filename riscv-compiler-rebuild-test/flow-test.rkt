@@ -64,12 +64,73 @@
 (check-true (hash-has-key? ctx 'build))
 (check-equal? (build-size (flow-value ctx 'build) 'c) 8)
 
-;; 单独跑一层
+;; 单独跑一层（层名可以直接写，不一定包成列表）
+(check-equal? (flow-value (run-flow 'expand-data (list (cons 'rich-data '((b8 1)))))
+                          'data-items)
+              '((value 1 1)))
 (check-equal? (flow-value (run-flow '(expand-data) (list (cons 'rich-data '((b8 1)))))
                           'data-items)
               '((value 1 1)))
 (check-error "缺少 seed"
-             (lambda () (run-flow '(expand-data) '())))
+             (lambda () (run-flow 'expand-data '())))
+
+;; ---------------------------------------------------------------------------
+;; 选择器 / 层组 / 单层
+;; ---------------------------------------------------------------------------
+
+(check-equal? (group-names) '(all backend frontend ir))
+(check-equal? (hash-ref stage-groups 'frontend)
+              '(expand-data flatten expand-pseudo))
+(check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
+(check-equal? (hash-ref stage-groups 'backend) '(relax encode))
+(check-equal? (hash-ref stage-groups 'all) default-flow)
+
+(check-equal? (select-stages 'analyze) '(analyze))
+(check-equal? (select-stages 'frontend) '(expand-data flatten expand-pseudo))
+(check-equal? (select-stages '(frontend ir backend)) default-flow)
+(check-equal? (select-stages 'all) default-flow)
+(check-equal? (select-stages '((expand-data flatten) (analyze dce)))
+              '(expand-data flatten analyze dce))
+(check-equal? (select-stages '()) '())
+
+(check-error "未知层或组" (lambda () (select-stages 'no-such-stage)))
+(check-error "选择器类型" (lambda () (select-stages "not-a-selector")))
+
+;; 层组跑完整链，字节和 default-flow 一样
+(define grouped (run-flow '(frontend ir backend) simple-seeds))
+(check-equal? (build-bytes (flow-value grouped 'build) 'c)
+              (build-bytes (flow-value ctx 'build) 'c))
+
+;; 片段串联：前一段的 context 直接当下一段的 seed
+(define front (run-flow 'frontend simple-seeds))
+(check-true (hash-has-key? front 'program-items))
+(check-true (hash-has-key? front 'data-items))
+(define middle (run-flow 'ir front))
+(check-true (hash-has-key? middle 'program))
+(define back (run-flow 'backend middle))
+(check-equal? (build-bytes (flow-value back 'build) 'c)
+              (build-bytes (flow-value ctx 'build) 'c))
+
+;; run-stage: 只跑一层，只返回这一层 provides 的值
+(define expand-only
+  (run-stage 'expand-data (list (cons 'rich-data '((b8 1))))))
+(check-equal? (sort (hash-keys expand-only) symbol<?) '(data-items))
+(check-equal? (hash-ref expand-only 'data-items) '((value 1 1)))
+
+(define flatten-only
+  (run-stage 'flatten
+             (list (cons 'program-items '((module a (provide f) (label f))))
+                   (cons 'data-items '()))))
+(check-equal? (sort (hash-keys flatten-only) symbol<?)
+              '(data-items names program-items))
+
+(define analyze-only (run-stage 'analyze front))
+(check-equal? (sort (hash-keys analyze-only) symbol<?) '(program))
+
+(check-error "run-stage 只接受层名"
+             (lambda () (run-stage 'frontend simple-seeds)))
+(check-error "run-stage 未知层"
+             (lambda () (run-stage 'no-such-stage '())))
 
 ;; ---------------------------------------------------------------------------
 ;; 依赖检查 / 未知层 / 顺序

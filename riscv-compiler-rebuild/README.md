@@ -14,13 +14,17 @@ layout  list ┘                items          program    program  layout   byte
 
 `flatten` 是模块系统（`module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out`，默认私有）。
 
-层名就是目录名。**跑哪些层、什么顺序，由 `flow` 的一个列表决定**：
+层名就是目录名。**跑哪些层、什么顺序，由 `flow` 的选择器决定**：
 
 ```racket
 (run-flow '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
+(run-flow 'frontend seeds)    ; 层组 frontend
+(run-flow 'analyze seeds)     ; 单层
+(run-stage 'flatten seeds)    ; 只跑一层，只返回它的输出
 ```
 
-不写进列表的层就是关掉；`layout` 和 `relax` 是平层（同进同出），写 `relax` 就够了。
+不写进选择器的层就是关掉；`layout` 和 `relax` 是平层（同进同出），写 `relax` 就够了。
+层组 `frontend` / `ir` / `backend` / `all` 见 [`flow/DESIGN.md`](flow/DESIGN.md)。
 
 ## 先看这里
 
@@ -28,7 +32,7 @@ layout  list ┘                items          program    program  layout   byte
 | --- | --- |
 | [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **索引 + 规范**：分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
-| `flow/DESIGN.md` | **构建流**：`(list 层名 ...)`、依赖检查、可选/顺序/平层 |
+| `flow/DESIGN.md` | **构建流**：选择器/层组、单层 `run-stage`、依赖检查、可选/顺序/平层 |
 | `expand-data/DESIGN.md` … `encode/DESIGN.md` | 每层细节：API / 规则 / 边界 / 测试 / 缺口 |
 
 顶层还有两个"不属于任何层"的共享模块：`sexp.rkt`（s-exp 形状工具）和 `target.rkt`（XLEN / 端序 / 扩展集）。

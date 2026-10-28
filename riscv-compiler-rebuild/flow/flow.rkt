@@ -32,7 +32,11 @@
          stage-table
          stage-names
          providers-of
+         stage-groups
+         group-names
+         select-stages
          run-flow
+         run-stage
          flow-value
          default-flow)
 
@@ -127,18 +131,78 @@
   '(expand-data flatten expand-pseudo analyze dce relax encode))
 
 ;; ---------------------------------------------------------------------------
+;; 选择器: 层名 / 层组 / 任意片段
+;; ---------------------------------------------------------------------------
+
+;; 层组 = 常用片段的预定义列表。组名不能和层名重名。
+;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
+(define stage-groups
+  (hash
+   'frontend '(expand-data flatten expand-pseudo)
+   'ir       '(analyze dce)
+   'backend  '(relax encode)          ; layout 在 relax 内部跑
+   'all      default-flow))
+
+(define (group-names)
+  (sort (hash-keys stage-groups) symbol<?))
+
+;; 启动时自检: 组名不占层名, 组里只有已知层。
+(for ([(g stages) (in-hash stage-groups)])
+  (when (hash-has-key? stage-table g)
+    (error 'flow "stage group ~a conflicts with a stage name" g))
+  (unless (and (list? stages)
+               (andmap symbol? stages)
+               (andmap (lambda (s) (hash-has-key? stage-table s)) stages))
+    (error 'flow "bad stage group ~a: ~e" g stages)))
+
+;; selector -> 扁平层名列表
+;;
+;;   'analyze                单层
+;;   'frontend               层组
+;;   '(frontend ir backend)  多个层/组, 按顺序展开
+;;   '((analyze dce))        任意片段; 嵌套列表也按顺序展开
+;;
+;; 返回的列表仍然由 run-flow 按顺序执行, 所以"层组"只是写法, 没有额外语义。
+(define (select-stages selector)
+  (define (walk x)
+    (cond
+      [(symbol? x)
+       (cond
+         [(hash-has-key? stage-table x) (list x)]
+         [(hash-has-key? stage-groups x) (hash-ref stage-groups x)]
+         [else
+          (error 'select-stages
+                 "未知的层或层组 `~a`；已知层: ~a；已知组: ~a"
+                 x (stage-names) (group-names))])]
+      [(list? x) (append* (for/list ([y (in-list x)]) (walk y)))]
+      [else
+       (error 'select-stages
+              "选择器只能是层名/组名或它们的列表: ~e" x)]))
+  (walk selector))
+
+;; ---------------------------------------------------------------------------
 ;; 跑
 ;; ---------------------------------------------------------------------------
 
-(define (run-flow names [seeds '()])
+;; seed 既可以是 (名字 . 值) 列表, 也可以直接是上一趟 run-flow 的 context。
+;; 后者用来做"片段测试": 跑完前面, 把 context 喂给下一段。
+(define (seed-context seeds)
   (define ctx (make-hash))
-  (for ([p (in-list seeds)]) (hash-set! ctx (car p) (cdr p)))
+  (cond
+    [(hash? seeds)
+     (for ([(k v) (in-hash seeds)]) (hash-set! ctx k v))]
+    [(and (list? seeds) (andmap pair? seeds))
+     (for ([p (in-list seeds)]) (hash-set! ctx (car p) (cdr p)))]
+    [else
+     (error 'run-flow
+            "seeds 必须是 (名字 . 值) 列表或 context hash: ~e" seeds)])
+  ctx)
+
+(define (run-flow selector [seeds '()])
+  (define names (select-stages selector))
+  (define ctx (seed-context seeds))
   (for ([n (in-list names)] [step (in-naturals)])
-    (define st (hash-ref stage-table n
-                         (lambda ()
-                           (error 'run-flow
-                                  "第 ~a 步: 未知的层 `~a`；已知的层: ~a"
-                                  step n (stage-names)))))
+    (define st (hash-ref stage-table n))
     (for ([r (in-list (stage-requires st))])
       (unless (hash-has-key? ctx r)
         (error 'run-flow
@@ -149,6 +213,18 @@
     (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
     (for ([(k v) (in-hash ((stage-run st) in))]) (hash-set! ctx k v)))
   ctx)
+
+;; 单层: 只返回这层 provides 的值, 不带 seed 和其它上下文。
+;; 要跑片段/层组用 run-flow。
+(define (run-stage name [seeds '()])
+  (unless (and (symbol? name) (hash-has-key? stage-table name))
+    (error 'run-stage
+           "~a 不是层名；已知层: ~a；已知组: ~a（层组/片段用 run-flow）"
+           name (stage-names) (group-names)))
+  (define st (hash-ref stage-table name))
+  (define ctx (run-flow (list name) seeds))
+  (for/hash ([v (in-list (stage-provides st))])
+    (values v (hash-ref ctx v))))
 
 (define (flow-value ctx name)
   (hash-ref ctx name

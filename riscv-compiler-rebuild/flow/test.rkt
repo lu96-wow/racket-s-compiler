@@ -90,6 +90,67 @@
               '(0 0 #x10 0 0 0 0 0  #x68 #x69 0))
 
 ;; ---------------------------------------------------------------------------
+;; 选择器 / 层组 / 单层
+;; ---------------------------------------------------------------------------
+
+(check-equal? (group-names) '(all backend frontend ir))
+
+(check-equal? (hash-ref stage-groups 'frontend)
+              '(expand-data flatten expand-pseudo))
+(check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
+(check-equal? (hash-ref stage-groups 'backend) '(relax encode))
+(check-equal? (hash-ref stage-groups 'all) default-flow)
+
+;; 单层 / 层组 / 多个层组 / 任意片段
+(check-equal? (select-stages 'analyze) '(analyze))
+(check-equal? (select-stages 'frontend) '(expand-data flatten expand-pseudo))
+(check-equal? (select-stages '(frontend ir backend)) default-flow)
+(check-equal? (select-stages 'all) default-flow)
+(check-equal? (select-stages '((expand-data flatten) (analyze dce)))
+              '(expand-data flatten analyze dce))
+(check-equal? (select-stages '()) '())
+
+(check-exn #rx"未知的层或层组"
+           (lambda () (select-stages 'no-such-stage)))
+(check-exn #rx"选择器只能"
+           (lambda () (select-stages "not-a-selector")))
+
+;; 层组跑出来的字节和默认流一致
+(define grouped (run-flow '(frontend ir backend) seeds))
+(check-equal? (bytes-of-seg (flow-value grouped 'build) 'c)
+              (bytes-of-seg build 'c))
+
+;; context hash 可以直接当下一段的 seed: 前一段 -> 中段 -> 后一段
+(define front-ctx (run-flow 'frontend seeds))
+(check-true (hash-has-key? front-ctx 'program-items))
+(check-true (hash-has-key? front-ctx 'data-items))
+(define ir-ctx (run-flow 'ir front-ctx))
+(check-true (hash-has-key? ir-ctx 'program))
+(define back-ctx (run-flow 'backend ir-ctx))
+(check-equal? (bytes-of-seg (flow-value back-ctx 'build) 'c)
+              (bytes-of-seg build 'c))
+
+;; run-stage: 只跑一层, 只返回这层 provides 的值
+(define expand-out (run-stage 'expand-data (list (cons 'rich-data '((b8 1))))))
+(check-equal? (sort (hash-keys expand-out) symbol<?) '(data-items))
+(check-equal? (hash-ref expand-out 'data-items) '((value 1 1)))
+
+(define flatten-out
+  (run-stage 'flatten
+             (list (cons 'program-items '((module a (provide f) (label f))))
+                   (cons 'data-items '()))))
+(check-equal? (sort (hash-keys flatten-out) symbol<?)
+              '(data-items names program-items))
+
+(define analyze-out (run-stage 'analyze front-ctx))
+(check-equal? (sort (hash-keys analyze-out) symbol<?) '(program))
+
+(check-exn #rx"不是层名"
+           (lambda () (run-stage 'frontend seeds)))
+(check-exn #rx"不是层名"
+           (lambda () (run-stage 'no-such-stage '())))
+
+;; ---------------------------------------------------------------------------
 ;; 可选层: 不写 dce, 死块就留着
 ;; ---------------------------------------------------------------------------
 

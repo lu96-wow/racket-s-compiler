@@ -32,10 +32,13 @@ data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─�
 layout  list ┘                items          program    program  layout   bytes
 ```
 
-名字就是层名，也是目录名。**跑哪些层由 `flow` 的列表决定**：
+名字就是层名，也是目录名。**跑哪些层由 `flow` 的选择器决定**：
 
 ```racket
 (run-flow '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
+(run-flow 'frontend seeds)             ; 层组
+(run-flow 'analyze seeds)              ; 单层
+(run-stage 'flatten seeds)             ; 只跑一层, 只要它的输出
 ```
 
 每层吃/吐什么 s-exp、为什么这样设计，看 [`SEXP.md`](SEXP.md)；这里只留功能索引：
@@ -52,7 +55,8 @@ layout  list ┘                items          program    program  layout   byte
 | `encode` | `encode/insn.rkt` `encode/encode.rkt` | 编码 → 每段字节 | [`encode/DESIGN.md`](encode/DESIGN.md) |
 | `flow` | `flow/flow.rkt` | 构建流本身 | [`flow/DESIGN.md`](flow/DESIGN.md) |
 
-可选性、顺序、平层（`layout` 与 `relax` 同进同出）都由那张列表表达，见 `flow/DESIGN.md`。
+可选性、顺序、平层（`layout` 与 `relax` 同进同出）都由选择器/列表表达；
+预定义层组见 `flow/DESIGN.md`，单层和片段测试用 `run-stage` / `run-flow`。
 
 不属于任何层的两个**纯工具/纯事实**模块（顶层）：
 
@@ -207,7 +211,7 @@ segment d start=#x200000 size=11
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
 - `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
 - 测试条数：expand-data 75 / flatten 67 / expand-pseudo 119 / analyze 178 / dce 46 /
-  layout 185 / relax 30 / encode 70 / flow 24。
+  layout 185 / relax 30 / encode 70 / flow（阶段表、选择器、层组、片段）。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
 - 另有一个独立黑盒契约测试目录 `../riscv-compiler-rebuild-test/`：只 require 公开 API，

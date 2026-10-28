@@ -205,17 +205,27 @@ data-items ────┘                                │         │       
 
 ## flow
 
-**功能**：用一张 stage 表 + 一个层名列表串起各层，维护“在途值”，并在依赖缺失时说明谁能提供。
+**功能**：用一张 stage 表 + **选择器**串起各层。选择器可以写单层、预定义层组，或任意片段；`run-stage` 可以只跑一层。
 
 | 项 | 内容 |
 | --- | --- |
-| 输入 | 层名列表 + seed 表，例如 `(run-flow '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)` |
-| 输出 | context（hash），用 `(flow-value ctx 'build)` 取产物 |
+| 输入 | 选择器 + seed 表/context，例如 `(run-flow 'analyze seeds)`、`(run-flow '(frontend ir backend) seeds)`、`(run-stage 'flatten seeds)` |
+| 输出 | `run-flow` → context（hash）；`run-stage` → 该层 `provides` 的值（hash） |
+
+**预定义层组**
+
+| 组名 | 展开 |
+| --- | --- |
+| `frontend` | `expand-data flatten expand-pseudo` |
+| `ir` | `analyze dce` |
+| `backend` | `relax encode`（layout 在 relax 内部跑） |
+| `all` | `default-flow` |
 
 **为什么这样设计**
 
-- 可选、顺序、平层都由“列表”表达：不写进列表就是关掉；`layout`/`relax` 的 requires/provides 一样，所以可互换。
+- 单层、层组、片段都只是选择器：展开后仍是一个层名列表，顺序和可选性没有新语义。
 - 每个 stage 只声明 `requires` / `provides`，不自动排序、不自动选层；依赖在运行到那一步时才检查。
+- seed 可以直接是上一趟的 context，所以能“跑前一段 → 单独测下一层/下一段”，不必手写中间值。
 - 在途值的名字就是契约：`rich-data` / `data-items` / `program-items` / `names` / `program` / `layout` / `build`。
 
 **不归本层管**：任何实际编译逻辑。
