@@ -8,16 +8,18 @@
 ## 1. 数据模型
 
 ```racket
-(struct target (xlen endianness extensions) #:transparent)
+(struct target (xlen extensions) #:transparent)
 ```
 
 - `xlen`：`'rv32 | 'rv64`
-- `endianness`：`'little | 'big`
 - `extensions`：已排序、无重复的 symbol 列表
+
+端序固定为 little，不放进 target 字段。
 
 不放：
 
 - `name`：profile 变量名就是名字
+- `endianness`：没有物理 big-endian 目标，统一 little
 - `padding`：由 extensions 推导（有 C 才能用 `c.nop`）
 - ABI / 栈 / scratch / reloc：都不属于 target
 
@@ -32,7 +34,7 @@ target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 自定义 target 直接构造：
 
 ```racket
-(target 'rv64 'little '(rv_i rv_m rv_a rv_c rv64_i rv64_m rv64_a))
+(target 'rv64 '(rv_i rv_m rv_a rv_c rv64_i rv64_m rv64_a))
 ```
 
 不做自动扩展依赖闭包。  
@@ -41,7 +43,7 @@ target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 ## 3. 显式传参
 
 ```racket
-(integer->bytes target width value)
+(integer->bytes width value)
 (padding-bytes target kind n)
 
 (item-size target x)
@@ -60,7 +62,6 @@ target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 
 ```racket
 (target-xlen target)
-(target-endianness target)
 (target-extensions target)
 ```
 
@@ -106,13 +107,13 @@ target 不再放在 seed / context 里。
 ## 7. 已实现
 
 - target 结构 + 内置 profile
-- `integer->bytes` / `padding-bytes` 显式 target
+- `integer->bytes` 固定 little；`padding-bytes` 显式 target
 - `item-size` / `layout-program` / `relax` / `encode-layout` 显式 target
 - `encode-instruction` / `instruction-arity` / `known-instruction?` 显式 target
 - `run-flow` / `run-stage` 显式 target
 - 指令缓存键带扩展集
 - CSR 表按 XLEN 选择（rv32 才启用 csr32-table）
-- 旧全局 `target-xlen` / `target-endianness` / `target-extensions` 已删除
+- 旧全局 `target-xlen` / `target-extensions` 已删除
 
 ## 8. 验证
 
@@ -138,4 +139,4 @@ target 不再放在 seed / context 里。
 - 栈 / ABI / scratch：后续寄存器层
 - reloc / loader：后续链接层
 
-target 只回答：**多少位、什么端序、开了哪些扩展。**
+target 只回答：**多少位、开了哪些扩展。端序固定 little。**

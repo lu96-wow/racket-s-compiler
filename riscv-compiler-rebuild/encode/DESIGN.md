@@ -29,7 +29,7 @@ layout : relax 产物（segments + symbols + problems）
 
 | 文件 | API |
 | --- | --- |
-| `../target.rkt`（顶层共享） | `target` / `target-xlen` / `target-endianness` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
+| `../target.rkt`（顶层共享） | `target` / `target-xlen` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
 | `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl`（组合入口） |
 | `syntax/*.rkt` | 后缀 / 操作数值 / 顺序表 / direct form / plan / coverage，见 [`syntax/DESIGN.md`](syntax/DESIGN.md) |
 | `encode.rkt` | `encode-layout` |
@@ -133,7 +133,7 @@ A 扩展的全部原子指令都走这条规则：
 | `label` | 无 |
 | `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
 | `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按目标端序；整数直接写，地址表达式用符号表求值（`eval-address`，与 layout 共用） |
+| `value w 值` | `w` 字节按 little-endian；整数直接写，地址表达式用符号表求值（`eval-address`，与 layout 共用） |
 | 真指令 | `riscv-asm` 编码（`width/8` 字节） |
 | 远形式 | `riscv-help` 展开后再编码 |
 | `li` / `la` | `riscv-help` 展开后再编码 |

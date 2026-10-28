@@ -9,7 +9,7 @@
 | --- | --- |
 | `ARCHITECTURE.md`（本文） | 分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
 | [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
-| [`TARGET.md`](TARGET.md) | **目标配置设计**：rv32/rv64 profile、扩展集、端序、填充策略 |
+| [`TARGET.md`](TARGET.md) | **目标配置设计**：rv32/rv64 profile、扩展集、填充策略（端序固定 little） |
 | `expand-data/DESIGN.md` | 数据定义：宽度 / 值域 / 字符串 / 数组 / 地址字 |
 | `flatten/DESIGN.md` | 模块展平 + 链式查表（只做名字） |
 | `expand-pseudo/DESIGN.md` | 伪指令替换表 |
@@ -66,7 +66,7 @@ layout  list ┘                items          program    program  layout   byte
 | 文件 | 内容 | 谁用 |
 | --- | --- | --- |
 | `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）地址表达式 `arith-head?` / `arith-form?` / `address-expr?` / `address-expr-chains` | 除了 flow 之外的所有层 |
-| `target.rkt` | `(struct target)` `target-rv64-base` / `target-rv64-all` / `target-rv32-all` `integer->bytes` `padding-bytes` | flow（显式参数）、layout（XLEN）、encode（端序/填充/扩展集） |
+| `target.rkt` | `(struct target)` `target-rv64-base` / `target-rv64-all` / `target-rv32-all` `integer->bytes` `padding-bytes` | flow（显式参数）、layout（XLEN）、encode（填充/扩展集；端序固定 little） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
 所以 `(require "analyze/analyze.rkt" "layout/layout.rkt")` 不会因为都 provide `as-items`（同一个函数绑定）而冲突。
@@ -90,7 +90,7 @@ layout  list ┘                items          program    program  layout   byte
 | analyze / dce | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
 | layout | 数据 `label` / `bytes` / `fill` / `pad` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
 | relax | `needs-far` 提到的那些 control 形式 | 其余 item 不碰 |
-| encode | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序、**填充策略** | 交给 `riscv-asm` 编码 |
+| encode | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、端序（固定 little）、**填充策略** | 交给 `riscv-asm` 编码 |
 
 **产物词汇也可以写在源码里 —— 含义是"请求"，不是"事实"**：
 
@@ -119,7 +119,7 @@ layout  list ┘                items          program    program  layout   byte
    `riscv-help` 的寄存器表统一。
 3. **尺寸：谁的 item 谁负责**。`li` 由常量精确算，`la` 近形式固定 8，
    远形式 / 空槽要 scratch → 留给未实现的那一层。数据 `value` 的宽度由作者写死。
-4. **目标事实只出现一次**：顶层的 `target.rkt`（XLEN + 端序 + 扩展集）。
+4. **目标事实只出现一次**：顶层的 `target.rkt`（XLEN + 扩展集；端序固定 little）。
    `run-flow` / `layout` / `relax` / `encode` 都把 target 作为显式参数。
    expand-data 只管宽度和值。
 5. **问题分三级**：本层模型错误（硬）、范围问题（`needs-far` / `value-out-of-range`）、
@@ -170,7 +170,7 @@ layout  list ┘                items          program    program  layout   byte
 | rich 数据 `b8` `b16` `bN-array` `utf-string` | expand-data | 人 | expand-data |
 | `(bytes …)` `(fill n b)` `(align n)` | layout（尺寸/类别）；`fill` 归 layout，expand-data 是生产者 | expand-data / 人 | layout / encode |
 | `(pad n)` | layout（`align` 换算成它；源码也可直接写"精确插 n 字节"） | layout / 人 | encode |
-| `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 定端序落字节 | expand-data | analyze / layout / encode |
+| `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 按 little 落字节 | expand-data | analyze / layout / encode |
 | `(链)` / `(+ …)` / `(- …)` | `sexp.rkt` 定形状（`address-expr?`）；analyze 取其中**所有链**当取地址；layout 求值 + 查范围；encode 求值落字节 | 人 | expand-data / flatten / analyze / layout / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |
 | `(segments (segment (name …) (kind …) (start …) (end …) (align …)) …)` `(place 段名 链 …)` | layout | 人 | layout |

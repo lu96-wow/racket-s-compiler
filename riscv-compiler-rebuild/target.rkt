@@ -1,7 +1,7 @@
 #lang racket
 ;;; target.rkt
 ;;;
-;;; 目标配置: XLEN、端序、扩展集。
+;;; 目标配置: XLEN、扩展集。端序统一为 little。
 ;;;
 ;;; 目标不再写死。target 是显式参数:
 ;;;
@@ -24,11 +24,11 @@
          integer->bytes
          padding-bytes)
 
-(struct target (xlen endianness extensions) #:transparent)
+(struct target (xlen extensions) #:transparent)
 
 ;; 当前默认目标: rv64 + 目前已经接入的扩展。
 (define target-rv64-base
-  (target 'rv64 'little
+  (target 'rv64
           '(rv_i rv_m rv_a
             rv64_i rv64_m rv64_a
             rv_c rv64_c
@@ -43,12 +43,12 @@
   (string-prefix? (symbol->string e) prefix))
 
 (define target-rv64-all
-  (target 'rv64 'little
+  (target 'rv64
           (sort (filter (lambda (e) (not (extension-prefix? "rv32_" e))) extensions)
                 symbol<?)))
 
 (define target-rv32-all
-  (target 'rv32 'little
+  (target 'rv32
           (sort (filter (lambda (e) (not (extension-prefix? "rv64_" e))) extensions)
                 symbol<?)))
 
@@ -65,19 +65,13 @@
       (target-has-extension? target 'rv64_c)))
 
 ;; 整数 -> width 个字节(按当前 target 的端序)。
-(define (integer->bytes target width value)
-  (define endianness (target-endianness target))
+(define (integer->bytes width value)
   (define bits (* 8 width))
   (unless (<= (- (expt 2 (sub1 bits))) value (sub1 (expt 2 bits)))
     (error 'integer->bytes
            "value ~a does not fit in ~a byte(s)" value width))
-  (define bs
-    (for/list ([i (in-range width)])
-      (bitwise-and (arithmetic-shift value (- (* 8 i))) #xFF)))
-  (cond
-    [(eq? endianness 'little) bs]
-    [(eq? endianness 'big) (reverse bs)]
-    [else (error 'integer->bytes "unknown endianness: ~a" endianness)]))
+  (for/list ([i (in-range width)])
+    (bitwise-and (arithmetic-shift value (- (* 8 i))) #xFF)))
 
 ;; ---------------------------------------------------------------------------
 ;; 填充策略
@@ -100,7 +94,7 @@
   (define quads (quotient n 4))
   (define rest (remainder n 4))
   (append
-   (append* (for/list ([_ (in-range quads)]) (integer->bytes target 4 nop-word)))
+   (append* (for/list ([_ (in-range quads)]) (integer->bytes 4 nop-word)))
    (case rest
      [(0) '()]
      [(2)
@@ -108,7 +102,7 @@
         (error 'padding-bytes
                "code 段需要补 2 字节, 但当前 target 没有 C 扩展: ~a"
                (target-extensions target)))
-      (integer->bytes target 2 c-nop-word)]
+      (integer->bytes 2 c-nop-word)]
      [else
       (error 'padding-bytes
              "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"

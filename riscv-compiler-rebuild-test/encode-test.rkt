@@ -12,20 +12,17 @@
                     [encode-layout encode-layout*])
          (rename-in "../riscv-compiler-rebuild/target.rkt"
                     [target-xlen target-xlen]
-                    [target-endianness target-endianness]
                     [target-extensions target-extensions]
                     [target target]
                     [target-rv64-base target-rv64-base]
                     [target-rv64-all target-rv64-all]
                     [target-rv32-all target-rv32-all]
-                    [integer->bytes integer->bytes*]
                     [padding-bytes padding-bytes*]))
 
 (define test-target target-rv64-base)
 (define (encode-instruction name operands) (encode-instruction* test-target name operands))
 (define (instruction-arity name) (instruction-arity* test-target name))
 (define (known-instruction? name) (known-instruction?* test-target name))
-(define (integer->bytes width value) (integer->bytes* test-target width value))
 (define (padding-bytes kind n) (padding-bytes* test-target kind n))
 (define (encode-layout layout) (encode-layout* test-target layout))
 
@@ -43,7 +40,6 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (target-xlen test-target) 'rv64)
-(check-equal? (target-endianness test-target) 'little)
 (check-equal? (target-xlen target-rv64-base) 'rv64)
 (check-equal? (target-xlen target-rv32-all) 'rv32)
 (check-false (memq 'rv32_i (target-extensions target-rv64-all)))
@@ -54,10 +50,8 @@
 (check-false (known-instruction?* target-rv32-all 'lr.d))
 (check-true (known-instruction?* target-rv64-base 'lr.d))
 
-;; 端序 / 无 C 时的填充由显式 target 决定
-(define big-target (target 'rv64 'big '(rv_i)))
-(define no-c-target (target 'rv64 'little '(rv_i)))
-(check-equal? (integer->bytes* big-target 4 #x12345678) '(#x12 #x34 #x56 #x78))
+;; 无 C 时的填充由显式 target 决定
+(define no-c-target (target 'rv64 '(rv_i)))
 (check-equal? (padding-bytes* no-c-target 'code 4) '(#x13 #x00 #x00 #x00))
 (check-error "没有 C 就不能补 2 字节" (lambda () (padding-bytes* no-c-target 'code 2)))
 

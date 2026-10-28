@@ -45,8 +45,8 @@
   (unless row (error 'encode "undefined symbol: ~s" chain))
   (+ (symbol-address row) addend))
 
-(define (value->bytes target w v symbols)
-  (integer->bytes target w (eval-address v symbols)))
+(define (value->bytes w v symbols)
+  (integer->bytes w (eval-address v symbols)))
 
 ;; 操作数: 寄存器名/立即数原样交给 insn.rkt;
 ;; 控制转移的最后一项是链 -> 换成相对当前 item 的偏移。
@@ -111,7 +111,7 @@
 (define (encode-code target it here symbols emit!)
   (define (emit-instruction! name operands)
     (define-values (word n) (encode-instruction target name operands))
-    (emit! (integer->bytes target n word)))
+    (emit! (integer->bytes n word)))
   (define (emit-all! insns)
     (for ([i (in-list insns)]) (emit-instruction! (car i) (cdr i))))
   (case (car it)
@@ -157,7 +157,7 @@
        (emit! (padding-bytes target kind (cadr it)))]
       [(bytes-form? it) (emit! (cdr it))]
       [(fill-form? it) (emit! (make-list (cadr it) (caddr it)))]
-      [(value-form? it) (emit! (value->bytes target (value-width it) (value-payload it) symbols))]
+      [(value-form? it) (emit! (value->bytes (value-width it) (value-payload it) symbols))]
       [else (encode-code target it here symbols emit!)]))
 
   (unless (= cursor size)

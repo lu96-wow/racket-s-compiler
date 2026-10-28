@@ -78,7 +78,7 @@ rich item                        核心 item（输出的全部词汇）
 
 ## 5. 不归本层管
 
-- 端序：属于顶层 `target.rkt`（全流水线唯一写端序的地方），由 encode 落字节时使用。
+- 端序：固定 little；由 encode 落字节时使用。target 只含 XLEN / 扩展集。
 - 段 / 偏移 / 地址：属于 layout。取地址的**求值**属于 encode。
 - `segment` / `place` / 未知形式：直接 `error`（本层是数据入口）。
 - `(module …)`：只当结构壳递归进去，**不解释它的名字** —— 前缀是 flatten 的事。

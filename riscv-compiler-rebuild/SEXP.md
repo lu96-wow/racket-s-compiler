@@ -28,7 +28,7 @@ data-items ────┘                                │         │       
 | 层间载荷 | 只传 plain list 或 `(struct program …)`；不认识的 item 原样透传 |
 
 `sexp.rkt` 提供 `form?` / `name?` / `path?` / `normalize-path` / `as-items` 和地址表达式判定；
-`target.rkt` 提供 XLEN、端序、扩展集、填充策略。它们是共享事实，不是层。
+`target.rkt` 提供 XLEN、扩展集、填充策略；端序固定 little。它们是共享事实，不是层。
 
 ---
 
@@ -183,7 +183,7 @@ data-items ────┘                                │         │       
 
 ## encode
 
-**功能**：把 layout 变成每个段一坨字节。负责端序、填充、`li`/`la`/远形式、原子指令与 `fence` 的语法，以及把指令交给 `riscv-asm` 编码。
+**功能**：把 layout 变成每个段一坨字节。负责端序（固定 little）、填充、`li`/`la`/远形式、原子指令与 `fence` 的语法，以及把指令交给 `riscv-asm` 编码。
 
 | 项 | 内容 |
 | --- | --- |

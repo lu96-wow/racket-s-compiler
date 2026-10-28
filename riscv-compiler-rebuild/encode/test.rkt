@@ -10,9 +10,7 @@
          "syntax/order.rkt"
          "syntax/direct.rkt"
          "syntax/coverage.rkt"
-         (rename-in "../target.rkt"
-                    [integer->bytes integer->bytes*]
-                    [padding-bytes padding-bytes*])
+         (rename-in "../target.rkt" [padding-bytes padding-bytes*])
          (only-in "../analyze/analyze.rkt" analyze sexp->program)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (rename-in "../layout/layout.rkt" [layout-program layout-program*])
@@ -23,7 +21,6 @@
 (define (encode-instruction name operands) (encode-instruction* test-target name operands))
 (define (instruction-arity name) (instruction-arity* test-target name))
 (define (known-instruction? name) (known-instruction?* test-target name))
-(define (integer->bytes width value) (integer->bytes* test-target width value))
 (define (padding-bytes kind n) (padding-bytes* test-target kind n))
 (define (encode-layout layout) (encode-layout* test-target layout))
 (define (layout-program prog data spec) (layout-program* test-target prog data spec))
