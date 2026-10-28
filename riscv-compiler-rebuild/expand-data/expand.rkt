@@ -7,6 +7,7 @@
 ;;;   (label 链...)                 位置
 ;;;   (bytes b...)                  已经定顺序的字节(字符串 / 人写的)
 ;;;   (fill 字节数 b)               b 重复 字节数 次(与端序无关)
+;;;   (pad n)                       精确插 n 个字节(填什么由段 kind 定)
 ;;;   (value 宽度 值)               宽度个字节, 值的字节序还没定
 ;;;   (align n)                     对齐请求
 ;;;
@@ -69,6 +70,13 @@
 (define (align-form? x)
   (and (form? x) (eq? (car x) 'align) (= 2 (length x))
        (exact-positive-integer? (cadr x))))
+
+;; (pad n): 精确插 n 个字节（填什么由段的 kind 决定，见 target.rkt 的填充策略）。
+;; 和 (align n) 的区别: align 是"位置要对齐到 n"，补多少取决于当前地址；
+;; pad 是"就插 n 字节"，与地址无关。名字归 layout，本层只透传。
+(define (pad-item? x)
+  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
+       (exact-nonnegative-integer? (cadr x))))
 
 ;; (fill 字节数 b): b 重复 字节数 次。**名字归 layout**(padding 需要它), 本层只是生产者,
 ;; 所以这里的谓词不导出: 一个名字只能有一个归属。
@@ -205,6 +213,7 @@
     [(or (module-clause? it) (label-form? it)) (list it)]
     [(bytes-form? it) (list it)]
     [(fill-item? it) (list it)]
+    [(pad-item? it) (list it)]
     [(value-form? it) (list it)]
     [(align-form? it) (list it)]
     [(width-form? it) (list (value-item (width-of it) (cadr it)))]

@@ -101,6 +101,12 @@
 ;; 壳里的地址字照常归一
 (check-equal? (ex '((module m (b64 (ref (d t) -8)))))
               '((module m (value 8 (ref (d t) -8)))))
+;; (pad n) 是产物侧词汇, 源码也能写(精确插 n 字节); 本层只透传
+(check-equal? (ex '((label d t) (bytes 1) (pad 5) (bytes 2)))
+              '((label d t) (bytes 1) (pad 5) (bytes 2)))
+(check-exn exn:fail? (lambda () (ex '((pad -1)))))
+(check-exn exn:fail? (lambda () (ex '((pad)))))
+
 ;; 模块子句 provide/require 原样透传(名字解析是 flatten 的事)
 (check-equal? (ex '((module m (provide t) (require d) (label d t))))
               '((module m (provide t) (require d) (label d t))))

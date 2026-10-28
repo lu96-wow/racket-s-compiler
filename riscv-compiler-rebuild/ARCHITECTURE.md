@@ -78,7 +78,7 @@ layout  list ┘                items          program    program  layout   byte
 | flatten | `module` / `provide` / `require`（含 `prefix-in` / `rename-in` / `rename-out`）、`label` 链 | 透传（不认识任何助记符） |
 | expand-pseudo | 替换表里的伪指令名 | 透传（原子 / `quote` 当数据） |
 | analyze / dce | 控制流助记符、`label`、块/流结构 | 普通指令：不透明 |
-| layout | 数据 `label` / `bytes` / `fill` / `value` / `align`（输入）+ `pad`（产物）；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
+| layout | 数据 `label` / `bytes` / `fill` / `pad` / `value` / `align`；控制形式的目标位与尺寸 | **不透明代码：4 字节**（`c.*` 2 字节） |
 | relax | `needs-far` 提到的那些 control 形式 | 其余 item 不碰 |
 | encode | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序、**填充策略** | 交给 `riscv-asm` 编码 |
 
@@ -86,7 +86,7 @@ layout  list ┘                items          program    program  layout   byte
 
 - **layout 的兜底 `4 字节 / 'code` 是设计，不是漏检**：真实指令在它眼里就是不透明字节串。
 - **反过来，谁输出了别人的词汇就是 bug**：expand-data 不输出 `b16`（下游不认识），它输出 `(value 2 v)`。
-- 一个名字只能有一个归属：`fill` 归 layout（padding 需要它），expand-data 只是生产者；
+- 一个名字只能有一个归属：`fill` / `pad` 归 layout（填充与对齐是它的模型），expand-data 只是生产者；
   `value` 的宽度归 layout 量，值归 encode 解释。
 
 ## 3. 跨层铁律
@@ -115,7 +115,8 @@ layout  list ┘                items          program    program  layout   byte
 12. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
 13. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
-    `(align n)` → `(pad 字节数)`（layout）、`label` → `(offset k …)`（layout）、
+    `(align n)` → `(pad 字节数)`（layout；`pad` 本身也可直接写在源码里，
+    表示与地址无关的"精确插 n 字节"）、`label` → `(offset k …)`（layout）、
     `(value w 值)` → 字节（encode）、`li`/`la` → 指令（encode）。
 
 ## 4. IO 形状速查
@@ -142,7 +143,7 @@ layout  list ┘                items          program    program  layout   byte
 | `(la rd [tmp] 链)` | layout 量尺寸 + 判 `fits-auipc-pair?`、encode 展开（`load-pcrel`） | 人 | analyze / layout / encode |
 | rich 数据 `b8` `b16` `bN-array` `utf-string` | expand-data | 人 | expand-data |
 | `(bytes …)` `(fill n b)` `(align n)` | layout（尺寸/类别）；`fill` 归 layout，expand-data 是生产者 | expand-data / 人 | layout / encode |
-| `(pad n)` | layout 把 `(align n)` 换算成的事实 | layout | encode |
+| `(pad n)` | layout（`align` 换算成它；源码也可直接写"精确插 n 字节"） | layout / 人 | encode |
 | `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 定端序落字节 | expand-data | analyze / layout / encode |
 | `(ref 链 [加数])` | `sexp.rkt` 定形状（`ref-expr?`）；expand-data 归一；analyze 当取地址；layout 解析范围；encode 落值 | 人 / expand-data | expand-data / flatten / analyze / layout / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |

@@ -25,6 +25,7 @@ rich item                        核心 item（输出的全部词汇）
 (label 链...)                     (label 链...)
 (bytes b...)                     (bytes b...)
 (fill 字节数 b)                   (fill 字节数 b)          ; 透传（幂等）
+(pad n)                          (pad n)                 ; 透传（精确插 n 字节）
 (align n)                        (align n)                 ; layout 会换算成 (pad n)
 (b64 (ref 链 加数))               (value 8 (ref 链 加数))
 ```
@@ -65,8 +66,8 @@ rich item                        核心 item（输出的全部词汇）
    (b8-array 5 1 2)       -> (value 1 1) (value 1 2) (fill 3 2)
    ```
 4. **数组语义**：`(bN-array 总数 v...)` 前 k 个用 v1..vk，剩下的全用 vk。
-5. `(fill 字节数 b)` 的名字**归 layout**（padding 需要它），本层只是生产者；所以内部谓词叫
-   `fill-item?` 且不导出。
+5. `(fill 字节数 b)` 和 `(pad n)` 的名字**归 layout**（填充/对齐是它的模型），本层只透传；
+   所以内部谓词叫 `fill-item?` / `pad-item?`，不导出。
 
 ## 5. 不归本层管
 

@@ -59,7 +59,7 @@ layout  : ((segments (segment (name 名) (kind code|data)
 | `fill 字节数 b` | 重复次数 | 与端序无关 |
 | `value 宽度 值` | 宽度 | 值是什么由 encode 解释 |
 | `align n` | 由游标算 | **输入侧的请求**；度量时换算成 `(pad …)` |
-| `pad n` | `n` | **产物侧的事实**："这里补 n 个字节"（输出现已只剩这个） |
+| `pad n` | `n` | **精确插 n 个字节**；`align` 的换算结果就是它（源码也可以直接写） |
 
 **其余 item 一律当成不透明代码**：4 字节（`c.*` 2 字节）。不查拼写、不查操作数 ——
 那是编码层的事。所以 `item-size` / `item-kind` 的兜底 `4` / `'code` **是设计，不是漏检**。
@@ -76,7 +76,21 @@ layout  : ((segments (segment (name 名) (kind code|data)
 
 段内一个游标从 `start` 起；`label` 不占字节只记偏移；其余按 `item-size` 累加。
 
-`align` 在**这里**换算成事实：
+`align` 在**这里**换算成等价的事实 `pad`（源码里也可以直接写 `pad`，那是"就插 n 字节"）：
+
+```racket
+(align 8)   →  (pad 补出来的字节数)      ; 取决于绝对地址
+(pad 5)     →  (pad 5)                   ; 源码直接写: 与地址无关
+```
+
+`pad` 的两个用途（都归本层度量、encode 落字节）：
+
+| 来源 | 语义 | 常见场合 |
+| --- | --- | --- |
+| `align` 换算 | 补到对齐 | 结构体字段、指令对齐 |
+| 源码写 `pad` | 精确插 n 字节 | 固定大小的槽位、把段补到某个长度 |
+
+填什么与地址无关，只由段的 `kind` 决定（`target.rkt`）：`code` → `nop` / `c.nop`，`data` → 0。
 
 ```racket
 (align n)  ->  (pad (modulo (- n (modulo (+ start cursor) n)) n))
