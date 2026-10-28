@@ -50,6 +50,9 @@ racket expand-data/test.rkt # 每层也都能单独测
 racket encode/test.rkt
 
 racket encode/demo.rkt      # 看最后一层：layout -> 字节（带 hexdump）
+
+# 独立黑盒契约测试（只 require 公开 API；逐层 + 整条 flow）
+racket ../riscv-compiler-rebuild-test/run.rkt
 ```
 
 每层还有一个 `demo.rkt`，只出现**该层自己的**输入输出。

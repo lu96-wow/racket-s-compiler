@@ -50,7 +50,7 @@ layout  : ((segments (segment (name 名) (kind code|data)
 
 ## 4. 规则
 
-### 4.1 本层的数据词汇只有五个
+### 4.1 本层的数据词汇只有六个
 
 | item | 尺寸 | 说明 |
 | --- | --- | --- |

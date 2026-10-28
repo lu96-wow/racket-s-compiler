@@ -40,9 +40,9 @@ layout  list ┘                items          program    program  layout   byte
 | stage | 文件 | 一句话 | 读 | 写 | 细节 |
 | --- | --- | --- | --- | --- | --- |
 | `expand-data` | `expand-data/expand.rkt` | 数据定义 | `rich-data` | `data-items` | [`expand-data/DESIGN.md`](expand-data/DESIGN.md) |
-| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `as-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
-| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `as-items` | `as-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
-| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `as-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
+| `flatten` | `flatten/flatten.rkt` | 模块系统（provide/require）+ 链式查表 | `program-items` `data-items` | 同左 + `names` | [`flatten/DESIGN.md`](flatten/DESIGN.md) |
+| `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | `program-items` | `program-items` | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
+| `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析（只分析） | `program-items` `data-items` | `program` | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
 | `dce` | `dce/dce.rkt` | 死代码消除 | `program` | `program` | [`dce/DESIGN.md`](dce/DESIGN.md) |
 | `layout` | `layout/forms.rkt` `layout/layout.rkt` | 布局计算 | `program` `data-items` `layout-spec` | `layout` | [`layout/DESIGN.md`](layout/DESIGN.md) |
 | `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | 同 `layout` | `layout` | [`relax/DESIGN.md`](relax/DESIGN.md) |
@@ -207,6 +207,9 @@ segment d start=#x200000 size=11
   layout 185 / relax 30 / encode 70 / flow 24。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
+- 另有一个独立黑盒契约测试目录 `../riscv-compiler-rebuild-test/`：只 require 公开 API，
+  按 `DESIGN.md` 锁定每层 s-exp 形状，并跑整条 `flow` 的字节 golden；入口是
+  `racket ../riscv-compiler-rebuild-test/run.rkt`。
 
 ## 8. 已知缺口 / 未实现
 
