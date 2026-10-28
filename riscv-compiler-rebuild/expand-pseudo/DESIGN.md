@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | `rewrite-program` | item 列表 | item 列表 |
 | `rewrite-tree` | item / 树 / 原子 | 同形 |
-| `expand-item` | 单条 | 单条（展开到不再命中） |
+| `rewrite-item` | 单条 | 单条（展开到不再命中） |
 | `apply-rule` | 单条 | 单条 / `#f`（只跑一次规则） |
 | `make-table` / `check-rows` | 行表 | table / void |
 | `pseudo-leftover?` / `fully-rewritten?` | item 列表 / 单条 | 布尔 |

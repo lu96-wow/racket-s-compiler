@@ -56,13 +56,13 @@
 ;; 目标事实
 ;; ---------------------------------------------------------------------------
 
-(define (target-has-extension? t e)
-  (and (memq e (target-extensions t)) #t))
+(define (target-has-extension? target e)
+  (and (memq e (target-extensions target)) #t))
 
-(define (target-compressed? t)
-  (or (target-has-extension? t 'rv_c)
-      (target-has-extension? t 'rv32_c)
-      (target-has-extension? t 'rv64_c)))
+(define (target-compressed? target)
+  (or (target-has-extension? target 'rv_c)
+      (target-has-extension? target 'rv32_c)
+      (target-has-extension? target 'rv64_c)))
 
 ;; 整数 -> width 个字节(按当前 target 的端序)。
 (define (integer->bytes target width value)
@@ -96,19 +96,19 @@
     [(data) (make-list n 0)]
     [else (error 'padding-bytes "unknown segment kind: ~a" kind)]))
 
-(define (code-padding-bytes t n)
+(define (code-padding-bytes target n)
   (define quads (quotient n 4))
   (define rest (remainder n 4))
   (append
-   (append* (for/list ([_ (in-range quads)]) (integer->bytes t 4 nop-word)))
+   (append* (for/list ([_ (in-range quads)]) (integer->bytes target 4 nop-word)))
    (case rest
      [(0) '()]
      [(2)
-      (unless (target-compressed? t)
+      (unless (target-compressed? target)
         (error 'padding-bytes
                "code 段需要补 2 字节, 但当前 target 没有 C 扩展: ~a"
-               (target-extensions t)))
-      (integer->bytes t 2 c-nop-word)]
+               (target-extensions target)))
+      (integer->bytes target 2 c-nop-word)]
      [else
       (error 'padding-bytes
              "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"

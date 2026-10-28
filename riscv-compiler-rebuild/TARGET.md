@@ -76,7 +76,7 @@ target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 stage 的 run 函数签名是：
 
 ```racket
-(lambda (in target) ...)
+(lambda (target in) ...)
 ```
 
 只有 layout / relax / encode 用 `target`，其它 stage 忽略。

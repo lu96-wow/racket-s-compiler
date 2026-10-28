@@ -16,7 +16,7 @@
 (provide syntax-plan?
          syntax-plan-source
          syntax-plan-arities
-         syntax-plan-canonical-arity
+         syntax-plan-arity
          syntax-plan-has-flags?
          syntax-plan-build
          syntax-plan-apply
@@ -29,7 +29,7 @@
    build)        ; (operands aq rl -> riscv-asm 函数参数)
   #:transparent)
 
-(define (syntax-plan-canonical-arity plan)
+(define (syntax-plan-arity plan)
   (car (syntax-plan-arities plan)))
 
 (define (syntax-plan-apply plan target operands aq rl)
@@ -42,7 +42,7 @@
                     (list (order-plan-arity order))
                     (order-plan-has-flags? order)
                     (lambda (target operands aq rl)
-                      (order-plan-build order target operands aq rl)))))
+                      (order-plan->args order target operands aq rl)))))
 
 (define (direct->syntax-plan direct)
   (and direct

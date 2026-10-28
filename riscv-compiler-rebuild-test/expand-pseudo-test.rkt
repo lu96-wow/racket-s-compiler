@@ -4,7 +4,7 @@
 (require rackunit
          "helpers.rkt"
          (only-in "../riscv-compiler-rebuild/expand-pseudo/rewrite.rkt"
-                  rewrite-program rewrite-tree expand-item apply-rule
+                  rewrite-program rewrite-tree rewrite-item apply-rule
                   pseudo-name? rules-for check-rows make-table
                   pseudo-leftover? fully-rewritten?
                   rewrite-rows directive-heads
@@ -54,36 +54,36 @@
 ;; 典型替换: 加载 / 存储 / move / 缺的那半分支 / nop
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (expand-item '(load-32 t0 sp 8)) '(lwu t0 sp 8))
-(check-equal? (expand-item '(l32 t0 sp 8)) '(lwu t0 sp 8))
-(check-equal? (expand-item '(load-8 t0 a)) '(lbu t0 a 0))       ; 偏移补 0
-(check-equal? (expand-item '(l8 t0 a)) '(lbu t0 a 0))
-(check-equal? (expand-item '(load-s16 t0 a 4)) '(lh t0 a 4))
-(check-equal? (expand-item '(load-64 t0 a 8)) '(ld t0 a 8))
+(check-equal? (rewrite-item '(load-32 t0 sp 8)) '(lwu t0 sp 8))
+(check-equal? (rewrite-item '(l32 t0 sp 8)) '(lwu t0 sp 8))
+(check-equal? (rewrite-item '(load-8 t0 a)) '(lbu t0 a 0))       ; 偏移补 0
+(check-equal? (rewrite-item '(l8 t0 a)) '(lbu t0 a 0))
+(check-equal? (rewrite-item '(load-s16 t0 a 4)) '(lh t0 a 4))
+(check-equal? (rewrite-item '(load-64 t0 a 8)) '(ld t0 a 8))
 
-(check-equal? (expand-item '(store-32 t0 a 4)) '(sw t0 a 4))
-(check-equal? (expand-item '(st64 ra sp)) '(sd ra sp 0))
-(check-equal? (expand-item '(store-8 s a)) '(sb s a 0))
+(check-equal? (rewrite-item '(store-32 t0 a 4)) '(sw t0 a 4))
+(check-equal? (rewrite-item '(st64 ra sp)) '(sd ra sp 0))
+(check-equal? (rewrite-item '(store-8 s a)) '(sb s a 0))
 
-(check-equal? (expand-item '(move a0 a1)) '(add a0 a1 x0))
-(check-equal? (expand-item '(mv a0 a1)) '(add a0 a1 x0))
+(check-equal? (rewrite-item '(move a0 a1)) '(add a0 a1 x0))
+(check-equal? (rewrite-item '(mv a0 a1)) '(add a0 a1 x0))
 
-(check-equal? (expand-item '(ble a b L)) '(bge b a L))
-(check-equal? (expand-item '(bgt a b L)) '(blt b a L))
-(check-equal? (expand-item '(bleu a b L)) '(bgeu b a L))
-(check-equal? (expand-item '(bgtu a b L)) '(bltu b a L))
+(check-equal? (rewrite-item '(ble a b L)) '(bge b a L))
+(check-equal? (rewrite-item '(bgt a b L)) '(blt b a L))
+(check-equal? (rewrite-item '(bleu a b L)) '(bgeu b a L))
+(check-equal? (rewrite-item '(bgtu a b L)) '(bltu b a L))
 
-(check-equal? (expand-item '(nop)) '(addi x0 x0 0))
-(check-equal? (expand-item '(c.nop)) '(c.addi x0 0))
+(check-equal? (rewrite-item '(nop)) '(addi x0 x0 0))
+(check-equal? (rewrite-item '(c.nop)) '(c.addi x0 0))
 
 ;; 形状不匹配: 保留原拼写, 不报错
-(check-equal? (expand-item '(load-32 t0)) '(load-32 t0))
-(check-equal? (expand-item '(l8 t0 a 0 extra)) '(l8 t0 a 0 extra))
+(check-equal? (rewrite-item '(load-32 t0)) '(load-32 t0))
+(check-equal? (rewrite-item '(l8 t0 a 0 extra)) '(l8 t0 a 0 extra))
 
 ;; 操作数是值: 不进去
-(check-equal? (expand-item '(move t0 (load-32 t1 sp 8)))
+(check-equal? (rewrite-item '(move t0 (load-32 t1 sp 8)))
               '(add t0 (load-32 t1 sp 8) x0))
-(check-equal? (expand-item '(jal x0 (l8 foo))) '(jal x0 (l8 foo)))
+(check-equal? (rewrite-item '(jal x0 (l8 foo))) '(jal x0 (l8 foo)))
 
 ;; ---------------------------------------------------------------------------
 ;; 遍历 / 透传 / 幂等
@@ -110,13 +110,13 @@
 ;; 表里写出自环: 建表不报, 展开时也不会卡死
 (define t-loop (make-table '((loop ((?d) (loop ?d))))))
 (check-error "self-cycle"
-             (lambda () (expand-item '(loop t0) t-loop)))
+             (lambda () (rewrite-item '(loop t0) t-loop)))
 
 (define t-pingpong
   (make-table '((ping ((?d) (pong ?d)))
                 (pong ((?d) (ping ?d))))))
 (check-error "mutual cycle"
-             (lambda () (expand-item '(ping t0) t-pingpong)))
+             (lambda () (rewrite-item '(ping t0) t-pingpong)))
 
 ;; 形状错误 / 保留字 / 重名, 建表时就报
 (check-error "rule shape" (lambda () (check-rows '((a ((?x) (b ?x) extra))))))
@@ -129,8 +129,8 @@
 
 (define t-custom
   (make-table '((inc add1 ((?x) (addi ?x ?x 1))))))
-(check-equal? (expand-item '(inc a0) t-custom) '(addi a0 a0 1))
-(check-equal? (expand-item '(add1 a0) t-custom) '(addi a0 a0 1))
+(check-equal? (rewrite-item '(inc a0) t-custom) '(addi a0 a0 1))
+(check-equal? (rewrite-item '(add1 a0) t-custom) '(addi a0 a0 1))
 (check-true (pseudo-name? 'inc t-custom))
 (check-false (pseudo-name? 'inc))
 

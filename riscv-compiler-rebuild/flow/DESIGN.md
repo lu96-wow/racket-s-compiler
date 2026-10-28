@@ -94,7 +94,7 @@
 | `stage-groups` / `group-names` | — | 层组表 / 组名列表 |
 | `providers-of` | 值名字 | 能产出它的 stage 名（排好序） |
 | `default-flow` | — | `'(expand-data flatten expand-pseudo analyze dce relax encode)` |
-| `(struct stage name requires provides run doc)` | `run` 接收 `(in target)` | — |
+| `(struct stage name requires provides run doc)` | `run` 接收 `(target in)` | — |
 
 ## 5. 规则
 

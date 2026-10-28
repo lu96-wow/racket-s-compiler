@@ -62,12 +62,12 @@
   (hash
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
-          (lambda (in _target) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
+          (lambda (_target in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
    (stage 'flatten '(program-items data-items) '(program-items data-items names)
-          (lambda (in _target)
+          (lambda (_target in)
             (define-values (outs names)
               (flatten-inputs (list (hash-ref in 'program-items)
                                     (hash-ref in 'data-items))))
@@ -78,24 +78,24 @@
 
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
-          (lambda (in _target) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
+          (lambda (_target in) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
           "伪指令 -> 真指令（按表替换）")
 
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
-          (lambda (in _target)
+          (lambda (_target in)
             (hash 'program
                   (analyze (hash-ref in 'program-items) (hash-ref in 'data-items))))
           "控制流分析: item -> program(blocks + flows)；data 只贡献 roots")
 
    'dce
    (stage 'dce '(program) '(program)
-          (lambda (in _target) (hash 'program (eliminate-dead (hash-ref in 'program))))
+          (lambda (_target in) (hash 'program (eliminate-dead (hash-ref in 'program))))
           "死代码消除（三个 pass 跑到不动点）")
 
    'layout
    (stage 'layout '(program data-items layout-spec) '(layout)
-          (lambda (in target)
+          (lambda (target in)
             (hash 'layout
                   (layout-program target
                                   (hash-ref in 'program)
@@ -105,7 +105,7 @@
 
    'relax
    (stage 'relax '(program data-items layout-spec) '(layout)
-          (lambda (in target)
+          (lambda (target in)
             (hash 'layout
                   (relax target
                          (hash-ref in 'program)
@@ -115,7 +115,7 @@
 
    'encode
    (stage 'encode '(layout) '(build)
-          (lambda (in target) (hash 'build (encode-layout target (hash-ref in 'layout))))
+          (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'layout))))
           "编码: layout -> (build …)；有 problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@
                (let ([ps (providers-of r)])
                  (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
     (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
-    (for ([(k v) (in-hash ((stage-run st) in target))]) (hash-set! ctx k v)))
+    (for ([(k v) (in-hash ((stage-run st) target in))]) (hash-set! ctx k v)))
   ctx)
 
 ;; 单层: 只返回这层 provides 的值, 不带 seed 和其它上下文。

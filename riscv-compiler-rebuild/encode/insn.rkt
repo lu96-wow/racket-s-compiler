@@ -66,7 +66,7 @@
   (define info (lookup-instruction target base))
   (and info
        (let ([plan (syntax-plan-for info)])
-         (and plan (syntax-plan-canonical-arity plan)))))
+         (and plan (syntax-plan-arity plan)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 编码

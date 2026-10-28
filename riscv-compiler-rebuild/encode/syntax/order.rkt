@@ -21,7 +21,7 @@
          order-plan-keys
          order-plan-arity
          order-plan-has-flags?
-         order-plan-build)
+         order-plan->args)
 
 (define (plan-key names) (string-join names " "))
 
@@ -102,7 +102,7 @@
 (define (order-plan-has-flags? plan)
   (and (ormap (lambda (p) (memq p '(aq rl))) plan) #t))
 
-(define (order-plan-build plan target operands aq rl)
+(define (order-plan->args plan target operands aq rl)
   (for/list ([p (in-list plan)])
     (cond
       [(eq? p 'aq) aq]

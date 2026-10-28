@@ -261,3 +261,33 @@ segment d start=#x200000 size=11
 | 修掉一个缺口 | 本文 §8 + 该层 §7 |
 | 新增 API | 该层 `DESIGN.md` §3 |
 | 新增跨层共享的形状/事实 | 放顶层（`sexp.rkt` / `target.rkt`），并在本文这一节登记 |
+
+## 10. 命名与代码规范
+
+### 10.1 命名
+
+| 形状 | 约定 | 例子 |
+| --- | --- | --- |
+| 谓词 | `?` 结尾 | `path?` `known-instruction?` `scratch-hole?` |
+| 转换 | `->` | `program->sexp` `integer->bytes` `order-plan->args` |
+| 列表 | 复数 | `stage-names` `group-names` `layout-problems` |
+| target 访问 | `target-<field>` | `target-xlen` `target-extensions` |
+| stage 入口 | `<stage>-<object>` | `layout-program` `encode-layout` `run-flow` |
+| 局部 helper | `*->*` 或动词 | `order-plan->args` `syntax-plan-apply` |
+
+### 10.2 参数顺序
+
+- **target 是第一个参数**：`layout-program target ...`、`relax target ...`、
+  `encode-layout target ...`、`encode-instruction target ...`、
+  `integer->bytes target ...`、`padding-bytes target ...`。
+- 数据/值是第一参数，context/计划是方法式第一参数：
+  `syntax-plan-apply plan target ...`、`order-plan->args plan target ...`。
+- stage 的 `run` 回调是 `(target in)`，target 在前。
+
+### 10.3 其它
+
+- 不用动态参数/全局 target；target 显式传参。
+- 公共 API 与内部 helper 分开：内部 helper 不为了兼容随意 re-provide。
+- item 形状、尺寸、问题类别只在所属层定义，不在调用方猜。
+- 代码统一 `#lang racket`、两空格缩进、`;;;` 文件头、`;;` 分节。
+- 测试里的 `test-target` 只是 fixture，不是运行时默认值。

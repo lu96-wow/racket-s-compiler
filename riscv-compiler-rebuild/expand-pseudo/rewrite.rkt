@@ -41,7 +41,7 @@
          check-rows
          ;; 变换
          apply-rule
-         expand-item
+         rewrite-item
          rewrite-tree
          rewrite-program
          as-items
@@ -201,7 +201,7 @@
 (define max-expand-steps 64)
 
 ;; 一条 item: 展开到不再命中
-(define (expand-item form [tbl default-table])
+(define (rewrite-item form [tbl default-table])
   (define y (and (form? form) (apply-rule form tbl)))
   (if y (rewrite-chain y tbl 1) form))
 
@@ -222,7 +222,7 @@
     [(not (form? x)) x]
     [(eq? (car x) 'quote) x]                             ; 数据, 不进去
     [(pair? (car x)) (each x)]                            ; item 列表
-    [else (expand-item x tbl)]))
+    [else (rewrite-item x tbl)]))
 
 ;; ---------------------------------------------------------------------------
 ;; 验证: 输出中不允许残留任何 P-asm 拼写
