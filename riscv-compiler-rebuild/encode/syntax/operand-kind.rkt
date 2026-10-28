@@ -16,10 +16,10 @@
 
 (provide operand-kind-value)
 
-(define (operand-kind-value kind v)
+(define (operand-kind-value target kind v)
   (case kind
     [(plain gpr) (operand-value v)]
-    [(csr) (csr-value v)]
+    [(csr) (csr-value target v)]
     [(zimm5)
      (unless (exact-integer? v)
        (error 'encode-instruction "zimm5 must be an integer: ~e" v))

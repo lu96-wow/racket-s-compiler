@@ -3,8 +3,13 @@
 
 (require rackunit
          "helpers.rkt"
-         "../riscv-compiler-rebuild/flow/flow.rkt"
+         (rename-in "../riscv-compiler-rebuild/flow/flow.rkt"
+                    [run-flow run-flow*] [run-stage run-stage*])
          (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base))
+
+(define test-target target-rv64-base)
+(define (run-flow selector [seeds '()]) (run-flow* test-target selector seeds))
+(define (run-stage name [seeds '()]) (run-stage* test-target name seeds))
 
 ;; ---------------------------------------------------------------------------
 ;; 层表
@@ -59,12 +64,10 @@
 (define ctx (run-flow default-flow simple-seeds))
 (check-true (hash-has-key? ctx 'data-items))
 
-;; target seed 可选; 显式给 rv64-base 结果不变, 并留在 context 里
-(define targeted
-  (run-flow default-flow (cons (cons 'target target-rv64-base) simple-seeds)))
+;; target 是 run-flow 的显式参数
+(define targeted (run-flow* target-rv64-base default-flow simple-seeds))
 (check-equal? (build-bytes (flow-value targeted 'build) 'c)
               (build-bytes (flow-value ctx 'build) 'c))
-(check-equal? (hash-ref targeted 'target) target-rv64-base)
 (check-true (hash-has-key? ctx 'program-items))
 (check-true (hash-has-key? ctx 'names))
 (check-true (hash-has-key? ctx 'program))

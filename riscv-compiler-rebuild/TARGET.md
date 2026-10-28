@@ -1,15 +1,11 @@
 # target profile 设计
 
-> 状态：已实现。`current-target` 由 `run-flow` 从 seed 绑定；旧全局常量已删除。
-
-> 目标：让 rv32 / rv64 / 不同扩展集可切换，但**不把 target 参数塞进每个函数**。
+> 状态：已实现。target 是显式参数，不使用动态参数 / 全局 `current-target`。
 >
-> 做法：target 是一个简单值 + 一个动态参数 `current-target`；
-> `run-flow` 从 seed 里取 target 并 `parameterize`，各层函数签名保持不变。
+> `run-flow`、`layout-program`、`relax`、`encode-layout`、`encode-instruction`
+> 都把 target 作为参数传下去。
 
 ## 1. 数据模型
-
-只保留真正需要的三个事实：
 
 ```racket
 (struct target (xlen endianness extensions) #:transparent)
@@ -21,127 +17,104 @@
 
 不放：
 
-- `name`：profile 的变量名就是名字
+- `name`：profile 变量名就是名字
 - `padding`：由 extensions 推导（有 C 才能用 `c.nop`）
 - ABI / 栈 / scratch / reloc：都不属于 target
 
 ## 2. Profile
 
 ```racket
-target-default      ; 当前行为：rv64 + 当前扩展
-target-rv64-base    ; 同 target-default
+target-rv64-base    ; 当前行为：rv64 + 当前扩展
 target-rv64-all     ; 所有 rv64_* + 非 rv32_* 扩展
 target-rv32-all     ; 所有 rv32_* + 非 rv64_* 扩展
 ```
 
-需要自定义时直接构造：
+自定义 target 直接构造：
 
 ```racket
 (target 'rv64 'little '(rv_i rv_m rv_a rv_c rv64_i rv64_m rv64_a))
 ```
 
 不做自动扩展依赖闭包。  
-`rv32_*` / `rv64_*` 不能混；这个由构造/测试检查，不搞复杂校验 API。
+`rv32_*` / `rv64_*` 不能混；由测试和构造检查，不搞常驻校验 API。
 
-## 3. 当前 target
-
-```racket
-(define current-target (make-parameter target-default))
-
-;; 访问
-(target-xlen (current-target))
-(target-endianness (current-target))
-(target-extensions (current-target))
-```
-
-各层**不接收 target 参数**，只读 `current-target`：
-
-- `integer->bytes`：读 `target-endianness`
-- `padding-bytes`：读 `target-extensions`（C 扩展决定 2 字节填充）
-- `layout` 的 `li` 尺寸 / `la` 判据：读 `target-xlen`
-- `encode` 的指令查找 / `li` 展开：读 `target-xlen`、`target-extensions`
-
-函数签名保持不变。
-
-## 4. flow 接入
-
-`target` 是 seed，可选：
+## 3. 显式传参
 
 ```racket
-(run-flow default-flow
-          '((target . target-rv64-all)
-            (rich-data . …)
-            (program-items . …)
-            (layout-spec . …)))
+(integer->bytes target width value)
+(padding-bytes target kind n)
+
+(item-size target x)
+(layout-program target program data layout-input)
+(relax target program data layout-input #:max-rounds 64)
+(encode-layout target layout)
+
+(encode-instruction target name operands)
+(instruction-arity target name)
+(known-instruction? target name)
 ```
 
-`run-flow` 开始时：
+没有 `current-target`，也没有 `make-parameter`。
+
+各层需要 target 时只读传入的那个值：
 
 ```racket
-(parameterize ([current-target (hash-ref ctx 'target target-default)])
-  ...跑各层...)
+(target-xlen target)
+(target-endianness target)
+(target-extensions target)
 ```
 
-不传 target 就用 `target-default`，所以现有调用不用改。  
-`run-stage` 也走 `run-flow`，因此自动支持 target seed。
+## 4. flow
+
+`target` 是 `run-flow` 的第一个参数：
+
+```racket
+(run-flow target-rv64-all default-flow seeds)
+(run-stage target-rv64-base 'flatten seeds)
+```
+
+stage 的 run 函数签名是：
+
+```racket
+(lambda (in target) ...)
+```
+
+只有 layout / relax / encode 用 `target`，其它 stage 忽略。
+
+target 不再放在 seed / context 里。
 
 ## 5. 指令缓存
 
-`lookup-instruction` 的缓存键必须包含当前扩展集：
+`lookup-instruction` 的缓存键必须包含 target 的扩展集：
 
 ```racket
-(cons (target-extensions (current-target)) name)
+(cons (target-extensions target) name)
 ```
 
-否则先查 rv64 再查 rv32 会复用错误结果。  
-这是实现里唯一必须注意 state 的地方。
+否则先查 rv64 再查 rv32 会复用错误结果。
 
 ## 6. 填充
 
-`padding-bytes` 从 `current-target` 的扩展集推导：
+`padding-bytes` 由传入 target 的扩展集推导：
 
 - 4 字节：`nop`
 - 2 字节：仅当 target 有 `rv_c` / `rv64_c` / `rv32_c` 时用 `c.nop`
 - 奇数余数：报错
 
-不单独加 padding 策略字段。以后真需要 ebreak/0xFF 填充时再加。
+不单独加 padding 策略字段。
 
-## 7. 实施顺序（已完成）
+## 7. 已实现
 
-### 1. target 值和参数（已完成）
-
-```racket
-(struct target ...)
-target-default
-target-rv64-base
-target-rv64-all
-target-rv32-all
-current-target
-```
-
-
-### 2. 内部改读 current-target（已完成）
-
-- `integer->bytes` / `padding-bytes`
-- `layout` 的 `li` / `la`
-- `encode` 的 lookup / `li`
-- lookup 缓存键
+- target 结构 + 内置 profile
+- `integer->bytes` / `padding-bytes` 显式 target
+- `item-size` / `layout-program` / `relax` / `encode-layout` 显式 target
+- `encode-instruction` / `instruction-arity` / `known-instruction?` 显式 target
+- `run-flow` / `run-stage` 显式 target
+- 指令缓存键带扩展集
 - CSR 表按 XLEN 选择（rv32 才启用 csr32-table）
-
-### 3. flow 绑定 target（已完成）
-
-- `run-flow` 从 seed 取 `target`，参数化 `current-target`
-- 测试/demo 想换 target 就加 `(target . target-rv64-all)`
-- 全扩展 profile 用 `syntax-coverage` 看语法缺项
-
-### 4. 删除旧常量（已完成）
-
-- 删除 `target-xlen` / `target-endianness` / `target-extensions` 兼容导出
-- 统一走 `current-target` + 访问器
+- 旧全局 `target-xlen` / `target-endianness` / `target-extensions` 已删除
 
 ## 8. 验证
-
-只保留两类简单检查：
 
 1. **profile 构造检查**（测试里做）
 
@@ -153,8 +126,7 @@ current-target
 2. **指令解析检查**
 
 ```racket
-(parameterize ([current-target target-rv64-all])
-  ...resolve 指令...)
+(known-instruction? target-rv64-all 'add)
 ```
 
 不搞常驻 `validate-target` API。

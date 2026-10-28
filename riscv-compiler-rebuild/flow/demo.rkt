@@ -4,7 +4,8 @@
 ;;; (list 层名 ...) 就是整条流水线: 写哪个跑哪个, 顺序就是列表顺序。
 ;;; 每个层声明"需要哪些在途值 / 产生哪些在途值", 驱动按列表跑并检查依赖。
 
-(require "flow.rkt")
+(require "flow.rkt"
+         (only-in "../target.rkt" target-rv64-base))
 
 ;; ---------------------------------------------------------------------------
 ;; 小工具（放在前面：模块级直接调用后面的 define 会报 "before its definition"）
@@ -82,7 +83,7 @@
 ;; ---------------------------------------------------------------------------
 
 (displayln (format ";; 默认流: ~a" default-flow))
-(define out (run-flow default-flow seeds))
+(define out (run-flow target-rv64-base default-flow seeds))
 (check-out out)
 
 ;; ---------------------------------------------------------------------------
@@ -92,7 +93,7 @@
 (displayln "\n;; 同一个程序, 去掉 dce")
 (define without-dce (remq 'dce default-flow))
 (displayln (format "  ~a" without-dce))
-(define out2 (run-flow without-dce seeds))
+(define out2 (run-flow target-rv64-base without-dce seeds))
 (displayln (format "  代码段 ~a 字节 (默认流 ~a 字节)"
                    (seg-size (flow-value out2 'build) 'c)
                    (seg-size (flow-value out 'build) 'c)))
@@ -103,11 +104,11 @@
 
 (displayln "\n;; 忘了 layout/relax, 直接 encode")
 (with-handlers ([exn:fail? (lambda (e) (displayln (format "  ~a" (exn-message e))))])
-  (run-flow (list 'expand-data 'flatten 'analyze 'encode) seeds))
+  (run-flow target-rv64-base (list 'expand-data 'flatten 'analyze 'encode) seeds))
 
 (displayln "\n;; 层名写错")
 (with-handlers ([exn:fail? (lambda (e) (displayln (format "  ~a" (exn-message e))))])
-  (run-flow (list 'expand-data 'no-such-layer) seeds))
+  (run-flow target-rv64-base (list 'expand-data 'no-such-layer) seeds))
 
 ;; ---------------------------------------------------------------------------
 

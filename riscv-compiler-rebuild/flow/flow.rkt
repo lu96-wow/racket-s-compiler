@@ -3,7 +3,8 @@
 ;;;
 ;;; 构建流: 用一张 stage 表 + 一个名字列表把各层串起来。
 ;;;
-;;;   (run-flow (list 'expand-data 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
+;;;   (run-flow target
+;;;             (list 'expand-data 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
 ;;; 每个 stage 声明两件事:
@@ -16,6 +17,7 @@
 ;;;   * 平层   = 两个 stage 的 requires/provides 相同（例如 layout 与 relax），
 ;;;              写哪个、写几次都由列表决定
 ;;;   * 依赖   = 运行到某步时按 requires 检查，缺了就报错并给出"谁能提供"
+;;;   * target = run-flow 的显式参数，stage run 接收 (in target)
 ;;;
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
@@ -26,8 +28,7 @@
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
          (only-in "../relax/relax.rkt" relax)
-         (only-in "../encode/encode.rkt" encode-layout)
-         (only-in "../target.rkt" current-target target-default))
+         (only-in "../encode/encode.rkt" encode-layout))
 
 (provide (struct-out stage)
          stage-table
@@ -61,12 +62,12 @@
   (hash
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
-          (lambda (in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
+          (lambda (in _target) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
    (stage 'flatten '(program-items data-items) '(program-items data-items names)
-          (lambda (in)
+          (lambda (in _target)
             (define-values (outs names)
               (flatten-inputs (list (hash-ref in 'program-items)
                                     (hash-ref in 'data-items))))
@@ -77,42 +78,44 @@
 
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
-          (lambda (in) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
+          (lambda (in _target) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
           "伪指令 -> 真指令（按表替换）")
 
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
-          (lambda (in)
+          (lambda (in _target)
             (hash 'program
                   (analyze (hash-ref in 'program-items) (hash-ref in 'data-items))))
           "控制流分析: item -> program(blocks + flows)；data 只贡献 roots")
 
    'dce
    (stage 'dce '(program) '(program)
-          (lambda (in) (hash 'program (eliminate-dead (hash-ref in 'program))))
+          (lambda (in _target) (hash 'program (eliminate-dead (hash-ref in 'program))))
           "死代码消除（三个 pass 跑到不动点）")
 
    'layout
    (stage 'layout '(program data-items layout-spec) '(layout)
-          (lambda (in)
+          (lambda (in target)
             (hash 'layout
-                  (layout-program (hash-ref in 'program)
+                  (layout-program target
+                                  (hash-ref in 'program)
                                   (hash-ref in 'data-items)
                                   (hash-ref in 'layout-spec))))
           "布局计算: 放置 + 度量 + 符号表 + problems")
 
    'relax
    (stage 'relax '(program data-items layout-spec) '(layout)
-          (lambda (in)
+          (lambda (in target)
             (hash 'layout
-                  (relax (hash-ref in 'program)
+                  (relax target
+                         (hash-ref in 'program)
                          (hash-ref in 'data-items)
                          (hash-ref in 'layout-spec))))
           "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
 
    'encode
    (stage 'encode '(layout) '(build)
-          (lambda (in) (hash 'build (encode-layout (hash-ref in 'layout))))
+          (lambda (in target) (hash 'build (encode-layout target (hash-ref in 'layout))))
           "编码: layout -> (build …)；有 problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
@@ -199,32 +202,31 @@
             "seeds 必须是 (名字 . 值) 列表或 context hash: ~e" seeds)])
   ctx)
 
-(define (run-flow selector [seeds '()])
+(define (run-flow target selector [seeds '()])
   (define names (select-stages selector))
   (define ctx (seed-context seeds))
-  (parameterize ([current-target (hash-ref ctx 'target target-default)])
-    (for ([n (in-list names)] [step (in-naturals)])
-      (define st (hash-ref stage-table n))
-      (for ([r (in-list (stage-requires st))])
-        (unless (hash-has-key? ctx r)
-          (error 'run-flow
-                 "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
-                 step n r
-                 (let ([ps (providers-of r)])
-                   (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
-      (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
-      (for ([(k v) (in-hash ((stage-run st) in))]) (hash-set! ctx k v))))
+  (for ([n (in-list names)] [step (in-naturals)])
+    (define st (hash-ref stage-table n))
+    (for ([r (in-list (stage-requires st))])
+      (unless (hash-has-key? ctx r)
+        (error 'run-flow
+               "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
+               step n r
+               (let ([ps (providers-of r)])
+                 (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
+    (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
+    (for ([(k v) (in-hash ((stage-run st) in target))]) (hash-set! ctx k v)))
   ctx)
 
 ;; 单层: 只返回这层 provides 的值, 不带 seed 和其它上下文。
 ;; 要跑片段/层组用 run-flow。
-(define (run-stage name [seeds '()])
+(define (run-stage target name [seeds '()])
   (unless (and (symbol? name) (hash-has-key? stage-table name))
     (error 'run-stage
            "~a 不是层名；已知层: ~a；已知组: ~a（层组/片段用 run-flow）"
            name (stage-names) (group-names)))
   (define st (hash-ref stage-table name))
-  (define ctx (run-flow (list name) seeds))
+  (define ctx (run-flow target (list name) seeds))
   (for/hash ([v (in-list (stage-provides st))])
     (values v (hash-ref ctx v))))
 

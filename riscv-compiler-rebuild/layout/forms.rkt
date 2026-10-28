@@ -12,9 +12,9 @@
 (require "../sexp.rkt"
          (only-in "../analyze/insn.rkt"
                   zero-register? branch-instruction? jump-instruction?)
-         (only-in "../target.rkt" current-target target-xlen)
+         (only-in "../target.rkt" target-xlen)
          ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
-         ;; 不是上界。展开长度和 XLEN 有关, 所以读 current-target 的 xlen。
+         ;; 不是上界。展开长度和 XLEN 有关, 所以用调用方传进来的 target。
          (only-in "../../riscv-help/main.rkt" li-size))
 
 (provide form? name? path? normalize-path
@@ -122,7 +122,7 @@
 ;; 字节数
 ;; ---------------------------------------------------------------------------
 
-(define (item-size x)
+(define (item-size target x)
   (cond
     [(label-form? x) 0]
     [(align-form? x) #f]              ; 由游标算(度量时换算成 pad)
@@ -140,7 +140,7 @@
      (case (car x)
        [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
        [else 4])]
-    [(eq? (car x) 'li) (li-size (caddr x) #:word-size (target-xlen (current-target)))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
+    [(eq? (car x) 'li) (li-size (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
     [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 报 la-too-far
     [else 4]))
 

@@ -8,6 +8,7 @@
 ;;; 输出: ((segments (segment ...) ...) (symbols ...) (problems ...))
 
 (require "layout.rkt"
+         (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" sexp->program))
 
 (define prog
@@ -37,7 +38,7 @@
     (place prog1cold (prog1cold cold))
     (place data1     (data1 table) (data1 ptr))))
 
-(define laid (layout-program prog data layout-input))
+(define laid (layout-program target-rv64-base prog data layout-input))
 
 (displayln ";; layout 输出 (offset 注解 + 符号 + 问题)")
 (for ([seg (in-list (cdr (assoc 'segments laid)))])

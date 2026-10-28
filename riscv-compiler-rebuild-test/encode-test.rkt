@@ -3,14 +3,31 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/encode/insn.rkt"
-                  encode-instruction instruction-arity known-instruction? split-aqrl)
-         (only-in "../riscv-compiler-rebuild/encode/encode.rkt"
-                  encode-layout)
-         (only-in "../riscv-compiler-rebuild/target.rkt"
-                  current-target target-xlen target-endianness target-extensions
-                  target target-default target-rv64-base target-rv64-all target-rv32-all
-                  integer->bytes padding-bytes))
+         (rename-in "../riscv-compiler-rebuild/encode/insn.rkt"
+                    [encode-instruction encode-instruction*]
+                    [instruction-arity instruction-arity*]
+                    [known-instruction? known-instruction?*]
+                    [split-aqrl split-aqrl])
+         (rename-in "../riscv-compiler-rebuild/encode/encode.rkt"
+                    [encode-layout encode-layout*])
+         (rename-in "../riscv-compiler-rebuild/target.rkt"
+                    [target-xlen target-xlen]
+                    [target-endianness target-endianness]
+                    [target-extensions target-extensions]
+                    [target target]
+                    [target-rv64-base target-rv64-base]
+                    [target-rv64-all target-rv64-all]
+                    [target-rv32-all target-rv32-all]
+                    [integer->bytes integer->bytes*]
+                    [padding-bytes padding-bytes*]))
+
+(define test-target target-rv64-base)
+(define (encode-instruction name operands) (encode-instruction* test-target name operands))
+(define (instruction-arity name) (instruction-arity* test-target name))
+(define (known-instruction? name) (known-instruction?* test-target name))
+(define (integer->bytes width value) (integer->bytes* test-target width value))
+(define (padding-bytes kind n) (padding-bytes* test-target kind n))
+(define (encode-layout layout) (encode-layout* test-target layout))
 
 (define (word name . ops)
   (define-values (w n) (encode-instruction name ops))
@@ -25,27 +42,24 @@
 ;; 目标事实
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (target-xlen (current-target)) 'rv64)
-(check-equal? (target-endianness (current-target)) 'little)
+(check-equal? (target-xlen test-target) 'rv64)
+(check-equal? (target-endianness test-target) 'little)
 (check-equal? (target-xlen target-rv64-base) 'rv64)
 (check-equal? (target-xlen target-rv32-all) 'rv32)
 (check-false (memq 'rv32_i (target-extensions target-rv64-all)))
 (check-false (memq 'rv64_i (target-extensions target-rv32-all)))
 
 ;; target 切换必须影响查表, 不能复用同一个缓存
-(parameterize ([current-target target-rv64-base])
-  (check-true (known-instruction? 'lr.d)))
-(parameterize ([current-target target-rv32-all])
-  (check-false (known-instruction? 'lr.d)))
-(parameterize ([current-target target-rv64-base])
-  (check-true (known-instruction? 'lr.d)))
+(check-true (known-instruction?* target-rv64-base 'lr.d))
+(check-false (known-instruction?* target-rv32-all 'lr.d))
+(check-true (known-instruction?* target-rv64-base 'lr.d))
 
-;; 端序 / 无 C 时的填充由 current-target 决定
-(parameterize ([current-target (target 'rv64 'big '(rv_i))])
-  (check-equal? (integer->bytes 4 #x12345678) '(#x12 #x34 #x56 #x78)))
-(parameterize ([current-target (target 'rv64 'little '(rv_i))])
-  (check-equal? (padding-bytes 'code 4) '(#x13 #x00 #x00 #x00))
-  (check-error "没有 C 就不能补 2 字节" (lambda () (padding-bytes 'code 2))))
+;; 端序 / 无 C 时的填充由显式 target 决定
+(define big-target (target 'rv64 'big '(rv_i)))
+(define no-c-target (target 'rv64 'little '(rv_i)))
+(check-equal? (integer->bytes* big-target 4 #x12345678) '(#x12 #x34 #x56 #x78))
+(check-equal? (padding-bytes* no-c-target 'code 4) '(#x13 #x00 #x00 #x00))
+(check-error "没有 C 就不能补 2 字节" (lambda () (padding-bytes* no-c-target 'code 2)))
 
 (check-equal? (integer->bytes 4 #x12345678) '(#x78 #x56 #x34 #x12))
 (check-equal? (integer->bytes 2 258) '(2 1))
@@ -188,8 +202,8 @@
 (check-equal? (instruction-arity 'fence.i) 0)
 (check-error "unknown CSR" (lambda () (encode-instruction 'csrr '(a0 no-such-csr))))
 (check-error "rv32-only CSR 不在当前 target" (lambda () (encode-instruction 'csrr '(a0 cycleh))))
-(parameterize ([current-target target-rv32-all])
-  (check-equal? (word 'csrr 'a0 'cycleh) (list #xc8002573 4)))
+(check-equal? (let-values ([(w _) (encode-instruction* target-rv32-all 'csrr '(a0 cycleh))]) w)
+              #xc8002573)
 
 ;; ---------------------------------------------------------------------------
 ;; layout -> build: 代码 + 数据 + 对齐

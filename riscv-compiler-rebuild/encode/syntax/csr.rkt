@@ -15,16 +15,16 @@
 
 (define rv32-csr-table (hash-union csr-table csr32-table))
 
-(define (csr-table-for-target)
-  (if (eq? (target-xlen (current-target)) 'rv32)
+(define (csr-table-for-target target)
+  (if (eq? (target-xlen target) 'rv32)
       rv32-csr-table
       csr-table))
 
-(define (csr-value x)
+(define (csr-value target x)
   (cond
     [(exact-integer? x) x]
     [(symbol? x)
-     (hash-ref (csr-table-for-target) x
+     (hash-ref (csr-table-for-target target) x
                (lambda ()
                  (error 'encode-instruction "unknown CSR: ~a" x)))]
     [else

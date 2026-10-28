@@ -3,12 +3,16 @@
 
 (require rackunit
          "helpers.rkt"
-         "../riscv-compiler-rebuild/flow/flow.rkt"
+         (rename-in "../riscv-compiler-rebuild/flow/flow.rkt" [run-flow run-flow*])
+         (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base)
          (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
                   layout-problems)
          (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
                   program-blocks program-flows block-head
                   flow-root? flow-fallthrough))
+
+(define test-target target-rv64-base)
+(define (run-flow selector [seeds '()]) (run-flow* test-target selector seeds))
 
 ;; ---------------------------------------------------------------------------
 ;; ARCHITECTURE.md §6 的规范例子: 逐字节对照

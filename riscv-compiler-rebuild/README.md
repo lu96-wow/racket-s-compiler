@@ -17,10 +17,10 @@ layout  list ┘                items          program    program  layout   byte
 层名就是目录名。**跑哪些层、什么顺序，由 `flow` 的选择器决定**：
 
 ```racket
-(run-flow '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
-(run-flow 'frontend seeds)    ; 层组 frontend
-(run-flow 'analyze seeds)     ; 单层
-(run-stage 'flatten seeds)    ; 只跑一层，只返回它的输出
+(run-flow target-rv64-base '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
+(run-flow target-rv64-base 'frontend seeds)    ; 层组 frontend
+(run-flow target-rv64-base 'analyze seeds)     ; 单层
+(run-stage target-rv64-base 'flatten seeds)    ; 只跑一层，只返回它的输出
 ```
 
 不写进选择器的层就是关掉；`layout` 和 `relax` 是平层（同进同出），写 `relax` 就够了。

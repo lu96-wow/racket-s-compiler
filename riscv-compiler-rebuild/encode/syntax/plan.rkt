@@ -32,8 +32,8 @@
 (define (syntax-plan-canonical-arity plan)
   (car (syntax-plan-arities plan)))
 
-(define (syntax-plan-apply plan operands aq rl)
-  ((syntax-plan-build plan) operands aq rl))
+(define (syntax-plan-apply plan target operands aq rl)
+  ((syntax-plan-build plan) target operands aq rl))
 
 (define (order->syntax-plan info)
   (define order (order-plan-of info))
@@ -41,15 +41,15 @@
        (syntax-plan 'order
                     (list (order-plan-arity order))
                     (order-plan-has-flags? order)
-                    (lambda (operands aq rl)
-                      (order-plan-build order operands aq rl)))))
+                    (lambda (target operands aq rl)
+                      (order-plan-build order target operands aq rl)))))
 
 (define (direct->syntax-plan direct)
   (and direct
        (syntax-plan 'direct
                     (direct-plan-arities direct)
                     #f
-                    (lambda (operands _aq _rl)
+                    (lambda (_target operands _aq _rl)
                       ((direct-plan-build direct) operands)))))
 
 (define (syntax-plan-for info)

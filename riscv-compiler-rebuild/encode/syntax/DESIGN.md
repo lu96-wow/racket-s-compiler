@@ -28,7 +28,7 @@ encode/insn.rkt
   → syntax/plan.rkt
         ├─ direct.rkt   fence / fence.tso
         └─ order.rkt    普通形状
-  → syntax-plan-build
+  → syntax-plan-build (target)
         → operand-kind.rkt
               ├─ operand.rkt  (GPR / 整数)
               ├─ csr.rkt      (CSR 名字 / 编号)
@@ -44,7 +44,7 @@ encode/insn.rkt
 
 - `arities`：接受的操作数个数（如 `fence` 是 `(2 0)`）
 - `has-flags?`：是否接受 `.aq` / `.rl`
-- `build`：`operands aq rl -> riscv-asm 函数参数`
+- `build`：`target operands aq rl -> riscv-asm 函数参数`
 
 ## 3. 规则
 

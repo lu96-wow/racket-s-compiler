@@ -18,10 +18,10 @@
 ## 2. 选择器
 
 ```racket
-(run-flow 'analyze seeds)                      ; 单层
-(run-flow 'frontend seeds)                     ; 层组
-(run-flow '(frontend ir backend) seeds)        ; 多个层/组，按顺序展开
-(run-flow '((expand-data flatten) (analyze dce)) seeds) ; 任意片段
+(run-flow target 'analyze seeds)                      ; 单层
+(run-flow target 'frontend seeds)                     ; 层组
+(run-flow target '(frontend ir backend) seeds)        ; 多个层/组，按顺序展开
+(run-flow target '((expand-data flatten) (analyze dce)) seeds) ; 任意片段
 ```
 
 `select-stages` 把选择器展开成扁平层名列表；列表里的层仍然按顺序执行，
@@ -41,11 +41,8 @@
 ## 3. 输入 / 输出
 
 ```racket
-(run-flow selector seeds)
+(run-flow target selector seeds)
 ;; -> context (hash)，用 (flow-value ctx 'build) 取出产物
-;;
-;; target 是可选 seed；不写就用 target-default
-;;   (run-flow default-flow '((target . target-rv64-all) ...))
 ```
 
 `seeds` 有两种写法：
@@ -57,7 +54,7 @@
   (layout-spec . …))
 
 ;; 2) 上一趟 run-flow 的 context 直接当下一次输入（片段测试）
-(run-flow 'ir (run-flow 'frontend seeds))
+(run-flow target 'ir (run-flow target 'frontend seeds))
 ```
 
 **在途值（名字就是契约）**
@@ -65,7 +62,6 @@
 | 名字 | 是什么 | 谁产 |
 | --- | --- | --- |
 | `rich-data` | 人写的 rich 数据（seed） | — |
-| `target` | 目标 profile（seed，可选） | — |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
 | `program-items` | 扁平程序 item（可含 `(module …)`） | seed / `flatten` / `expand-pseudo` |
 | `names` | `flatten` 建的名字表 | `flatten` |
@@ -90,15 +86,15 @@
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `run-flow` | 选择器 + seed 表/context | context |
-| `run-stage` | 单个层名 + seed 表/context | 该层 `provides` 的值（hash），不含 seed |
+| `run-flow` | target + 选择器 + seed 表/context | context |
+| `run-stage` | target + 单个层名 + seed 表/context | 该层 `provides` 的值（hash），不含 seed |
 | `select-stages` | 选择器 | 扁平层名列表 |
 | `flow-value` | context + 名字 | 值 |
 | `stage-table` / `stage-names` | — / 名字 | stage 表 / 层名列表 |
 | `stage-groups` / `group-names` | — | 层组表 / 组名列表 |
 | `providers-of` | 值名字 | 能产出它的 stage 名（排好序） |
 | `default-flow` | — | `'(expand-data flatten expand-pseudo analyze dce relax encode)` |
-| `(struct stage name requires provides run doc)` | — | — |
+| `(struct stage name requires provides run doc)` | `run` 接收 `(in target)` | — |
 
 ## 5. 规则
 

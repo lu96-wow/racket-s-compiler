@@ -2,16 +2,33 @@
 ;;; encode/test.rkt -- s-exp -> 字节
 
 (require rackunit
-         "insn.rkt"
-         "encode.rkt"
+         (rename-in "insn.rkt"
+                    [encode-instruction encode-instruction*]
+                    [instruction-arity instruction-arity*]
+                    [known-instruction? known-instruction?*])
+         (rename-in "encode.rkt" [encode-layout encode-layout*])
          "syntax/order.rkt"
          "syntax/direct.rkt"
          "syntax/coverage.rkt"
-         "../target.rkt"
+         (rename-in "../target.rkt"
+                    [integer->bytes integer->bytes*]
+                    [padding-bytes padding-bytes*])
          (only-in "../analyze/analyze.rkt" analyze sexp->program)
          (only-in "../dce/dce.rkt" eliminate-dead)
-         (only-in "../layout/layout.rkt" layout-program layout-problems)
-         (only-in "../relax/relax.rkt" relax))
+         (rename-in "../layout/layout.rkt" [layout-program layout-program*])
+         (only-in "../layout/layout.rkt" layout-problems)
+         (rename-in "../relax/relax.rkt" [relax relax*]))
+
+(define test-target target-rv64-base)
+(define (encode-instruction name operands) (encode-instruction* test-target name operands))
+(define (instruction-arity name) (instruction-arity* test-target name))
+(define (known-instruction? name) (known-instruction?* test-target name))
+(define (integer->bytes width value) (integer->bytes* test-target width value))
+(define (padding-bytes kind n) (padding-bytes* test-target kind n))
+(define (encode-layout layout) (encode-layout* test-target layout))
+(define (layout-program prog data spec) (layout-program* test-target prog data spec))
+(define (relax prog data spec #:max-rounds [n 64])
+  (relax* test-target prog data spec #:max-rounds n))
 
 ;; ---------------------------------------------------------------------------
 ;; 小工具
@@ -131,8 +148,9 @@
 (check-exn exn:fail? (lambda () (encode-instruction 'csrwi (list 'mstatus 'x))))
 ;; csrs32 只属于 rv32 profile
 (check-exn exn:fail? (lambda () (encode-instruction 'csrr (list 'a0 'cycleh))))
-(parameterize ([current-target target-rv32-all])
-  (check-equal? (word 'csrr 'a0 'cycleh) (cons #xc8002573 4)))
+(check-equal? (let-values ([(w _) (encode-instruction* target-rv32-all 'csrr '(a0 cycleh))]) w)
+              #xc8002573)
+
 
 ;; 本切片自身的扩展覆盖
 (check-equal? (hash-ref (syntax-coverage '(rv_zicsr rv_zifencei)) 'missing) 0)
@@ -372,7 +390,7 @@
 (check-equal? (direct-plan-names) '(fence fence.i fence.tso))
 
 ;; 当前 target 的扩展必须全部有语法计划
-(check-equal? (hash-ref (syntax-coverage (target-extensions (current-target))) 'missing) 0)
+(check-equal? (hash-ref (syntax-coverage (target-extensions test-target)) 'missing) 0)
 
 ;; 全量 riscv-asm 扩展仍然缺语法; 这是后续工作的清单来源
 (check-true (positive? (hash-ref (syntax-coverage) 'missing)))

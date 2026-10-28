@@ -24,7 +24,7 @@
 
 (require "../sexp.rkt"
          "forms.rkt"
-         (only-in "../target.rkt" current-target target-xlen)
+         (only-in "../target.rkt" target-xlen)
          ;; la 的近形式够不够得着: 和 encode 用同一个判据
          (only-in "../../riscv-help/main.rkt" fits-auipc-pair?)
          (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
@@ -213,7 +213,7 @@
 ;; origins : 偏移 -> (code 块下标 项下标) | (data 游程下标 项下标)
 ;;           只给"要改 item 的层"(relax)用来精确定位; encode 不关心
 
-(define (measure seg blks runs problem!)
+(define (measure target seg blks runs problem!)
   (define seg-name (segment-name seg))
   (define seg-kind (segment-kind seg))
   (define capacity (- (segment-end seg) (segment-start seg)))
@@ -244,7 +244,7 @@
        ;; 这样 encode 不需要再算一遍对齐公式, 只需要决定这 n 个字节填什么。
        (define pad (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))
        (emit! (list 'pad pad) pad origin)]
-      [else (emit! it (item-size it) origin)]))
+      [else (emit! it (item-size target it) origin)]))
 
   (for ([e (in-list blks)])
     (define b (cdr e))
@@ -264,10 +264,10 @@
 
   (measured seg (reverse out) cursor blks origins))
 
-(define (measure-all segs code-by-seg data-by-seg problem!)
+(define (measure-all target segs code-by-seg data-by-seg problem!)
   (for/list ([seg (in-list segs)])
     (define name (segment-name seg))
-    (measure seg (hash-ref code-by-seg name '()) (hash-ref data-by-seg name '()) problem!)))
+    (measure target seg (hash-ref code-by-seg name '()) (hash-ref data-by-seg name '()) problem!)))
 
 ;; ---------------------------------------------------------------------------
 ;; fallthrough 检查: 顺序后继必须紧挨着
@@ -389,16 +389,16 @@
 
 ;; (la rd [tmp] 地址表达式): 近形式 8 字节够不够得着?
 ;; 远形式需要 scratch 寄存器, 属于未实现的那一层。
-(define (check-la s)
+(define (check-la target s)
   (define it (site-item s))
   (when (la-form? it)
     (define expr (last it))
     (when (check-chains s expr)
       (define d (- (eval-address expr (site-symbols s)) (site-here s)))
-      (unless (fits-auipc-pair? d (target-xlen (current-target)))
+      (unless (fits-auipc-pair? d (target-xlen target))
         (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
 
-(define (verify measured-segs symbols report)
+(define (verify target measured-segs symbols report)
   (for ([m (in-list measured-segs)])
     (define seg (measured-segment m))
     (for ([entry (in-list (measured-items m))])
@@ -410,7 +410,7 @@
                       symbols report))
       (check-control s)
       (check-scratch s)
-      (check-la s)
+      (check-la target s)
       (check-value s))))
 
 ;; ---------------------------------------------------------------------------
@@ -436,7 +436,7 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (layout-program program data layout-input)
+(define (layout-program target program data layout-input)
   (define segs (parse-segments layout-input))
   (define places (parse-places layout-input))
   (define problems '())
@@ -458,10 +458,10 @@
   (ensure-segments segs code-by-seg)
   (ensure-segments segs data-by-seg)
 
-  (define measured-segs (measure-all segs code-by-seg data-by-seg problem!))
+  (define measured-segs (measure-all target segs code-by-seg data-by-seg problem!))
   (check-fallthrough measured-segs flows problem!)
   (define symbols (collect-symbols measured-segs))
-  (verify measured-segs symbols problem!)
+  (verify target measured-segs symbols problem!)
 
   (layout->sexp measured-segs symbols (reverse problems)))
 

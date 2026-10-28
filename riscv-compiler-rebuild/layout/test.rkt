@@ -4,13 +4,19 @@
 ;;; 放完检查 fallthrough 是否被剪断。
 
 (require rackunit
-         "forms.rkt"
+         (rename-in "forms.rkt" [item-size item-size*])
+         (rename-in "layout.rkt" [layout-program layout-program*])
          "layout.rkt"
+         (only-in "../target.rkt" target-rv64-base target-rv32-all)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead))
+
+(define test-target target-rv64-base)
+(define (item-size x) (item-size* test-target x))
+(define (layout-program prog data spec) (layout-program* test-target prog data spec))
 
 ;; ---------------------------------------------------------------------------
 ;; 形式表

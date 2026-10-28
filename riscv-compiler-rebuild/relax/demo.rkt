@@ -17,6 +17,7 @@
 ;;; 每一步都重跑 layout, 地址全部重算。
 
 (require "relax.rkt"
+         (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" sexp->program)
          (only-in "../layout/layout.rkt" layout-program layout-problems
                   symbol-address))
@@ -47,7 +48,7 @@
   (displayln (format "  problems: ~s" (layout-problems out)))
   (newline))
 
-(define out (relax prog '() layout-input))
+(define out (relax target-rv64-base prog '() layout-input))
 (show "relax" out)
 
 (displayln ";;;; 最终布局(地址都按新尺寸重算过)")

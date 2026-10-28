@@ -45,8 +45,8 @@
   (unless row (error 'encode "undefined symbol: ~s" chain))
   (+ (symbol-address row) addend))
 
-(define (value->bytes w v symbols)
-  (integer->bytes w (eval-address v symbols)))
+(define (value->bytes target w v symbols)
+  (integer->bytes target w (eval-address v symbols)))
 
 ;; 操作数: 寄存器名/立即数原样交给 insn.rkt;
 ;; 控制转移的最后一项是链 -> 换成相对当前 item 的偏移。
@@ -108,10 +108,10 @@
 ;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。
 ;;   plain  : 操作数里可能有链, 先换成偏移
 ;;   远形式 / li / la : riscv-help 已经给出带数字偏移的真指令
-(define (encode-code it here symbols emit!)
+(define (encode-code target it here symbols emit!)
   (define (emit-instruction! name operands)
-    (define-values (word n) (encode-instruction name operands))
-    (emit! (integer->bytes n word)))
+    (define-values (word n) (encode-instruction target name operands))
+    (emit! (integer->bytes target n word)))
   (define (emit-all! insns)
     (for ([i (in-list insns)]) (emit-instruction! (car i) (cdr i))))
   (case (car it)
@@ -119,7 +119,7 @@
     [(branch-indirect) (emit-all! (encode-indirect-branch it here symbols))]
     [(jump-far)        (emit-all! (encode-far-jump it here symbols))]
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
-    [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen (current-target))))]
+    [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen target)))]
     ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
     [(la) (define d (- (eval-address (last it) symbols) here))
           (emit-all! (load-pcrel (cadr it) d))]
@@ -129,7 +129,7 @@
 ;; 段
 ;; ---------------------------------------------------------------------------
 
-(define (encode-segment seg symbols)
+(define (encode-segment target seg symbols)
   (define name (segment-field seg 'name))
   (define kind (segment-field seg 'kind))
   (define start (segment-field seg 'start))
@@ -154,11 +154,11 @@
       [(label-form? it) (void)]
       ;; (pad n): layout 已经把"对齐请求"换算成"要补多少个字节"
       [(pad-form? it)
-       (emit! (padding-bytes kind (cadr it)))]
+       (emit! (padding-bytes target kind (cadr it)))]
       [(bytes-form? it) (emit! (cdr it))]
       [(fill-form? it) (emit! (make-list (cadr it) (caddr it)))]
-      [(value-form? it) (emit! (value->bytes (value-width it) (value-payload it) symbols))]
-      [else (encode-code it here symbols emit!)]))
+      [(value-form? it) (emit! (value->bytes target (value-width it) (value-payload it) symbols))]
+      [else (encode-code target it here symbols emit!)]))
 
   (unless (= cursor size)
     (error 'encode "段 ~a 的尺寸不一致: 产物说 ~a, 实际写了 ~a 字节" name size cursor))
@@ -176,7 +176,7 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (encode-layout layout)
+(define (encode-layout target layout)
   (define problems (layout-problems layout))
   (when (pair? problems)
     (error 'encode "layout 还有未解决的问题, 拒绝出产物:~%~a"
@@ -184,4 +184,4 @@
   (define symbols (cdr (assoc 'symbols layout)))
   (cons 'build
         (for/list ([seg (in-list (cdr (assoc 'segments layout)))])
-          (encode-segment seg symbols))))
+          (encode-segment target seg symbols))))

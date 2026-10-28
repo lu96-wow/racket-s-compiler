@@ -102,11 +102,11 @@
 (define (order-plan-has-flags? plan)
   (and (ormap (lambda (p) (memq p '(aq rl))) plan) #t))
 
-(define (order-plan-build plan operands aq rl)
+(define (order-plan-build plan target operands aq rl)
   (for/list ([p (in-list plan)])
     (cond
       [(eq? p 'aq) aq]
       [(eq? p 'rl) rl]
-      [(exact-integer? p) (operand-kind-value 'plain (list-ref operands p))]
-      [(pair? p) (operand-kind-value (car p) (list-ref operands (cadr p)))]
+      [(exact-integer? p) (operand-kind-value target 'plain (list-ref operands p))]
+      [(pair? p) (operand-kind-value target (car p) (list-ref operands (cadr p)))]
       [else (error 'encode-instruction "bad order-plan entry: ~e" p)])))

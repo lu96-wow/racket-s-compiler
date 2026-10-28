@@ -23,7 +23,7 @@
 (require "../../riscv-asm/generated/lib/instruction_paths.rkt"
          "../../riscv-asm/generated/lib/info/struct.rkt"
          "../../riscv-asm/generated/lib/info/lookup.rkt"
-         (only-in "../target.rkt" current-target target-extensions)
+         (only-in "../target.rkt" target-extensions)
          "syntax/suffix.rkt"
          "syntax/plan.rkt")
 
@@ -38,15 +38,15 @@
 
 (define info-cache (make-hash))
 
-(define (lookup-instruction name)
-  ;; 缓存必须带当前扩展集: 同一个名字在 rv64/rv32 profile 下可能不同。
-  (define exts (target-extensions (current-target)))
+(define (lookup-instruction target name)
+  ;; 缓存必须带 target 的扩展集: 同一个名字在 rv64/rv32 下可能不同。
+  (define exts (target-extensions target))
   (hash-ref! info-cache (cons exts name)
              (lambda ()
                (and (pair? (instruction-info-candidates exts name))
                     (resolve-instruction-info exts name)))))
 
-(define (known-instruction? name) (and (lookup-instruction name) #t))
+(define (known-instruction? target name) (and (lookup-instruction target name) #t))
 
 (define proc-cache (make-hash))
 
@@ -61,9 +61,9 @@
 ;; 元数
 ;; ---------------------------------------------------------------------------
 
-(define (instruction-arity name)
+(define (instruction-arity target name)
   (define-values (base _aq _rl) (split-aqrl name))
-  (define info (lookup-instruction base))
+  (define info (lookup-instruction target base))
   (and info
        (let ([plan (syntax-plan-for info)])
          (and plan (syntax-plan-canonical-arity plan)))))
@@ -74,9 +74,9 @@
 ;;   立即数/偏移一律是整数。
 ;; ---------------------------------------------------------------------------
 
-(define (encode-instruction name operands)
+(define (encode-instruction target name operands)
   (define-values (base aq rl) (split-aqrl name))
-  (define info (or (lookup-instruction base)
+  (define info (or (lookup-instruction target base)
                    (error 'encode-instruction "unknown instruction: ~a" name)))
   (define plan (or (syntax-plan-for info)
                    (error 'encode-instruction
@@ -89,5 +89,5 @@
     (error 'encode-instruction
            "~a takes ~a operand(s), got ~a: ~e"
            base arities (length operands) operands))
-  (values (apply (instruction-proc info) (syntax-plan-apply plan operands aq rl))
+  (values (apply (instruction-proc info) (syntax-plan-apply plan target operands aq rl))
           (quotient (instruction-info-width info) 8)))

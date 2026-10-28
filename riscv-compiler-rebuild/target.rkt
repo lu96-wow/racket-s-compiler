@@ -3,12 +3,13 @@
 ;;;
 ;;; 目标配置: XLEN、端序、扩展集。
 ;;;
-;;; 目标不再写死。`run-flow` 可以从 seed 里取 target 并 parameterize
-;;; `current-target`; 各层函数签名保持不变, 需要时读 current-target。
+;;; 目标不再写死。target 是显式参数:
 ;;;
-;;;   (parameterize ([current-target target-rv64-all])
-;;;     (layout-program ...)
-;;;     (encode-layout ...))
+;;;   (layout-program target program data layout-input)
+;;;   (encode-layout target layout)
+;;;   (encode-instruction target name operands)
+;;;
+;;; 不使用动态参数 / 全局 current-target。
 ;;;
 ;;; target 只放事实: 多少位、什么端序、开了哪些扩展。
 ;;; padding 由扩展集推导; 操作数语法、栈、ABI、reloc 都不在这里。
@@ -17,11 +18,9 @@
          "../riscv-asm/generated/gen/riscv/info/extensions.rkt")
 
 (provide (struct-out target)
-         target-default
          target-rv64-base
          target-rv64-all
          target-rv32-all
-         current-target
          integer->bytes
          padding-bytes)
 
@@ -35,7 +34,6 @@
             rv_c rv64_c
             rv_zicsr rv_zifencei)))
 
-(define target-default target-rv64-base)
 
 ;; 全扩展 profile:
 ;;   rv64-all = 非 rv32_* 的所有扩展
@@ -54,9 +52,6 @@
           (sort (filter (lambda (e) (not (extension-prefix? "rv64_" e))) extensions)
                 symbol<?)))
 
-;; 当前运行目标。只在 flow 入口/测试里 parameterize。
-(define current-target (make-parameter target-default))
-
 ;; ---------------------------------------------------------------------------
 ;; 目标事实
 ;; ---------------------------------------------------------------------------
@@ -70,8 +65,8 @@
       (target-has-extension? t 'rv64_c)))
 
 ;; 整数 -> width 个字节(按当前 target 的端序)。
-(define (integer->bytes width value)
-  (define endianness (target-endianness (current-target)))
+(define (integer->bytes target width value)
+  (define endianness (target-endianness target))
   (define bits (* 8 width))
   (unless (<= (- (expt 2 (sub1 bits))) value (sub1 (expt 2 bits)))
     (error 'integer->bytes
@@ -95,9 +90,9 @@
 (define nop-word     #x00000013)   ; addi x0, x0, 0
 (define c-nop-word   #x0001)       ; c.addi x0, 0
 
-(define (padding-bytes kind n)
+(define (padding-bytes target kind n)
   (case kind
-    [(code) (code-padding-bytes (current-target) n)]
+    [(code) (code-padding-bytes target n)]
     [(data) (make-list n 0)]
     [else (error 'padding-bytes "unknown segment kind: ~a" kind)]))
 
@@ -105,7 +100,7 @@
   (define quads (quotient n 4))
   (define rest (remainder n 4))
   (append
-   (append* (for/list ([_ (in-range quads)]) (integer->bytes 4 nop-word)))
+   (append* (for/list ([_ (in-range quads)]) (integer->bytes t 4 nop-word)))
    (case rest
      [(0) '()]
      [(2)
@@ -113,7 +108,7 @@
         (error 'padding-bytes
                "code 段需要补 2 字节, 但当前 target 没有 C 扩展: ~a"
                (target-extensions t)))
-      (integer->bytes 2 c-nop-word)]
+      (integer->bytes t 2 c-nop-word)]
      [else
       (error 'padding-bytes
              "code 段里要补 ~a 字节: 剩下的 ~a 字节不是 0 也不是 2, 编不出来"

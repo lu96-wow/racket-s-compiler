@@ -2,9 +2,14 @@
 ;;; relax/test.rkt -- 分支松弛
 
 (require rackunit
-         "relax.rkt"
+         (rename-in "relax.rkt" [relax relax*])
+         (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" sexp->program)
          (only-in "../layout/layout.rkt" layout-problems))
+
+(define test-target target-rv64-base)
+(define (relax prog data spec #:max-rounds [n 64])
+  (relax* test-target prog data spec #:max-rounds n))
 
 ;; ---------------------------------------------------------------------------
 ;; 小工具

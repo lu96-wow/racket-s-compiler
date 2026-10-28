@@ -3,11 +3,19 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/relax/relax.rkt" relax far-step)
-         (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
-                  layout-program layout-problems)
+         (rename-in "../riscv-compiler-rebuild/relax/relax.rkt" [relax relax*])
+         (only-in "../riscv-compiler-rebuild/relax/relax.rkt" far-step)
+         (rename-in "../riscv-compiler-rebuild/layout/layout.rkt"
+                    [layout-program layout-program*])
+         (only-in "../riscv-compiler-rebuild/layout/layout.rkt" layout-problems)
+         (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base)
          (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
                   analyze program-blocks program-flows))
+
+(define test-target target-rv64-base)
+(define (relax prog data spec #:max-rounds [n 64])
+  (relax* test-target prog data spec #:max-rounds n))
+(define (layout-program prog data spec) (layout-program* test-target prog data spec))
 
 (define (block-at prog i) (list-ref (program-blocks prog) i))
 (define (flow-at prog i) (list-ref (program-flows prog) i))

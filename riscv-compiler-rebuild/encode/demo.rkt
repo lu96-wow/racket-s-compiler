@@ -11,7 +11,8 @@
 ;;; 所以这个 demo 直接手写 layout，不跑前面的层（那属于别层的 demo）。
 ;;; 这里手写的形状和 layout/demo.rkt 打印出来的完全一样，可以对照着看。
 
-(require "encode.rkt")
+(require "encode.rkt"
+         (only-in "../target.rkt" target-rv64-base))
 
 (define laid
   '((segments
@@ -46,7 +47,7 @@
   (for ([e (in-list (cdr (assoc 'items (cdr seg))))]) (displayln (format "    ~s" e))))
 (newline)
 
-(define build (encode-layout laid))
+(define build (encode-layout target-rv64-base laid))
 
 (define (hexdump start bs)
   (for ([i (in-range 0 (bytes-length bs) 16)])

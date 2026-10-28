@@ -29,7 +29,7 @@ layout : relax 产物（segments + symbols + problems）
 
 | 文件 | API |
 | --- | --- |
-| `../target.rkt`（顶层共享） | `current-target` / `target-xlen` / `target-endianness` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
+| `../target.rkt`（顶层共享） | `target` / `target-xlen` / `target-endianness` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
 | `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl`（组合入口） |
 | `syntax/*.rkt` | 后缀 / 操作数值 / 顺序表 / direct form / plan / coverage，见 [`syntax/DESIGN.md`](syntax/DESIGN.md) |
 | `encode.rkt` | `encode-layout` |

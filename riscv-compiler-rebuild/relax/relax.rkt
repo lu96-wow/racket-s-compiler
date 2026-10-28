@@ -105,11 +105,11 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (relax prog data layout-input #:max-rounds [max-rounds 64])
+(define (relax target prog data layout-input #:max-rounds [max-rounds 64])
   (unless (program? prog)
     (error 'relax "program must be dce output ((blocks ...) (flows ...)); got: ~e" prog))
   (let loop ([prog prog] [round 0])
-    (define out (layout-program prog data layout-input))
+    (define out (layout-program target prog data layout-input))
     (define problems (layout-problems out))
     (define edits (collect-edits problems))
     (cond

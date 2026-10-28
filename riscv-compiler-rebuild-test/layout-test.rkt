@@ -3,21 +3,27 @@
 
 (require rackunit
          "helpers.rkt"
+         (rename-in "../riscv-compiler-rebuild/layout/forms.rkt"
+                    [item-size item-size*])
          (only-in "../riscv-compiler-rebuild/layout/forms.rkt"
                   label-form? align-form? pad-form? bytes-form? fill-form?
                   value-form? compressed-form? value-width value-payload
                   la-form? la-scratch
                   jump-far-form? jump-far-link jump-far-scratch
-                  item-kind item-size
+                  item-kind
                   branch-form? jump-form? control-form? control-target
                   form-range scratch-hole?)
+         (rename-in "../riscv-compiler-rebuild/layout/layout.rkt"
+                    [layout-program layout-program*])
          (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
-                  layout-program layout-problems
-                  symbol-row symbol-address eval-address)
+                  layout-problems symbol-row symbol-address eval-address)
          (only-in "../riscv-compiler-rebuild/target.rkt"
-                  current-target target-rv64-base target-rv32-all))
+                  target-rv64-base target-rv32-all))
 
-(define (lay prog data spec) (layout-program prog data spec))
+(define test-target target-rv64-base)
+(define (item-size x) (item-size* test-target x))
+
+(define (lay prog data spec) (layout-program* test-target prog data spec))
 
 (define (one-block items)
   (program-of
@@ -53,13 +59,11 @@
 (check-equal? (item-size '(li a0 #x80000000)) 12)
 (check-equal? (item-size '(la a0 (x))) 8)
 
-;; li 的尺寸跟着 current-target 的 XLEN 走
-(parameterize ([current-target target-rv64-base])
-  (check-equal? (item-size '(li a0 #x80000000)) 12))
-(parameterize ([current-target target-rv32-all])
-  (check-equal? (item-size '(li a0 #x80000000)) 4)
-  (check-error "rv32 放不下 64 位常量"
-               (lambda () (item-size '(li a0 #x100000000)))))
+;; li 的尺寸跟着显式 target 的 XLEN 走
+(check-equal? (item-size* target-rv64-base '(li a0 #x80000000)) 12)
+(check-equal? (item-size* target-rv32-all '(li a0 #x80000000)) 4)
+(check-error "rv32 放不下 64 位常量"
+             (lambda () (item-size* target-rv32-all '(li a0 #x100000000))))
 
 (check-equal? (item-kind '(label a)) 'marker)
 (check-equal? (item-kind '(align 8)) 'both)
