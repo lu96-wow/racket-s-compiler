@@ -31,6 +31,7 @@ layout  list ┘                items          program    program  layout   byte
 | 文档 | 内容 |
 | --- | --- |
 | [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
+| [`TARGET.md`](TARGET.md) | **目标配置设计**：rv32/rv64 profile、扩展集、端序、填充策略 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | **索引 + 规范**：分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
 | `flow/DESIGN.md` | **构建流**：选择器/层组、单层 `run-stage`、依赖检查、可选/顺序/平层 |
 | `expand-data/DESIGN.md` … `encode/DESIGN.md` | 每层细节：API / 规则 / 边界 / 测试 / 缺口 |

@@ -9,6 +9,7 @@
 | --- | --- |
 | `ARCHITECTURE.md`（本文） | 分层地图、词汇边界、跨层铁律、IO 形状、形式归属、缺口清单、文档规范 |
 | [`SEXP.md`](SEXP.md) | **每层速览**：功能 / 输入输出 s-exp / 为什么这样设计 |
+| [`TARGET.md`](TARGET.md) | **目标配置设计**：rv32/rv64 profile、扩展集、端序、填充策略 |
 | `expand-data/DESIGN.md` | 数据定义：宽度 / 值域 / 字符串 / 数组 / 地址字 |
 | `flatten/DESIGN.md` | 模块展平 + 链式查表（只做名字） |
 | `expand-pseudo/DESIGN.md` | 伪指令替换表 |
