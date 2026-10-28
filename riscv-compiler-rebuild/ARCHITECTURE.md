@@ -82,6 +82,16 @@ layout  list ┘                items          program    program  layout   byte
 | relax | `needs-far` 提到的那些 control 形式 | 其余 item 不碰 |
 | encode | 助记符 + 操作数文法（含 `.aq`/`.rl` 后缀）、目标端序、**填充策略** | 交给 `riscv-asm` 编码 |
 
+**产物词汇也可以写在源码里 —— 含义是"请求"，不是"事实"**：
+
+| 词汇 | 产物侧（事实） | 源码侧（请求） | 不写会怎样 |
+| --- | --- | --- | --- |
+| `(pad n)` | layout 把 `(align n)` 换算出来的 | 我要精确插 n 字节 | 写 `(align n)` 让 layout 算 |
+| `(branch-far cond a b L)` | relax 自动选的档 | 这条转移**固定 8 字节** | 写普通分支，够不着时 relax 自动升 |
+| `(branch-indirect s cond a b L)` | relax 自动选的档 | **我自己给 scratch** | 没人能给 → 编不出来 |
+| `(jump-far link s L)` | relax 自动选的档 | 同上 | 同上 |
+| `(ref 链 加数)` | expand-data 归一后的地址字 | 我写一个地址字 | — |
+
 推论：
 
 - **layout 的兜底 `4 字节 / 'code` 是设计，不是漏检**：真实指令在它眼里就是不透明字节串。
@@ -114,7 +124,10 @@ layout  list ┘                items          program    program  layout   byte
     不再有 `label+` / `label-` —— 也避免和位置标记 `(label 链 …)` 只差一个字符。
 12. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
-13. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
+13. **产物词汇可写，但那是"请求"**：`pad` / 远形式 / `ref` 都能写在源码里，
+    意思是"我要这个"，而不是"已经算好了"；不写就是**让机器决定**
+    （`align` 由 layout 换算、够不着的分支由 relax 升档）。
+14. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
     `(align n)` → `(pad 字节数)`（layout；`pad` 本身也可直接写在源码里，
     表示与地址无关的"精确插 n 字节"）、`label` → `(offset k …)`（layout）、
     `(value w 值)` → 字节（encode）、`li`/`la` → 指令（encode）。
@@ -138,7 +151,7 @@ layout  list ┘                items          program    program  layout   byte
 | `(label 链...)` | flatten 定链 / analyze 定块头 / layout 定偏移 | flatten / layout | 全部 |
 | 伪指令 `(load-32 …)` `(move …)` `(ble …)` | expand-pseudo 的表 | 人 | expand-pseudo |
 | 真指令 `(lwu …)` `(bge …)` `(jalr …)` `(c.j …)` | expand-pseudo 产出；analyze 分类；layout 定尺寸；encode 编码 | expand-pseudo / 人 | analyze / dce / layout / relax / encode |
-| 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | layout/forms | 人 / relax | analyze / layout / relax / encode |
+| 远形式 `(branch-far <cond> a b L)` `(branch-indirect [s] <cond> a b L)` `(jump-far link [s] L)` | layout/forms | **relax（自动选档）** / 人（要求固定尺寸，或自己给 scratch） | analyze / layout / relax / encode |
 | `(li rd 常量)` | layout 量尺寸（`li-size`）、encode 展开（`li`） | 人 | analyze / layout / encode |
 | `(la rd [tmp] 链)` | layout 量尺寸 + 判 `fits-auipc-pair?`、encode 展开（`load-pcrel`） | 人 | analyze / layout / encode |
 | rich 数据 `b8` `b16` `bN-array` `utf-string` | expand-data | 人 | expand-data |
@@ -197,8 +210,8 @@ segment d start=#x200000 size=11
 
 | 项 | 现状 | 备注 |
 | --- | --- | --- |
-| scratch 寄存器（`scratch-hole` 的填充） | **留空** | "动态内存布局 / 寄存器使用"层，尚未设计 |
-| `la` 远形式（>±2GB） | 只报 `la-too-far` | 需要 scratch |
+| 寄存器使用层（填 scratch） | **留空** | 位置：**relax 之后、encode 之前**；形状 `layout -> layout`（尺寸不变，不需要重跑 layout）；输入是两类 problem：`(scratch-hole 段 偏移 item origin)` 和 `(la-too-far 段 偏移 item 距离 origin)`；"洞"的形式是**item 少一个操作数**：`(branch-indirect <cond> a b L)` / `(jump-far x0 L)`。要选寄存器就得有活跃性，所以它还要吃 `program`（`requires '(program layout)`，`provides '(layout)`） |
+| `la` 远形式（>±2GB） | 只报 `la-too-far`（带 `(code 块 项)` 定位） | 与填 scratch 同一层：`la` 远形式也要临时寄存器 |
 | 真 reloc / 外部符号 | 没做 | 栈顶 / `malloc` 区要它 |
 | 补 fallthrough 跳转、trampoline、块重排 | 没做 | layout 只报 `broken-fallthrough` |
 | 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |

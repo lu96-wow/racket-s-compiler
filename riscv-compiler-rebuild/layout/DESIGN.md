@@ -150,7 +150,8 @@ layout  : ((segments (segment (name 名) (kind code|data)
 - **没有 `call-far`**：它就是 `(jump-far ra L)`，两个名字等于两种拼写。
 - **`<cond>` 必须写**：不带条件的形式展开不了。
 - **scratch 有两种槽**：`branch-indirect` / `(jump-far x0 …)` 是**必填空槽**（缺了报
-  `scratch-hole`，软问题，留给"寄存器使用"层）；`la` 的 scratch 是**可选槽**
+  `scratch-hole`，软问题，留给"寄存器使用"层）。源码里手写**带空槽**的远形式
+  = 造了一个未完成的 item：layout 报 `scratch-hole`，encode 拒绝出产物 —— 这是诊断，不是静默错误；`la` 的 scratch 是**可选槽**
   （`(la rd 链)` / `(la rd tmp 链)`），缺省不是缺陷，不报 `scratch-hole`。
 
 ### 4.7 范围检查：只有 layout 有符号表
