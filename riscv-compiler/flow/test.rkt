@@ -54,9 +54,10 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze dce encode expand-data expand-pseudo flatten layout relax))
+              '(analyze bind-labels dce encode expand-data expand-pseudo flatten layout relax))
 
-(check-equal? (providers-of 'layout) '(layout relax))
+(check-equal? (providers-of 'measured-layout) '(layout relax))
+(check-equal? (providers-of 'bound-layout) '(bind-labels))
 (check-equal? (providers-of 'build) '(encode))
 (check-equal? (providers-of 'nope) '())
 
@@ -82,7 +83,8 @@
 
 (check-true (hash-has-key? out 'names))          ; flatten 的在途值
 (check-true (hash-has-key? out 'program))
-(check-true (hash-has-key? out 'layout))
+(check-true (hash-has-key? out 'measured-layout))
+(check-true (hash-has-key? out 'bound-layout))
 
 ;; 和手写的期望字节比
 (check-equal? (bytes-of-seg build 'c)
@@ -105,7 +107,7 @@
 (check-equal? (hash-ref stage-groups 'frontend)
               '(expand-data flatten expand-pseudo))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
-(check-equal? (hash-ref stage-groups 'backend) '(relax encode))
+(check-equal? (hash-ref stage-groups 'backend) '(relax bind-labels encode))
 (check-equal? (hash-ref stage-groups 'all) default-flow)
 
 ;; 单层 / 层组 / 多个层组 / 任意片段
@@ -162,11 +164,11 @@
 ;; ---------------------------------------------------------------------------
 
 (define with-dce
-  (run-flow (list 'expand-pseudo 'analyze 'dce 'relax 'encode)
+  (run-flow (list 'expand-pseudo 'analyze 'dce 'relax 'bind-labels 'encode)
             (list (cons 'program-items src-dead) (cons 'data-items '())
                   (cons 'layout-spec spec-dead))))
 (define without-dce
-  (run-flow (list 'expand-pseudo 'analyze 'relax 'encode)
+  (run-flow (list 'expand-pseudo 'analyze 'relax 'bind-labels 'encode)
             (list (cons 'program-items src-dead) (cons 'data-items '())
                   (cons 'layout-spec spec-dead))))
 
@@ -181,14 +183,14 @@
 
 (define wrong-order
   (lambda ()
-    (run-flow (list 'expand-pseudo 'flatten 'analyze 'dce 'relax 'encode)
+    (run-flow (list 'expand-pseudo 'flatten 'analyze 'dce 'relax 'bind-labels 'encode)
               (list (cons 'program-items '((label main) (move a0 a1) (ret)))
                     (cons 'layout-spec '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                          (place c (main))))))))
 
 ;; 正确顺序: expand-pseudo 在 analyze 之前
 (define right-order
-  (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
+  (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'relax 'bind-labels 'encode)
             (list (cons 'program-items '((label main) (move a0 a1) (ret)))
                   (cons 'data-items '())
                   (cons 'layout-spec '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
@@ -203,8 +205,8 @@
 ;; 依赖检查 / 未知层
 ;; ---------------------------------------------------------------------------
 
-;; encode 需要 layout, 前面没人产 -> 报错并指出谁能产
-(check-exn #rx"能产出它的是: \\(layout relax\\)"
+;; encode 需要 bound-layout, 前面没人产 -> 报错并指出谁能产
+(check-exn #rx"能产出它的是: \\(bind-labels\\)"
            (lambda () (run-flow (list 'encode) '())))
 
 ;; 未知层名 -> 报错并列出已知的层
@@ -214,23 +216,23 @@
 ;; 缺外部输入也一样
 (check-exn #rx"layout-spec"
            (lambda ()
-             (run-flow (list 'analyze 'dce 'layout 'encode)
+             (run-flow (list 'analyze 'dce 'layout 'bind-labels 'encode)
                        (list (cons 'program-items '()) (cons 'data-items '())))))
 
 ;; ---------------------------------------------------------------------------
 ;; 平层可以重复写, 也可以互换
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'dce 'relax 'encode)
+(check-equal? (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'dce 'relax 'bind-labels 'encode)
                         (list (cons 'program-items src) (cons 'data-items '())
                               (cons 'layout-spec spec-code)))
-              (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
+              (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'relax 'bind-labels 'encode)
                         (list (cons 'program-items src) (cons 'data-items '())
                               (cons 'layout-spec spec-code))))
 
 ;; layout 代替 relax: 这段程序不需要松弛, 结果一样
 (check-equal? (bytes-of-seg
-               (flow-value (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'layout 'encode)
+               (flow-value (run-flow (list 'flatten 'expand-pseudo 'analyze 'dce 'layout 'bind-labels 'encode)
                                      (list (cons 'program-items src) (cons 'data-items '())
                                            (cons 'layout-spec spec-code)))
                            'build)
@@ -294,6 +296,6 @@
 
 ;; 程序里的 la 指向 (data d table)
 (check-equal? (length (bytes-of-seg (flow-value mmod 'build) 'c)) 28)
-(check-equal? (cdr (assoc 'problems (flow-value mmod 'layout))) '())
+(check-equal? (cdr (assoc 'problems (flow-value mmod 'bound-layout))) '())
 
 (displayln "flow tests: ok")

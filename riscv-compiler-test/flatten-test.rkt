@@ -5,7 +5,7 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/flatten/flatten.rkt"
+         (only-in "../riscv-compiler/flatten/flatten.rkt"
                   flatten-program flatten-inputs flatten-items))
 
 (define (flat x) (flatten-program x))

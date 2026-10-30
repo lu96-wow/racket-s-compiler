@@ -119,7 +119,7 @@ FPR / VREG、CSR / rm / vm、Zcmp / Zcmt / Zimop，以及大量普通形状。
 
 - `encode/test.rkt`：现有 target 的全部指令字与语法路径
 - `syntax/coverage.rkt`：扩展覆盖报告
-- 外部 `riscv-compiler-rebuild-test/encode-test.rkt`：黑盒编码契约
+- 外部 `riscv-compiler-test/encode-test.rkt`：黑盒编码契约
 
 ## 7. 不归本层管
 

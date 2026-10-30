@@ -1,10 +1,10 @@
-# riscv-compiler-rebuild-test
+# riscv-compiler-test
 
-黑盒契约测试：只通过 `riscv-compiler-rebuild` 的公开 API 验证每一层的 s-exp
+黑盒契约测试：只通过 `riscv-compiler` 的公开 API 验证每一层的 s-exp
 输入/输出、边界、问题交接，以及整条 `flow` 到字节的产物。
 
 实现目录不动；这里只读它。契约来源是
-[`../riscv-compiler-rebuild/SEXP.md`](../riscv-compiler-rebuild/SEXP.md) 和各层 `DESIGN.md`。
+[`../riscv-compiler/SEXP.md`](../riscv-compiler/SEXP.md) 和各层 `DESIGN.md`。
 
 ## 跑
 
@@ -19,17 +19,18 @@ racket integration-test.rkt
 
 | 文件 | 对应层 / 契约 |
 | --- | --- |
-| `helpers.rkt` | 读 layout / build / problem 的小工具，不含编译器逻辑 |
+| `helpers.rkt` | 读 layout / build / problem / request 的小工具，不含编译器逻辑 |
 | `sexp-test.rkt` | `form?` `name?` `path?` `normalize-path` `address-expr?` `as-items` |
 | `expand-data-test.rkt` | rich 数据 → `(value 宽度 值)` / `(bytes …)` / `(fill …)` / `(pad …)` |
 | `flatten-test.rkt` | `module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out` |
 | `expand-pseudo-test.rkt` | 替换表、别名平级、偏移补 0、透传、自环保护 |
 | `analyze-test.rkt` | 指令分类、切块、`succ`/`fallthrough`、`root?` |
 | `dce-test.rkt` | 不可达块、转移到下一块、空块合并、重新编号 |
-| `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、符号、problems |
-| `relax-test.rkt` | 提升阶梯、区间边界、收敛、`scratch-hole` 交接 |
+| `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems/requests |
+| `bind-labels-test.rkt` | anchors → symbols、phase、绝对地址、最终宽度/容量、requests 保留 |
+| `relax-test.rkt` | 提升阶梯、区间边界、收敛、`scratch-hole` request 交接 |
 | `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la`/远形式、断言 |
-| `flow-test.rkt` | stage 表、依赖检查、可选层、`layout`/`relax` 平层、层组/选择器、`run-stage`、context 续跑 |
+| `flow-test.rkt` | stage 表、依赖检查、可选层、`layout`/`relax` 平层、`bind-labels`、层组/选择器、`run-stage`、context 续跑 |
 | `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、完整流松弛、错误 |
 
 ## 测试里刻意锁住的 s-exp 形状
@@ -40,15 +41,21 @@ flatten     : 输入的链 -> 完整链；module/provide/require 壳消失
 expand-pseudo : 表里的伪指令 -> 真指令；不认识的 form 原样
 analyze     : (program (block <头链列表> item...) ...)
               (program (flow (succ id...) (fallthrough id|#f) (root? bool)) ...)
-layout      : ((segments (segment (name …) (kind …) (start …) (end …) (align …)
-                                   (items (offset k item) ...) (size n)) ...)
+layout      : ((phase measured)
+               (segments (segment (name …) (kind …) (start …) (end …) (align …)
+                                  (items (offset k item) ...) (size n)) ...)
+               (anchors (anchor 链 段名 偏移) ...)
+               (requests ...) (problems ...))
+bind-labels : ((phase bound) (segments ...) (anchors ...)
                (symbols (symbol 链 段名 偏移 绝对地址) ...)
-               (problems ...))
+               (requests ...) (problems ...))
 build       : (build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
 ```
 
-`layout` / `relax` 的 problems 是交接点：`needs-far` 给 relax，`scratch-hole`
-给尚未实现的寄存器使用层；`encode` 只要看到任何 problem 就拒绝出产物。
+`layout` / `relax` 的 `requests` 是交接点：`needs-far` 给 relax，
+`scratch-hole` / `la-too-far` 给尚未实现的寄存器使用层；`bind-labels` 才产出
+绝对地址并检查 `value` 宽度 / 段容量；`encode` 只吃 `phase=bound` 且
+`requests` / `problems` 都为空的 layout。
 
 ## 写测试时抓到的三个实现问题（已修）
 

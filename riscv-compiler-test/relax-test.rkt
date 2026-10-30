@@ -3,13 +3,13 @@
 
 (require rackunit
          "helpers.rkt"
-         (rename-in "../riscv-compiler-rebuild/relax/relax.rkt" [relax relax*])
-         (only-in "../riscv-compiler-rebuild/relax/relax.rkt" far-step)
-         (rename-in "../riscv-compiler-rebuild/layout/layout.rkt"
+         (rename-in "../riscv-compiler/relax/relax.rkt" [relax relax*])
+         (only-in "../riscv-compiler/relax/relax.rkt" far-step)
+         (rename-in "../riscv-compiler/layout/layout.rkt"
                     [layout-program layout-program*])
-         (only-in "../riscv-compiler-rebuild/layout/layout.rkt" layout-problems)
-         (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base)
-         (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
+         (only-in "../riscv-compiler/layout/layout.rkt" layout-problems)
+         (only-in "../riscv-compiler/target.rkt" target-rv64-base)
+         (only-in "../riscv-compiler/analyze/analyze.rkt"
                   analyze program-blocks program-flows))
 
 (define test-target target-rv64-base)
@@ -74,11 +74,11 @@
          [out (layout-program p '() spec)])
     out))
 
-(check-false (has-problem? (branch-at #x1FFE '(beq a0 a0 (far))) 'needs-far))
-(check-true  (has-problem? (branch-at #x2000 '(beq a0 a0 (far))) 'needs-far))
+(check-false (has-request? (branch-at #x1FFE '(beq a0 a0 (far))) 'needs-far))
+(check-true  (has-request? (branch-at #x2000 '(beq a0 a0 (far))) 'needs-far))
 
-(check-false (has-problem? (branch-at #x10FE '(c.beqz a0 (far))) 'needs-far))
-(check-true  (has-problem? (branch-at #x1100 '(c.beqz a0 (far))) 'needs-far))
+(check-false (has-request? (branch-at #x10FE '(c.beqz a0 (far))) 'needs-far))
+(check-true  (has-request? (branch-at #x1100 '(c.beqz a0 (far))) 'needs-far))
 
 ;; ---------------------------------------------------------------------------
 ;; 一轮: c.beqz -> beq
@@ -153,8 +153,8 @@
     (place d (far))))
 
 (define out-indirect (relax p-indirect '() spec-indirect))
-(check-true (has-problem? out-indirect 'scratch-hole))
-(check-false (has-problem? out-indirect 'needs-far))
+(check-true (has-request? out-indirect 'scratch-hole))
+(check-false (has-request? out-indirect 'needs-far))
 (check-equal? (cadr (layout-item-forms out-indirect 'c))
               '(branch-indirect beq a0 x0 (far)))
 
@@ -184,7 +184,7 @@
 (check-equal? (cadr (layout-item-forms out-jump-ra 'c)) '(jump-far ra (far)))
 
 (define out-jump-x0 (relax (jump-program '(jal x0 (far))) '() spec-jump))
-(check-true (has-problem? out-jump-x0 'scratch-hole))
+(check-true (has-request? out-jump-x0 'scratch-hole))
 (check-equal? (cadr (layout-item-forms out-jump-x0 'c)) '(jump-far x0 (far)))
 
 ;; ---------------------------------------------------------------------------

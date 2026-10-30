@@ -19,7 +19,8 @@
          arith-head?
          arith-form?
          address-expr?
-         address-expr-chains)
+         address-expr-chains
+         eval-address)
 
 ;; 真列表(代码/数据形式的形状)。'(a . b) 和 '() 都不是 form。
 (define (form? x) (and (pair? x) (list? x)))
@@ -52,8 +53,11 @@
 ;;   (+ (- (d end) (d start)) 4)  差 + 4
 ;;
 ;; 求值要等 label 的地址定下来:
-;;   数据 label 在 layout 排完就定; 代码 label 要等 relax 收敛后的那次 layout。
-;; 所以求值函数在 layout（它持有符号表），encode 复用它落字节。
+;;   layout/relax 只有临时位置（anchors + 段 start）;
+;;   bind-labels 之后才有最终符号表（symbols）。
+;; 所以求值本身放在这里，由调用方给出 resolver:
+;;   measured 相传 anchor resolver，bound 相传 symbol resolver。
+;; 这样“这次求值用的是临时地址还是最终地址”在调用点一眼可见。
 
 ;; 头是 + 或 - 就算"算术形式"——**先判这个**，否则 (+ 8 4) 会被当成"名字叫 + 的链"。
 ;; 代价: 链的首节不能是 + / -（谁也不会拿它当 label 名）。
@@ -77,6 +81,25 @@
      [(exact-integer? x) '()]
      [(arith-head? x) (append* (for/list ([a (in-list (cdr x))]) (address-expr-chains a)))]
      [else (list x)])))
+
+;; 地址表达式求值: 整数 | (链) | (+ …) | (- …)
+;;
+;; resolve : 链 -> 整数 | #f
+;;   measured 相: anchor 的临时位置（段 start + 段内偏移）
+;;   bound 相:    最终符号表里的绝对地址
+;;
+;; 查不到就是内部错误: 调用方应当先用地址表达式的链做完 undefined-target 检查。
+(define (eval-address expr resolve)
+  (cond
+    [(exact-integer? expr) expr]
+    [(arith-head? expr)
+     (define vals (for/list ([a (in-list (cdr expr))]) (eval-address a resolve)))
+     (if (eq? (car expr) '+)
+         (apply + vals)
+         (- (car vals) (apply + (cdr vals))))]
+    [else
+     (define v (resolve expr))
+     (or v (error 'eval-address "undefined symbol in address expression: ~s" expr))]))
 
 ;; 任意输入 -> item 列表。宽容收旧壳 (quote …) / (begin …)，单条 item 也收。
 ;; 出口一律 plain list。

@@ -5,7 +5,7 @@
          (rename-in "relax.rkt" [relax relax*])
          (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" sexp->program)
-         (only-in "../layout/layout.rkt" layout-problems))
+         (only-in "../layout/layout.rkt" layout-problems layout-requests))
 
 (define test-target target-rv64-base)
 (define (relax prog data spec #:max-rounds [n 64])
@@ -20,6 +20,7 @@
   (findf (lambda (s) (equal? (cadr (assoc 'name (cdr s))) name)) (segments-of layout)))
 (define (items-of layout name) (cdr (assoc 'items (cdr (seg-of layout name)))))
 (define (problems-of layout) (layout-problems layout))
+(define (requests-of layout) (layout-requests layout))
 
 ;; 一条条件分支 + 一个 fallthrough 块 + 远段里的冷块
 (define (make-prog br)
@@ -116,7 +117,7 @@
                 (offset 0 (branch-indirect beq t0 t1 (q cold)))
                 (offset 12 (addi a0 a0 1))
                 (offset 16 (jalr x0 ra 0))))
-(check-equal? (problems-of r3)
+(check-equal? (requests-of r3)
               '((scratch-hole p 0 (branch-indirect beq t0 t1 (q cold)) (code 0 0))))
 
 ;; ---------------------------------------------------------------------------
@@ -129,7 +130,7 @@
                 (offset 0 (jump-far x0 (q cold)))
                 (offset 8 (addi a0 a0 1))
                 (offset 12 (jalr x0 ra 0))))
-(check-equal? (problems-of r5)
+(check-equal? (requests-of r5)
               '((scratch-hole p 0 (jump-far x0 (q cold)) (code 0 0))))
 
 ;; link 非零不用 scratch

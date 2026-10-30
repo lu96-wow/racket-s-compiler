@@ -141,7 +141,7 @@
        [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
        [else 4])]
     [(eq? (car x) 'li) (li-size (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
-    [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 报 la-too-far
+    [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 留 la-too-far request
     [else 4]))
 
 ;; ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@
 ;;      (branch-indirect <cond> a b L)   ; 远分支: 反向分支 + auipc+jalr, 总要 base
 ;;      (jump-far x0 L)                  ; link 是零寄存器: auipc 没有落点, 必须借 base
 ;;    要不要 scratch 是 **link / 形式** 的函数, 所以 scratch-hole? 必须读操作数,
-;;    不能只看"比满长度少一项"。报的是 problem(不是错误), 留给 relax 填。
+;;    不能只看"比满长度少一项"。报的是 request(不是错误), 留给寄存器层填。
 ;;
 ;; 2. 已填:
 ;;      (branch-indirect s <cond> a b L)

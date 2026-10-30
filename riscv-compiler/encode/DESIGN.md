@@ -3,7 +3,7 @@
 > 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#encode`](../SEXP.md#encode)。
 > 语法局部拆分：[`syntax/DESIGN.md`](syntax/DESIGN.md)。
 >
-> 最后一步：`layout -> (build …)`，每个段一坨字节。
+> 最后一步：`bound-layout -> (build …)`，每个段一坨字节。
 > **端序只出现在这里**；指令编码和位域检查都在 `riscv-asm`。
 
 ## 1. 职责
@@ -15,12 +15,12 @@
 | `value` / `ref` 求值 | 松弛（属于 relax） |
 | `li` / `la` / 远形式展开 | 填 scratch 空槽（未实现的那一层） |
 | 断言"写出的字节数 = layout 的偏移" | 加载器格式 / ELF / 分区镜像 |
-| 有 problem 就拒绝出产物 | — |
+| 有 request/problem 就拒绝出产物 | — |
 
 ## 2. 输入 / 输出
 
 ```
-layout : relax 产物（segments + symbols + problems）
+bound-layout : bind-labels 产物（phase=bound, segments + anchors + symbols + requests + problems）
   ↓
 (build (segment (name s) (kind code) (start #x1000) (size 12) (bytes #vu8…)) ...)
 ```
@@ -32,7 +32,7 @@ layout : relax 产物（segments + symbols + problems）
 | `../target.rkt`（顶层共享） | `target` / `target-xlen` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
 | `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl`（组合入口） |
 | `syntax/*.rkt` | 后缀 / 操作数值 / 顺序表 / direct form / plan / coverage，见 [`syntax/DESIGN.md`](syntax/DESIGN.md) |
-| `encode.rkt` | `encode-layout` |
+| `encode.rkt` | `encode-layout`（只接受 phase=bound） |
 
 ## 4. 规则
 
@@ -133,7 +133,7 @@ A 扩展的全部原子指令都走这条规则：
 | `label` | 无 |
 | `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
 | `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按 little-endian；整数直接写，地址表达式用符号表求值（`eval-address`，与 layout 共用） |
+| `value w 值` | `w` 字节按 little-endian；整数直接写，地址表达式用最终 symbols 求值（`eval-symbol-address`，内部复用 `sexp.rkt` 的 `eval-address`） |
 | 真指令 | `riscv-asm` 编码（`width/8` 字节） |
 | 远形式 | `riscv-help` 展开后再编码 |
 | `li` / `la` | `riscv-help` 展开后再编码 |
@@ -155,8 +155,8 @@ A 扩展的全部原子指令都走这条规则：
 
 1. **`(offset k item)` 是断言**：写出的字节数必须正好让它落在 `k`，
    否则说明 layout 与 encode 对尺寸的理解不一致 → 报错。
-2. **layout 里还有任何 problem 就拒绝出产物**（`needs-far` / `scratch-hole` /
-   `undefined-target` / `la-too-far` …）。
+2. **layout 里还有任何 request/problem 就拒绝出产物**（`needs-far` / `scratch-hole` /
+   `la-too-far` / `undefined-target` …）；`phase` 不是 `bound` 也拒绝。
 
 ### 4.7 li / la
 
@@ -165,18 +165,18 @@ A 扩展的全部原子指令都走这条规则：
 (la rd [tmp] 链)  ; 近形式 8 字节；layout 已经保证 fits-auipc-pair?
 ```
 
-`la` 的远形式（>±2GB）需要 scratch 寄存器 → 属于未实现的那一层，layout 会报 `la-too-far`。
+`la` 的远形式（>±2GB）需要 scratch 寄存器 → 属于未实现的那一层，layout 会留下 `la-too-far` request。
 
 ## 5. 不归本层管
 
-- 选指令、优化、布局、松弛：前面的层。
+- 选指令、优化、布局、松弛、地址绑定：前面的层。
 - 加载器格式（把 `(build …)` 写成文件）：还没做。
 - 真 reloc / 外部符号：还没做。
 
 ## 6. 测试与 demo
 
-`encode/test.rkt`（70 条）、`encode/demo.rkt`（手写 layout 产物 → `(build …)` + hexdump；
-本层**不需要** layout 输入，也不需要 program / data）。
+`encode/test.rkt`、`encode/demo.rkt`（手写 measured-layout → `bind-labels` → `(build …)` + hexdump；
+本层只吃 bound-layout，不需要 program / data）。
 
 单条指令与手算编码对照（含压缩、全部原子、`fence`/`fence.tso`/`fence.i`、CSR、别名）、`aq`/`rl` 后缀、元数、未知指令、
 layout → build 字节精确、`code`/`data` 对齐补齐、`li`（4 / 8 字节）、`la`（auipc+addi 的

@@ -5,7 +5,8 @@
 ;;;   program : dce 的输出 = 块(身份 + 程序) + 流
 ;;;   data    : 扁平 item 列表
 ;;;   layout  : (segments ...) + (place ...)
-;;; 输出: ((segments (segment ...) ...) (symbols ...) (problems ...))
+;;; 输出: ((phase measured) (segments ...) (anchors ...) (requests ...) (problems ...))
+;;;       没有绝对地址; 地址由 bind-labels 绑定。
 
 (require "layout.rkt"
          (only-in "../target.rkt" target-rv64-base)
@@ -40,7 +41,7 @@
 
 (define laid (layout-program target-rv64-base prog data layout-input))
 
-(displayln ";; layout 输出 (offset 注解 + 符号 + 问题)")
+(displayln (format ";; layout 输出 (phase=~a)" (layout-phase laid)))
 (for ([seg (in-list (cdr (assoc 'segments laid)))])
   (define name (cadr (assoc 'name (cdr seg))))
   (define kind (cadr (assoc 'kind (cdr seg))))
@@ -51,9 +52,10 @@
     (displayln (format "    ~s" entry))))
 
 (newline)
-(displayln ";; 符号行 (symbol 链 段名 偏移 绝对地址)")
-(for ([s (in-list (cdr (assoc 'symbols laid)))])
-  (displayln (format "  ~s -> ~a+~x (#x~x)" (cadr s) (caddr s) (cadddr s) (symbol-address s))))
+(displayln ";; anchor 行 (anchor 链 段名 偏移): 只有位置, 没有绝对地址")
+(for ([a (in-list (layout-anchors laid))])
+  (displayln (format "  ~s -> ~a+~x" (cadr a) (caddr a) (cadddr a))))
 
 (newline)
+(displayln (format "requests: ~s" (layout-requests laid)))
 (displayln (format "problems: ~s" (layout-problems laid)))

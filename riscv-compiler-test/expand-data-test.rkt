@@ -3,7 +3,7 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/expand-data/expand.rkt"
+         (only-in "../riscv-compiler/expand-data/expand.rkt"
                   expand-data expand-item as-items width-form? width-of))
 
 (define (ex x) (expand-data x))

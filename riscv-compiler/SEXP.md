@@ -8,10 +8,10 @@
 ```
 rich-data ─→ expand-data ─┐
                           ↓
-program-items ─┬─→ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ encode
-data-items ────┘                                │         │       │         │
-                                                ↓         ↓       ↓         ↓
-                                             program   program  layout   build
+program-items ─┬─→ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
+data-items ────┘                                │         │       │          │            │
+                                                ↓         ↓       ↓          ↓            ↓
+                                             program   program  measured   bound        build
 ```
 
 每层都是纯函数；`flow` 只负责按名字列表调用它们。
@@ -27,7 +27,7 @@ data-items ────┘                                │         │       
 | 入口壳 | 旧写法 `(quote …)` / `(begin …)` 入口接受，出口一律 plain list |
 | 层间载荷 | 只传 plain list 或 `(struct program …)`；不认识的 item 原样透传 |
 
-`sexp.rkt` 提供 `form?` / `name?` / `path?` / `normalize-path` / `as-items` 和地址表达式判定；
+`sexp.rkt` 提供 `form?` / `name?` / `path?` / `normalize-path` / `as-items`、地址表达式判定和 `eval-address`（带 resolver）；
 `target.rkt` 提供 XLEN、扩展集、填充策略；端序固定 little。它们是共享事实，不是层。
 
 ---
@@ -139,21 +139,23 @@ data-items ────┘                                │         │       
 
 ## layout
 
-**功能**：布局计算。把块/数据游程放进段，算出偏移、尺寸、符号表，并报告放置/范围问题。
+**功能**：布局度量。把块/数据游程放进段，算出偏移、尺寸、`anchors`，并把范围问题分成 `requests` / `problems`。
 
 | 项 | 内容 |
 | --- | --- |
 | 输入 | `program` + data item + `((segments (segment (name …) (kind …) (start …) (end …) (align …)) …) (place 段名 链 …) …)` |
-| 输出 | `((segments (segment … (items (offset k item) ...) (size n)) …) (symbols (symbol 链 段名 偏移 绝对地址) …) (problems …))` |
+| 输出 | `((phase measured) (segments (segment … (items (offset k item) ...) (size n)) …) (anchors (anchor 链 段名 偏移) …) (requests …) (problems …))` |
 
 **为什么这样设计**
 
-- 只有 layout 持有段和符号表，所以只有它能把 `(align n)` 换算成精确的 `(pad n)`、判断分支/地址范围。
+- 只有 layout 持有段和偏移，所以只有它能把 `(align n)` 换算成精确的 `(pad n)`、算分支/la 的临时距离。
 - 代码里没有 section：段归属只写在 `place` 行里，按精确链匹配；不自动按 kind 落位。
 - 不认识的 item 一律当“不透明代码 4 字节（`c.*` 2 字节）”：真实指令合法性属于 encode。
-- `needs-far` / `scratch-hole` 是交接点：前者给 relax，后者给尚未实现的寄存器使用层。
+- **不产出绝对地址**：只有 `anchors`；绝对地址是 `bind-labels` 的事。
+- `needs-far` / `scratch-hole` / `la-too-far` 是 `requests`：分别给 relax 和未来的寄存器层。
+- `(value w 表达式)` 这里只查链存在；宽度等最终地址定了再查。
 
-**不归本层管**：选择远形式、填 scratch、补 fallthrough 跳转、指令合法性、端序。
+**不归本层管**：绝对地址、`value` 最终宽度、段容量、选择远形式、填 scratch、补 fallthrough 跳转、指令合法性、端序。
 
 细节：[`layout/DESIGN.md`](layout/DESIGN.md)
 
@@ -166,38 +168,60 @@ data-items ────┘                                │         │       
 | 项 | 内容 |
 | --- | --- |
 | 输入 | `program` + data item + layout 输入 |
-| 输出 | `layout`（`needs-far` 已销完；可能留下 `scratch-hole`） |
+| 输出 | `measured-layout`（`requests` 里的 `needs-far` 已销完；可能留下 `scratch-hole` / `la-too-far`） |
 
 **为什么这样设计**
 
 - layout 产物已经排好偏移、没有块结构，改完没法重排，所以 relax 不能吃 layout 产物，只能“改 program → 重跑 layout”。
 - 每次提升都让 item 变长，距离只会变大，“太远”集合单调递增，因此一定收敛。
 - 不造 label、不拆块，所以 `place` 行永远有效，`fallthrough` 不会被松弛剪断。
-- scratch 空槽不填：那需要活跃性信息，属于更后面的寄存器使用层。
+- scratch 空槽不填：那需要活跃性信息，属于更后面的寄存器使用层；绝对地址也不在这里绑。
 
-**不归本层管**：填 scratch、造 label、改 CFG、补跳、重排、数据宽度。
+**不归本层管**：填 scratch、造 label、改 CFG、补跳、重排、数据宽度、绝对地址绑定。
 
 细节：[`relax/DESIGN.md`](relax/DESIGN.md)
 
 ---
 
-## encode
+## bind-labels
 
-**功能**：把 layout 变成每个段一坨字节。负责端序（固定 little）、填充、`li`/`la`/远形式、原子指令与 `fence` 的语法，以及把指令交给 `riscv-asm` 编码。
+**功能**：地址绑定。把 measured-layout 的 `anchors` 落到绝对地址，产出 bound-layout；顺带做只有最终地址/尺寸才能做的检查。
 
 | 项 | 内容 |
 | --- | --- |
-| 输入 | 没有 problems 的 layout |
+| 输入 | `measured-layout` |
+| 输出 | `((phase bound) (segments …) (anchors …) (symbols (symbol 链 段名 偏移 绝对地址) …) (requests …) (problems …))` |
+
+**为什么这样设计**
+
+- `layout`/`relax` 只该管“位置”；`offsets → addresses` 是一个独立的、只跑一次的收尾。
+- 绝对地址只在 bound-layout 出现，`encode` 就不可能误用松弛中间值。
+- `value` 宽度、`segment-overflow` 只有最终地址/最终尺寸才知道，放在这里。
+- 本层不改 item/size、不解决 requests；`encode` 要求 requests/problems 都空。
+
+**不归本层管**：松弛、填 scratch、补跳、指令合法性、重定位/链接。
+
+细节：[`bind-labels/DESIGN.md`](bind-labels/DESIGN.md)
+
+---
+
+## encode
+
+**功能**：把 bound-layout 变成每个段一坨字节。负责端序（固定 little）、填充、`li`/`la`/远形式、原子指令与 `fence` 的语法，以及把指令交给 `riscv-asm` 编码。
+
+| 项 | 内容 |
+| --- | --- |
+| 输入 | `phase = bound` 且 `requests` / `problems` 为空的 layout |
 | 输出 | `(build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 
 **为什么这样设计**
 
 - 端序、填充策略、指令编码都属于“变二进制”，集中在这里；layout 只量宽度，不落字节。
 - `(offset k item)` 是断言：实际写出的字节数必须正好到达 `k`，这样能抓住 layout/encode 对尺寸理解不一致。
-- 有任何 problem 就拒绝出产物：`needs-far` / `scratch-hole` / `undefined-target` 都不是 encode 能偷偷修的东西。
+- 有任何 request/problem 就拒绝出产物：`needs-far` / `scratch-hole` / `undefined-target` 都不是 encode 能偷偷修的东西。
 - 操作数顺序由一张“函数参数位置 ← s-exp 位置”的表处理，因为 `riscv-opcodes` 的声明顺序不是汇编写法。
 
-**不归本层管**：选指令、布局、松弛、填 scratch、加载器格式。
+**不归本层管**：选指令、布局、松弛、绑定地址、填 scratch、加载器格式。
 
 细节：[`encode/DESIGN.md`](encode/DESIGN.md)
 
@@ -218,7 +242,7 @@ data-items ────┘                                │         │       
 | --- | --- |
 | `frontend` | `expand-data flatten expand-pseudo` |
 | `ir` | `analyze dce` |
-| `backend` | `relax encode`（layout 在 relax 内部跑） |
+| `backend` | `relax bind-labels encode`（layout 在 relax 内部跑） |
 | `all` | `default-flow` |
 
 **为什么这样设计**
@@ -226,7 +250,7 @@ data-items ────┘                                │         │       
 - 单层、层组、片段都只是选择器：展开后仍是一个层名列表，顺序和可选性没有新语义。
 - 每个 stage 只声明 `requires` / `provides`，不自动排序、不自动选层；依赖在运行到那一步时才检查。
 - seed 可以直接是上一趟的 context，所以能“跑前一段 → 单独测下一层/下一段”，不必手写中间值。
-- 在途值的名字就是契约：`rich-data` / `data-items` / `program-items` / `names` / `program` / `layout` / `build`。
+- 在途值的名字就是契约：`rich-data` / `data-items` / `program-items` / `names` / `program` / `measured-layout` / `bound-layout` / `build`。
 
 **不归本层管**：任何实际编译逻辑。
 
@@ -243,5 +267,6 @@ data-items ────┘                                │         │       
 | `program-items` | 扁平程序 item（可含 module 壳） | seed / `flatten` / `expand-pseudo` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
-| `layout` | segments + symbols + problems | `layout` / `relax` |
+| `measured-layout` | segments + anchors + requests + problems | `layout` / `relax` |
+| `bound-layout` | segments + anchors + symbols + requests + problems | `bind-labels` |
 | `build` | 每段字节 | `encode` |

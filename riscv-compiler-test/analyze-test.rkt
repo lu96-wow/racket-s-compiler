@@ -3,17 +3,17 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/analyze/insn.rkt"
+         (only-in "../riscv-compiler/analyze/insn.rkt"
                   label-form? label-path
                   branch-instruction? jump-instruction? indirect-instruction?
                   trap-instruction? ends-block? falls-through?
                   unconditional-jump? jump-target jump-register
                   zero-register?)
-         (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
+         (only-in "../riscv-compiler/analyze/analyze.rkt"
                   analyze program->sexp sexp->program
                   program-blocks program-flows
                   block-head block-items flow-succ flow-fallthrough flow-root?)
-         (only-in "../riscv-compiler-rebuild/analyze/cfg.rkt"
+         (only-in "../riscv-compiler/analyze/cfg.rkt"
                   build-cfg cfg-reachable referenced-labels
                   address-taken-paths graph? graph-blocks basic-block-successors))
 

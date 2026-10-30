@@ -3,10 +3,10 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
+         (only-in "../riscv-compiler/analyze/analyze.rkt"
                   analyze program->sexp program-blocks program-flows
                   make-flow block-head block-items flow-root?)
-         (only-in "../riscv-compiler-rebuild/dce/dce.rkt"
+         (only-in "../riscv-compiler/dce/dce.rkt"
                   eliminate-dead optimize-program passes pass-names))
 
 (define (dead p) (eliminate-dead p))

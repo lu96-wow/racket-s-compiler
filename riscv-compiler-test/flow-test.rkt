@@ -3,10 +3,10 @@
 
 (require rackunit
          "helpers.rkt"
-         (rename-in "../riscv-compiler-rebuild/flow/flow.rkt"
+         (rename-in "../riscv-compiler/flow/flow.rkt"
                     [run-flow run-flow*] [run-stage run-stage*])
-         (only-in "../riscv-compiler-rebuild/flow/flow.rkt" compile)
-         (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base))
+         (only-in "../riscv-compiler/flow/flow.rkt" compile)
+         (only-in "../riscv-compiler/target.rkt" target-rv64-base))
 
 (define test-target target-rv64-base)
 (define (run-flow selector [seeds '()]) (run-flow* test-target selector seeds))
@@ -17,20 +17,21 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze dce encode expand-data expand-pseudo flatten layout relax))
+              '(analyze bind-labels dce encode expand-data expand-pseudo flatten layout relax))
 
 (check-equal? (providers-of 'data-items) '(expand-data flatten))
 (check-equal? (providers-of 'program-items) '(expand-pseudo flatten))
 (check-equal? (providers-of 'names) '(flatten))
 (check-equal? (providers-of 'program) '(analyze dce))
-(check-equal? (providers-of 'layout) '(layout relax))
+(check-equal? (providers-of 'measured-layout) '(layout relax))
+(check-equal? (providers-of 'bound-layout) '(bind-labels))
 (check-equal? (providers-of 'build) '(encode))
 (check-equal? (providers-of 'nope) '())
 
 (check-equal? (stage-requires (hash-ref stage-table 'analyze))
               '(program-items data-items))
 (check-equal? (stage-provides (hash-ref stage-table 'analyze)) '(program))
-(check-equal? (stage-requires (hash-ref stage-table 'encode)) '(layout))
+(check-equal? (stage-requires (hash-ref stage-table 'encode)) '(bound-layout))
 (check-equal? (stage-provides (hash-ref stage-table 'encode)) '(build))
 
 ;; layout / relax 是平层: 同进同出
@@ -45,7 +46,7 @@
               (format "doc for ~a" n)))
 
 (check-equal? default-flow
-              '(expand-data flatten expand-pseudo analyze dce relax encode))
+              '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 简单跑一趟
@@ -72,7 +73,8 @@
 (check-true (hash-has-key? ctx 'program-items))
 (check-true (hash-has-key? ctx 'names))
 (check-true (hash-has-key? ctx 'program))
-(check-true (hash-has-key? ctx 'layout))
+(check-true (hash-has-key? ctx 'measured-layout))
+(check-true (hash-has-key? ctx 'bound-layout))
 (check-true (hash-has-key? ctx 'build))
 (check-equal? (build-size (flow-value ctx 'build) 'c) 8)
 (check-equal? (compile test-target simple-seeds) (flow-value ctx 'build))
@@ -95,7 +97,7 @@
 (check-equal? (hash-ref stage-groups 'frontend)
               '(expand-data flatten expand-pseudo))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
-(check-equal? (hash-ref stage-groups 'backend) '(relax encode))
+(check-equal? (hash-ref stage-groups 'backend) '(relax bind-labels encode))
 (check-equal? (hash-ref stage-groups 'all) default-flow)
 
 (check-equal? (select-stages 'analyze) '(analyze))
@@ -168,9 +170,9 @@
         (cons 'data-items '())
         (cons 'layout-spec module-spec)))
 (define (wrong-pseudo-order)
-  (run-flow '(expand-pseudo flatten analyze dce relax encode) module-seeds))
+  (run-flow '(expand-pseudo flatten analyze dce relax bind-labels encode) module-seeds))
 (define (right-pseudo-order)
-  (run-flow '(flatten expand-pseudo analyze dce relax encode) module-seeds))
+  (run-flow '(flatten expand-pseudo analyze dce relax bind-labels encode) module-seeds))
 (check-error "expand-pseudo 在 flatten 之前: move 留在模块里"
              wrong-pseudo-order)
 (check-equal? (build-bytes (flow-value (right-pseudo-order) 'build) 'c)
@@ -238,7 +240,7 @@
 ;; 只 layout: 留下 needs-far, encode 拒绝
 (check-error "layout -> encode 有 needs-far"
              (lambda ()
-               (run-flow '(expand-data flatten expand-pseudo analyze dce layout encode)
+               (run-flow '(expand-data flatten expand-pseudo analyze dce layout bind-labels encode)
                          far-seeds)))
 
 ;; relax: 升成 branch-far, 能编码

@@ -2,10 +2,10 @@
 ;;; relax/demo.rkt -- 分支松弛
 ;;;
 ;; 输入: dce 的 program + 数据 + layout 输入
-;;; 输出: layout 的 layout, 但里面已经没有够不着的控制转移
+;;; 输出: measured-layout, 但 requests 里已经没有够不着的控制转移
 ;;;
 ;;; 空槽(scratch)本层**不填** —— 那是"动态内存布局 / 寄存器使用"那一层的事(未实现),
-;;; 所以升到 branch-indirect / (jump-far x0 …) 之后, scratch-hole 会留在 problems 里。
+;;; 所以升到 branch-indirect / (jump-far x0 …) 之后, scratch-hole 会留在 requests 里。
 ;;;
 ;;; 这个 demo 故意让目标在 +2MB 外, 好看完整阶梯:
 ;;   条件分支: beq             4B, [-4096, 4094]   不够
@@ -20,7 +20,7 @@
          (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" sexp->program)
          (only-in "../layout/layout.rkt" layout-program layout-problems
-                  symbol-address))
+                  layout-requests layout-anchors layout-phase))
 
 (define prog
   (sexp->program
@@ -45,12 +45,14 @@
     (define name (cadr (assoc 'name (cdr seg))))
     (for ([entry (in-list (cdr (assoc 'items (cdr seg))))])
       (displayln (format "  ~a ~s" name entry))))
+  (displayln (format "  requests: ~s" (layout-requests out)))
   (displayln (format "  problems: ~s" (layout-problems out)))
   (newline))
 
 (define out (relax target-rv64-base prog '() layout-input))
 (show "relax" out)
 
-(displayln ";;;; 最终布局(地址都按新尺寸重算过)")
-(for ([s (in-list (cdr (assoc 'symbols out)))])
-  (displayln (format "  ~s -> ~a+~x (#x~x)" (cadr s) (caddr s) (cadddr s) (symbol-address s))))
+(displayln (format ";;;; 最终 measured-layout (phase=~a)" (layout-phase out)))
+(displayln ";; anchors 仍然只有位置; 绝对地址等 bind-labels 再绑")
+(for ([a (in-list (layout-anchors out))])
+  (displayln (format "  ~s -> ~a+~x" (cadr a) (caddr a) (cadddr a))))

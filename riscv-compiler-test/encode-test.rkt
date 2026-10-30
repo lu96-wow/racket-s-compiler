@@ -3,14 +3,14 @@
 
 (require rackunit
          "helpers.rkt"
-         (rename-in "../riscv-compiler-rebuild/encode/insn.rkt"
+         (rename-in "../riscv-compiler/encode/insn.rkt"
                     [encode-instruction encode-instruction*]
                     [instruction-arity instruction-arity*]
                     [known-instruction? known-instruction?*]
                     [split-aqrl split-aqrl])
-         (rename-in "../riscv-compiler-rebuild/encode/encode.rkt"
+         (rename-in "../riscv-compiler/encode/encode.rkt"
                     [encode-layout encode-layout*])
-         (rename-in "../riscv-compiler-rebuild/target.rkt"
+         (rename-in "../riscv-compiler/target.rkt"
                     [target-xlen target-xlen]
                     [target-extensions target-extensions]
                     [target target]
@@ -31,8 +31,23 @@
   (list w n))
 
 (define (laid segments symbols)
-  (list (cons 'segments segments)
+  (list (list 'phase 'bound)
+        (cons 'segments segments)
+        (cons 'anchors '())
         (cons 'symbols symbols)
+        (cons 'requests '())
+        (cons 'problems '())))
+
+;; measured layout: encode 必须拒绝
+(define (measured layout)
+  (cons (list 'phase 'measured) (cdr layout)))
+
+(define (with-requests layout requests)
+  (list (list 'phase 'bound)
+        (cons 'segments (cdr (assoc 'segments layout)))
+        (cons 'anchors '())
+        (cons 'symbols (cdr (assoc 'symbols layout)))
+        (cons 'requests requests)
         (cons 'problems '())))
 
 ;; ---------------------------------------------------------------------------
@@ -372,13 +387,27 @@
                              '(size 8)))
                  '()))))
 
+;; measured layout 不能直接编码
+(check-error "需要 bound-layout"
+             (lambda () (encode-layout (measured (laid '() '())))))
+
+;; 有 request 就拒绝出产物
+(check-error "requests 非空"
+             (lambda ()
+               (encode-layout
+                (with-requests (laid '() '())
+                               '((needs-far c 0 (beq a b L) 9999 (code 0 0)))))))
+
 ;; 有 problem 就拒绝出产物
 (check-error "problems 非空"
              (lambda ()
                (encode-layout
-                (list (cons 'segments '())
+                (list (list 'phase 'bound)
+                      (cons 'segments '())
+                      (cons 'anchors '())
                       (cons 'symbols '())
-                      (cons 'problems '((needs-far c 0 (beq a b L) 9999 (code 0 0))))))))
+                      (cons 'requests '())
+                      (cons 'problems '((undefined-target c 0 (jal x0 (nope)))))))))
 
 ;; code 段 pad 奇数字节: 编不出来
 (check-error "code pad 1"

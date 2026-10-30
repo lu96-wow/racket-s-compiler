@@ -1,4 +1,4 @@
-# riscv-compiler-rebuild
+# riscv-compiler
 
 从 s-expression 汇编一路走到字节的编译器。**每层都是纯函数，可单独跑。**
 
@@ -8,8 +8,8 @@
 source(多输入)                  │  每层都是纯函数, 可单独测
 ──────────────                  ↓
 program list ┐
-data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ encode
-layout  list ┘                items          program    program  layout   bytes
+data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
+layout  list ┘                items          program    program  measured     bound       bytes
 ```
 
 `flatten` 是模块系统（`module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out`，默认私有）。
@@ -17,7 +17,7 @@ layout  list ┘                items          program    program  layout   byte
 层名就是目录名。**跑哪些层、什么顺序，由 `flow` 的选择器决定**：
 
 ```racket
-(run-flow target-rv64-base '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
+(run-flow target-rv64-base '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode) seeds)
 (run-flow target-rv64-base 'frontend seeds)    ; 层组 frontend
 (run-flow target-rv64-base 'analyze seeds)     ; 单层
 (run-stage target-rv64-base 'flatten seeds)    ; 只跑一层，只返回它的输出
@@ -25,6 +25,7 @@ layout  list ┘                items          program    program  layout   byte
 ```
 
 不写进选择器的层就是关掉；`layout` 和 `relax` 是平层（同进同出），写 `relax` 就够了。
+`relax` 产出 measured-layout（无绝对地址），`bind-labels` 才把它变成可编码的 bound-layout。
 层组 `frontend` / `ir` / `backend` / `all` 见 [`flow/DESIGN.md`](flow/DESIGN.md)。
 
 ## 先看这里
@@ -56,10 +57,12 @@ racket expand-data/test.rkt # 每层也都能单独测
 ...
 racket encode/test.rkt
 
-racket encode/demo.rkt      # 看最后一层：layout -> 字节（带 hexdump）
+racket bind-labels/test.rkt # measured-layout -> bound-layout
+racket bind-labels/demo.rkt
+racket encode/demo.rkt      # 看最后一层：measured -> bind-labels -> 字节（带 hexdump）
 
 # 独立黑盒契约测试（只 require 公开 API；逐层 + 整条 flow）
-racket ../riscv-compiler-rebuild-test/run.rkt
+racket ../riscv-compiler-test/run.rkt
 ```
 
 每层还有一个 `demo.rkt`，只出现**该层自己的**输入输出。

@@ -102,7 +102,7 @@
 ;; 5. 依赖检查: 少一层就会说清缺什么
 ;; ---------------------------------------------------------------------------
 
-(displayln "\n;; 忘了 layout/relax, 直接 encode")
+(displayln "\n;; 忘了 layout/relax/bind-labels, 直接 encode")
 (with-handlers ([exn:fail? (lambda (e) (displayln (format "  ~a" (exn-message e))))])
   (run-flow target-rv64-base (list 'expand-data 'flatten 'analyze 'encode) seeds))
 

@@ -3,30 +3,32 @@
 > 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#relax`](../SEXP.md#relax)。
 >
 > 把够不着的控制转移换成"大一号"的形式，直到全部够得着。
-> 只换 item，不造 label、不拆块、不改 CFG、**不填 scratch**。
+> 只换 item，不造 label、不拆块、不改 CFG、**不填 scratch**、**不绑地址**。
 
 ## 1. 职责
 
 | 做 | 不做 |
 | --- | --- |
-| 消费 `needs-far`，升成远形式 | 填 `scratch-hole`（留给"寄存器使用"层） |
+| 消费 `requests` 里的 `needs-far`，升成远形式 | 填 `scratch-hole` / `la-too-far`（留给"寄存器使用"层） |
 | 驱动 layout 重排到不动点 | 补 fallthrough 跳转 / trampoline / 块重排 |
+| 返回 measured-layout | 绑绝对地址（bind-labels） |
 | 保证单调收敛 | 造 label、改 CFG、改数据 |
 
 ## 2. 输入 / 输出
 
 ```racket
-(relax program data layout-input)   ; -> layout（needs-far 已销完）
+(relax program data layout-input)   ; -> measured-layout（needs-far 已销完）
 (relax program data layout-input #:max-rounds 64)
 ```
 
 **契约不是 `layout -> layout`**：layout 的产物已经排好偏移、没有块结构，改完没法重排。
 所以本层**驱动** layout，而不是吃 layout 的产物。
+输出仍是 measured-layout；绝对地址由 `bind-labels` 绑定。
 
 ```
 loop:
   out   = layout(prog, data, layout-spec)
-  edits = 每个 needs-far -> far-step(item)
+  edits = requests 里每个 needs-far -> far-step(item)
   没有 edits -> 停（把 out 返回）
   prog  = apply-edits(prog, edits)      ; 按 (code 块 项) 精确定位
 ```
@@ -35,7 +37,7 @@ loop:
 
 | API | 输入 | 输出 |
 | --- | --- | --- |
-| `relax` | program + data + layout 输入 | layout |
+| `relax` | program + data + layout 输入 | measured-layout |
 | `far-step` | 单条 item | 大一号的形式 / `#f`（到头了） |
 
 ## 4. 规则
@@ -78,18 +80,19 @@ LLVM 之所以要拆块 / 造块，是因为 MachineInstr 里没有"跳到 pc+8"
 
 升到 `branch-indirect` / `(jump-far x0 …)` 会产生一个 **scratch 空槽**。
 谁填、填哪个寄存器属于「动态内存布局 / 寄存器使用」那一层（**未实现**），
-本层只把空槽留在 `scratch-hole` problem 里当交接点，然后循环停下。
+本层只把空槽留在 `requests` 的 `scratch-hole` 里当交接点，然后循环停下。
 
 ## 5. 不归本层管
 
 - scratch 寄存器（未实现的那一层）。
+- 绝对地址绑定、`value` 最终宽度、段容量（bind-labels）。
 - `li` / `la` 的尺寸（`li` 精确、`la` 近形式固定，都不需要松弛）。
 - 数据：`value` 的宽度是作者定的，尺寸固定，不参与松弛。
 
-## 6. 测试（`relax/test.rkt`，30 条）
+## 6. 测试（`relax/test.rkt`）
 
 提升表逐条、一次收敛（`beq → branch-far`）、两轮（`c.beqz → beq → branch-far`）、
-三级（>±1MB 产生空槽并停下）、`jal → jump-far`、边界 4092 / 4096、地址随尺寸重算、
+三级（>±1MB 产生空槽并停下）、`jal → jump-far`、边界 4092 / 4096、位置随尺寸重算、
 `#:max-rounds` 保护。
 
 ## 7. 已知缺口
@@ -97,3 +100,4 @@ LLVM 之所以要拆块 / 造块，是因为 MachineInstr 里没有"跳到 pc+8"
 - 补 fallthrough 跳转、trampoline、块重排没做。
 - 跨段到冷段没有 trampoline（LLVM 那条路），一律就地升形式。
 - 空槽不填（等"寄存器使用"层）。
+- 不绑绝对地址：输出 measured-layout，交给 bind-labels。

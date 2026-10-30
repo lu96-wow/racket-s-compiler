@@ -81,6 +81,7 @@ stage 的 run 函数签名是：
 ```
 
 只有 layout / relax / encode 用 `target`，其它 stage 忽略。
+`bind-labels` 目前不需要 target：地址绑定和 `value` 宽度都不依赖 XLEN。
 
 target 不再放在 seed / context 里。
 

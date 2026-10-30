@@ -17,6 +17,7 @@
 | `dce/DESIGN.md` | 死代码消除 |
 | `layout/DESIGN.md` | 布局：放置、度量、符号表、范围检查、problems |
 | `relax/DESIGN.md` | 分支松弛（只升形式） |
+| `bind-labels/DESIGN.md` | 地址绑定：anchors → symbols，最终宽度/容量检查 |
 | `encode/DESIGN.md` | 编码：操作数顺序、端序、字节规则 |
 | `encode/syntax/DESIGN.md` | encode 的语法局部拆分：后缀 / 操作数 / 顺序 / 特殊形式 / 覆盖 |
 | `../riscv-asm/README.md` | 指令编码表（生成器 + 运行时），encode 的编码来源 |
@@ -30,14 +31,14 @@
 source(多输入)                  │  每层都是纯函数, 可单独测
 ──────────────                  ↓
 program list ┐
-data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ encode
-layout  list ┘                items          program    program  layout   bytes
+data    list ├─ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
+layout  list ┘                items          program    program  measured     bound       bytes
 ```
 
 名字就是层名，也是目录名。**跑哪些层由 `flow` 的选择器决定**：
 
 ```racket
-(run-flow target-rv64-base '(expand-data flatten expand-pseudo analyze dce relax encode) seeds)
+(run-flow target-rv64-base '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode) seeds)
 (run-flow target-rv64-base 'frontend seeds)    ; 层组
 (run-flow target-rv64-base 'analyze seeds)     ; 单层
 (run-stage target-rv64-base 'flatten seeds)    ; 只跑一层, 只要它的输出
@@ -53,19 +54,21 @@ layout  list ┘                items          program    program  layout   byte
 | `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 伪指令替换 | [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md) |
 | `analyze` | `analyze/insn.rkt` `analyze/cfg.rkt` `analyze/analyze.rkt` | 控制流分析：块 + 流 + root | [`analyze/DESIGN.md`](analyze/DESIGN.md) |
 | `dce` | `dce/dce.rkt` | 死代码消除 | [`dce/DESIGN.md`](dce/DESIGN.md) |
-| `layout` | `layout/forms.rkt` `layout/layout.rkt` | 放置 + 度量 + 符号表 + problems | [`layout/DESIGN.md`](layout/DESIGN.md) |
+| `layout` | `layout/forms.rkt` `layout/layout.rkt` | 放置 + 度量 + anchors + requests/problems（无绝对地址） | [`layout/DESIGN.md`](layout/DESIGN.md) |
 | `relax` | `relax/relax.rkt` | 分支松弛（内部反复跑 layout） | [`relax/DESIGN.md`](relax/DESIGN.md) |
-| `encode` | `encode/insn.rkt` `encode/encode.rkt` | 编码 → 每段字节 | [`encode/DESIGN.md`](encode/DESIGN.md) |
+| `bind-labels` | `bind-labels/bind.rkt` | anchors → symbols（偏移 → 绝对地址）+ 最终宽度/容量检查 | [`bind-labels/DESIGN.md`](bind-labels/DESIGN.md) |
+| `encode` | `encode/insn.rkt` `encode/encode.rkt` | bound-layout → 每段字节 | [`encode/DESIGN.md`](encode/DESIGN.md) |
 | `flow` | `flow/flow.rkt` | 构建流本身 | [`flow/DESIGN.md`](flow/DESIGN.md) |
 
 可选性、顺序、平层（`layout` 与 `relax` 同进同出）都由选择器/列表表达；
+`layout`/`relax` 只产 measured-layout，`bind-labels` 产可编码的 bound-layout。
 预定义层组见 `flow/DESIGN.md`，单层和片段测试用 `run-stage` / `run-flow`。
 
 不属于任何层的两个**纯工具/纯事实**模块（顶层）：
 
 | 文件 | 内容 | 谁用 |
 | --- | --- | --- |
-| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）地址表达式 `arith-head?` / `arith-form?` / `address-expr?` / `address-expr-chains` | 除了 flow 之外的所有层 |
+| `sexp.rkt` | `form?` `name?` `path?` `normalize-path` `as-items`（旧壳 `quote`/`begin` 也认）地址表达式 `arith-head?` / `arith-form?` / `address-expr?` / `address-expr-chains` / `eval-address`（带 resolver） | 除了 flow 之外的所有层 |
 | `target.rkt` | `(struct target)` `target-rv64-base` / `target-rv64-all` / `target-rv32-all` `integer->bytes` `padding-bytes` | flow（显式参数）、layout（XLEN）、encode（填充/扩展集；端序固定 little） |
 
 它们不是层：没有输入输出契约，只有"同一个形状/事实"。各层可以**原样 re-provide** 其中的绑定，
@@ -121,9 +124,10 @@ layout  list ┘                items          program    program  layout   byte
    远形式 / 空槽要 scratch → 留给未实现的那一层。数据 `value` 的宽度由作者写死。
 4. **目标事实只出现一次**：顶层的 `target.rkt`（XLEN + 扩展集；端序固定 little）。
    `run-flow` / `layout` / `relax` / `encode` 都把 target 作为显式参数。
-   expand-data 只管宽度和值。
-5. **问题分三级**：本层模型错误（硬）、范围问题（`needs-far` / `value-out-of-range`）、
-   交接给下一层（`needs-far` → relax，`scratch-hole` → 未实现的寄存器层）。
+   `bind-labels` 不需要 target。expand-data 只管宽度和值。
+5. **问题分三级**：本层模型错误（硬，`problems`）、交接给后续 pass 的请求（`requests`：`needs-far` / `scratch-hole` / `la-too-far`）、
+   只有最终地址才能判定的问题（`value-out-of-range` / `segment-overflow`，在 `bind-labels`）。
+   `encode` 要求 `requests` 和 `problems` 都空。
 6. **松弛只增不减**：relax 每轮只把 item 变长，所以"太远"的集合单调递增，必然收敛。
 7. **不造 label**：relax 不造新 label，所以 `place` 行永远有效，`fallthrough` 不会被松弛剪断。
 8. **中间层不写合法性检查**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
@@ -134,7 +138,8 @@ layout  list ┘                items          program    program  layout   byte
 11. **地址表达式是一个很小的算术语言**：整数 | `(链)` | `(+ a b …)` | `(- a b …)`（≥2 个操作数，可嵌套）。
     裸链就是"取这个 label 的地址"，和 `(la rd (f))` 一致；不再有 `label-ref` / `label-diff`
     这类专用 tag，也没有"加数写成负数"的契约。
-    求值在 layout（它持有符号表）：数据 label 排完就定，代码 label 要等 relax 收敛。
+    求值本身在 `sexp.rkt`，由调用方给 resolver：measured 相用 anchor 的临时位置，
+    bound 相用最终符号表。绝对地址只在 `bind-labels` 之后存在。
 12. **层间只传 plain list 或 `struct program`**；入口宽容接受 `(quote …)` / `(begin …)`，
     出口一律 plain list。
 13. **产物词汇可写，但那是"请求"**：`pad` / 远形式 / `ref` 都能写在源码里，
@@ -142,8 +147,10 @@ layout  list ┘                items          program    program  layout   byte
     （`align` 由 layout 换算、够不着的分支由 relax 升档）。
 14. **请求变事实**：谁算得出来，谁就把结果写死，别把"要求"往下传。
     `(align n)` → `(pad 字节数)`（layout；`pad` 本身也可直接写在源码里，
-    表示与地址无关的"精确插 n 字节"）、`label` → `(offset k …)`（layout）、
-    `(value w 值)` → 字节（encode）、`li`/`la` → 指令（encode）。
+    表示与地址无关的"精确插 n 字节"）、`label` → `(anchor 链 段 偏移)`（layout）→
+    `(symbol 链 段 偏移 地址)`（bind-labels）、`(value w 值)` → 字节（encode）、`li`/`la` → 指令（encode）。
+15. **绝对地址只在 bound-layout 里出现**：measured-layout 只有 anchors；`bind-labels` 不改尺寸、不修问题，
+    会改尺寸的 pass（relax、未来的 la-far 展开）必须在它之前收敛。
 
 ## 4. IO 形状速查
 
@@ -152,7 +159,8 @@ layout  list ┘                items          program    program  layout   byte
 | 程序/数据（扁平 item） | `((label prog1 main) (lwu t0 sp 8) (bge t1 t0 (prog1 done)))` |
 | 块 + 流 | `((blocks (block ((prog1 main)) (lwu …) (bge …)) …) (flows (flow (succ 1 3) (fallthrough 1) (root? #t)) …))` |
 | layout 输入 | `((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)) …) (place prog1 (prog1 main) …))` |
-| layout 产物 | `((segments (segment (name prog1) (kind code) (start …) (end …) (align …) (items (offset 0 (lwu …)) (offset 4 (pad 4)) …) (size 28)) …) (symbols …) (problems …))`；`problems` 空的时候就是 `(problems)` |
+| measured-layout | `((phase measured) (segments (segment … (items (offset 0 (lwu …)) …) (size 28)) …) (anchors (anchor 链 段 偏移) …) (requests …) (problems …))` |
+| bound-layout | `((phase bound) (segments …) (anchors …) (symbols (symbol 链 段 偏移 地址) …) (requests …) (problems …))`；可编码要求 requests/problems 都空 |
 | build | `(build (segment (name prog1) (kind code) (start …) (size …) (bytes #vu8…)) …)` |
 
 ## 5. 形式归属
@@ -170,11 +178,12 @@ layout  list ┘                items          program    program  layout   byte
 | rich 数据 `b8` `b16` `bN-array` `utf-string` | expand-data | 人 | expand-data |
 | `(bytes …)` `(fill n b)` `(align n)` | layout（尺寸/类别）；`fill` 归 layout，expand-data 是生产者 | expand-data / 人 | layout / encode |
 | `(pad n)` | layout（`align` 换算成它；源码也可直接写"精确插 n 字节"） | layout / 人 | encode |
-| `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查地址范围；analyze 用它算 root；encode 按 little 落字节 | expand-data | analyze / layout / encode |
-| `(链)` / `(+ …)` / `(- …)` | `sexp.rkt` 定形状（`address-expr?`）；analyze 取其中**所有链**当取地址；layout 求值 + 查范围；encode 求值落字节 | 人 | expand-data / flatten / analyze / layout / encode |
+| `(value 宽度 值)` | expand-data 出宽度+值；layout 量尺寸 + 查链存在；bind-labels 用最终地址查宽度；analyze 用它算 root；encode 按 little 落字节 | expand-data | analyze / layout / bind-labels / encode |
+| `(链)` / `(+ …)` / `(- …)` | `sexp.rkt` 定形状（`address-expr?`）+ `eval-address`；analyze 取其中**所有链**当取地址；layout 用 anchor resolver 查 la 范围；bind-labels 用 symbol resolver 查最终宽度；encode 求值落字节 | 人 | expand-data / flatten / analyze / layout / bind-labels / encode |
 | `(block …)` `(flow …)` `(program …)` | analyze | analyze / dce | dce / layout / relax |
 | `(segments (segment (name …) (kind …) (start …) (end …) (align …)) …)` `(place 段名 链 …)` | layout | 人 | layout |
-| `(offset k item)` `(symbols (symbol 链 段名 偏移 地址) …)` `(problems …)` | layout | layout | relax / encode / 人 |
+| `(offset k item)` `(anchor 链 段名 偏移)` `(requests …)` `(problems …)` | layout | layout | relax / bind-labels / 人 |
+| `(symbol 链 段名 偏移 地址)` | bind-labels | bind-labels | encode / 人 |
 | `(build …)` | encode | encode | 加载器（未做） |
 
 ## 6. 完整流水线（真实输出，由 flow 跑出来）
@@ -186,14 +195,15 @@ src  = ((label main) (move a0 a1) (ble a0 a1 (hot)) (jal x0 (end))
 data = (expand-data '((label g tab) (value 8 (main)) (utf-stringz "hi")))
 ```
 
-默认流 `(expand-data flatten expand-pseudo analyze dce relax encode)`：
+默认流 `(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)`：
 
 | 层 | 结果 |
 | --- | --- |
 | expand-pseudo | `(move a0 a1)` → `(add a0 a1 x0)`；`(ble a0 a1 (hot))` → `(bge a1 a0 (hot))` |
 | analyze | `data` 让 `main` 成为 root（数据里存了它的地址） |
 | dce | 没有可删的块 |
-| layout/relax | 全部够得着，`problems = ()` |
+| layout/relax | 全部够得着，`requests = ()`，`problems = ()` |
+| bind-labels | anchors → symbols，绝对地址绑定；`problems = ()` |
 | encode | 见下面两段字节 |
 
 ```
@@ -213,22 +223,22 @@ segment d start=#x200000 size=11
 
 - 每层一个 `test.rkt`（`#lang racket` + `rackunit`，末尾打印 `<层> tests: ok`），
   一个 `demo.rkt`（只出现**该层自己的**输入输出）。
-- `encode/demo.rkt` 手写 layout 产物（不跑 flatten–relax）；想看整条链就看 §6。
+- `encode/demo.rkt` 手写 measured-layout，再跑 `bind-labels` 得到 bound-layout；想看整条链就看 §6。
 - 测试条数：expand-data 75 / flatten 67 / expand-pseudo 119 / analyze 178 / dce 46 /
-  layout 185 / relax 30 / encode 70 / flow（阶段表、选择器、层组、片段）。
+  layout / bind-labels / relax / encode / flow（阶段表、选择器、层组、片段）。
 - 层与层之间不互相调用；整条链要用 `flow` 串（`flow/demo.rkt`），或按 §6 手动串。
 - 每个 demo/test 都直接 `racket <层>/test.rkt` 跑，不需要参数。
-- 另有一个独立黑盒契约测试目录 `../riscv-compiler-rebuild-test/`：只 require 公开 API，
+- 另有一个独立黑盒契约测试目录 `../riscv-compiler-test/`：只 require 公开 API，
   按 `DESIGN.md` 锁定每层 s-exp 形状，并跑整条 `flow` 的字节 golden；入口是
-  `racket ../riscv-compiler-rebuild-test/run.rkt`。
+  `racket ../riscv-compiler-test/run.rkt`。
 
 ## 8. 已知缺口 / 未实现
 
 | 项 | 现状 | 备注 |
 | --- | --- | --- |
-| 寄存器使用层（填 scratch） | **留空** | 位置：**relax 之后、encode 之前**；形状 `layout -> layout`（尺寸不变，不需要重跑 layout）；输入是两类 problem：`(scratch-hole 段 偏移 item origin)` 和 `(la-too-far 段 偏移 item 距离 origin)`；"洞"的形式是**item 少一个操作数**：`(branch-indirect <cond> a b L)` / `(jump-far x0 L)`。要选寄存器就得有活跃性，所以它还要吃 `program`（`requires '(program layout)`，`provides '(layout)`） |
+| 寄存器使用层（填 scratch） | **留空** | 位置：**relax 之后、bind-labels 之前**；形状 `measured-layout -> measured-layout`（尺寸不变）；输入是 `requests` 里的 `(scratch-hole 段 偏移 item origin)` 和 `(la-too-far 段 偏移 item 距离 origin)`；"洞"的形式是**item 少一个操作数**：`(branch-indirect <cond> a b L)` / `(jump-far x0 L)`。要选寄存器就得有活跃性，所以它还要吃 `program` |
 | `la` 远形式（>±2GB） | 只报 `la-too-far`（带 `(code 块 项)` 定位） | 与填 scratch 同一层：`la` 远形式也要临时寄存器 |
-| 真 reloc / 外部符号 | 没做 | 栈顶 / `malloc` 区要它 |
+| 真 reloc / 外部符号 | 没做 | `bind-labels` 未来可以演化成 mini-linker；栈顶 / `malloc` 区要它 |
 | 补 fallthrough 跳转、trampoline、块重排 | 没做 | layout 只报 `broken-fallthrough` |
 | 加载器格式（`(build …)` → 文件） | 没做 | 现在只是数据结构 |
 | `.bss` / `ascii` 等数据指令 | 没做 | `fill` / `bytes` 够用 |

@@ -3,9 +3,9 @@
 
 (require rackunit
          "helpers.rkt"
-         (rename-in "../riscv-compiler-rebuild/layout/forms.rkt"
+         (rename-in "../riscv-compiler/layout/forms.rkt"
                     [item-size item-size*])
-         (only-in "../riscv-compiler-rebuild/layout/forms.rkt"
+         (only-in "../riscv-compiler/layout/forms.rkt"
                   label-form? align-form? pad-form? bytes-form? fill-form?
                   value-form? compressed-form? value-width value-payload
                   la-form? la-scratch
@@ -13,11 +13,11 @@
                   item-kind
                   branch-form? jump-form? control-form? control-target
                   form-range scratch-hole?)
-         (rename-in "../riscv-compiler-rebuild/layout/layout.rkt"
+         (rename-in "../riscv-compiler/layout/layout.rkt"
                     [layout-program layout-program*])
-         (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
-                  layout-problems symbol-row symbol-address eval-address)
-         (only-in "../riscv-compiler-rebuild/target.rkt"
+         (only-in "../riscv-compiler/layout/layout.rkt"
+                  layout-problems layout-anchors layout-phase layout-requests)
+         (only-in "../riscv-compiler/target.rkt"
                   target-rv64-base target-rv32-all))
 
 (define test-target target-rv64-base)
@@ -133,7 +133,9 @@
 
 (define laid (lay prog data spec))
 
+(check-equal? (layout-phase-of laid) 'measured)
 (check-equal? (layout-problem-list laid) '())
+(check-equal? (layout-request-list laid) '())
 (check-equal? (layout-item-forms laid 'c)
               '((label main) (addi a0 a0 1) (beq a0 a0 (done))
                 (label done) (jalr x0 ra 0)))
@@ -149,25 +151,13 @@
                 (offset 8 (value 4 7))))
 (check-equal? (layout-size laid 'd) 12)
 
-;; 符号行: (symbol 链 段名 偏移 绝对地址)
-(define symbols (layout-symbols laid))
-(check-equal? symbols
-              '((symbol (main) c 0 #x1000)
-                (symbol (done) c 8 #x1008)
-                (symbol (d tbl) d 0 #x2000)
-                (symbol (d x) d 8 #x2008)))
-
-(check-equal? (symbol-address (symbol-row symbols '(done))) #x1008)
-(check-false (symbol-row symbols '(nope)))
-
-;; 地址表达式求值: 整数 / 链 / + / -
-(check-equal? (eval-address 8 symbols) 8)
-(check-equal? (eval-address '(d tbl) symbols) #x2000)
-(check-equal? (eval-address '(+ (d tbl) 8) symbols) #x2008)
-(check-equal? (eval-address '(- (d x) (d tbl)) symbols) 8)
-(check-equal? (eval-address '(+ (- (d x) (d tbl)) 4) symbols) 12)
-(check-error "未定义链"
-             (lambda () (eval-address '(+ (nope) 1) symbols)))
+;; measured 只有 anchor: (anchor 链 段名 偏移), 没有绝对地址
+(check-equal? (layout-anchors laid)
+              '((anchor (main) c 0)
+                (anchor (done) c 8)
+                (anchor (d tbl) d 0)
+                (anchor (d x) d 8)))
+(check-false (assoc 'symbols laid))
 
 ;; 对齐看绝对地址: 段 start 不整除 align 也要补对
 (define aligned
@@ -215,12 +205,6 @@
                   (segment (name d) (kind data) (start #x1080) (end #x1200) (align 4)))
         (place c (main))))
  'segment-overlap)
-
-(check-problem
- (lay (one-block '((jalr x0 ra 0))) '()
-      '((segments (segment (name c) (kind code) (start #x1000) (end #x1001) (align 4)))
-        (place c (main))))
- 'segment-overflow)
 
 ;; ---------------------------------------------------------------------------
 ;; 放置问题
@@ -304,7 +288,7 @@
  'undefined-target)
 
 ;; 够不着的普通分支: 交给 relax
-(check-problem
+(check-request
  (lay (program-of
        '((blocks (block ((main)) (beq a0 a0 (far)))
                  (block ((far)) (jalr x0 ra 0)))
@@ -318,22 +302,12 @@
  'needs-far)
 
 ;; scratch 空槽: 报 problem, 不抛异常
-(check-problem
+(check-request
  (lay (one-block '((branch-indirect beq a0 a1 (main)))) '() (plain-spec))
  'scratch-hole)
-(check-problem
+(check-request
  (lay (one-block '((jump-far x0 (main)))) '() (plain-spec))
  'scratch-hole)
-
-;; 地址字宽度不够
-(check-problem
- (lay (one-block '((jalr x0 ra 0)))
-      '((label d t) (value 1 (d t)))
-      '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
-                  (segment (name d) (kind data) (start #x2000) (end #x2100) (align 16)))
-        (place c (main))
-        (place d (d t))))
- 'value-out-of-range)
 
 ;; 地址字里的链不存在
 (check-problem
@@ -346,7 +320,7 @@
  'undefined-target)
 
 ;; 近形式 la 够不着
-(check-problem
+(check-request
  (lay (program-of
        '((blocks (block ((main)) (la t0 (far)) (jalr x0 ra 0))
                  (block ((far)) (jalr x0 ra 0)))

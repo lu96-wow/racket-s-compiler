@@ -14,7 +14,8 @@
          (only-in "../analyze/analyze.rkt" analyze sexp->program)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (rename-in "../layout/layout.rkt" [layout-program layout-program*])
-         (only-in "../layout/layout.rkt" layout-problems)
+         (only-in "../layout/layout.rkt" layout-problems layout-requests layout-phase)
+         (rename-in "../bind-labels/bind.rkt" [bind-labels bind-labels*])
          (rename-in "../relax/relax.rkt" [relax relax*]))
 
 (define test-target target-rv64-base)
@@ -22,7 +23,13 @@
 (define (instruction-arity name) (instruction-arity* test-target name))
 (define (known-instruction? name) (known-instruction?* test-target name))
 (define (padding-bytes kind n) (padding-bytes* test-target kind n))
-(define (encode-layout layout) (encode-layout* test-target layout))
+(define (bind-labels layout) (bind-labels* layout))
+;; 测试里统一走 measured -> bound -> encode; 想测“拒绝 measured”时直接用 encode-layout*
+(define (encode-layout layout)
+  (encode-layout* test-target
+                  (if (eq? (layout-phase layout) 'bound)
+                      layout
+                      (bind-labels layout))))
 (define (layout-program prog data spec) (layout-program* test-target prog data spec))
 (define (relax prog data spec #:max-rounds [n 64])
   (relax* test-target prog data spec #:max-rounds n))

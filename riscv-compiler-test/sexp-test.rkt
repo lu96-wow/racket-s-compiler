@@ -3,7 +3,7 @@
 
 (require rackunit
          "helpers.rkt"
-         "../riscv-compiler-rebuild/sexp.rkt")
+         "../riscv-compiler/sexp.rkt")
 
 ;; ---------------------------------------------------------------------------
 ;; form? / name? / path?
@@ -68,6 +68,19 @@
 (check-equal? (address-expr-chains '(- (end) (start))) '((end) (start)))
 (check-equal? (address-expr-chains '(+ (- (end) (start)) 4))
               '((end) (start)))
+
+;; eval-address 的 resolver 由调用方给: measured 用 anchors, bound 用 symbols
+(define (resolve chain)
+  (case chain
+    [((a)) 100]
+    [((b)) 20]
+    [else #f]))
+(check-equal? (eval-address 8 resolve) 8)
+(check-equal? (eval-address '(a) resolve) 100)
+(check-equal? (eval-address '(+ (a) 8) resolve) 108)
+(check-equal? (eval-address '(- (a) (b)) resolve) 80)
+(check-equal? (eval-address '(+ (- (a) (b)) 4) resolve) 84)
+(check-error "未定义链" (lambda () (eval-address '(+ (nope) 1) resolve)))
 
 ;; ---------------------------------------------------------------------------
 ;; as-items: 宽容入口, 出口一律 plain list

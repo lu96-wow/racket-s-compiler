@@ -3,7 +3,7 @@
 
 (require rackunit
          "helpers.rkt"
-         (only-in "../riscv-compiler-rebuild/expand-pseudo/rewrite.rkt"
+         (only-in "../riscv-compiler/expand-pseudo/rewrite.rkt"
                   rewrite-program rewrite-tree rewrite-item apply-rule
                   pseudo-name? rules-for check-rows make-table
                   pseudo-leftover? fully-rewritten?

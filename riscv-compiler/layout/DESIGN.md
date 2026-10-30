@@ -1,8 +1,9 @@
-# layout 布局计算（`layout/forms.rkt` `layout/layout.rkt`）
+# layout 布局度量（`layout/forms.rkt` `layout/layout.rkt`）
 
 > 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#layout`](../SEXP.md#layout)。
 >
-> 把"块 + 数据 + 段表"变成"每段的 item 序列 + 偏移 + 符号 + problems"。
+> 把"块 + 数据 + 段表"变成"每段的 item 序列 + 偏移 + anchors + requests + problems"。
+> **不产出绝对地址**；地址由 `bind-labels` 绑定。
 > 只算，不选：不升级远形式、不填 scratch、不补跳、不重排。
 
 ## 1. 职责
@@ -11,8 +12,8 @@
 | --- | --- |
 | 段内单游标累加尺寸 | 判断真指令是否合法（属于 encode） |
 | `align` 补齐（按**绝对地址**） | 填 scratch 空槽（留给"寄存器使用"层） |
-| 记符号（链 → 段 / 偏移 / 绝对地址） | 补 fallthrough 跳转 |
-| 检查范围（`needs-far` / `value-out-of-range` / `la-too-far`） | 分支松弛（属于 relax） |
+| 记 anchors（链 → 段 / 偏移） | 绝对地址（属于 bind-labels） |
+| 检查范围并分成 requests / problems（`needs-far` / `scratch-hole` / `la-too-far`） | 绝对地址、value 最终宽度、段容量（属于 bind-labels） |
 | 报放置问题（`unplaced` / `broken-fallthrough` …） | 改 item（除了给 relax 留定位） |
 
 ## 2. 输入 / 输出
@@ -26,16 +27,19 @@ layout  : ((segments (segment (name 名) (kind code|data)
 ```
 
 ```racket
-(layout-program program data layout-input)
-  -> ((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)
-                          (items (offset 0 (label main))
-                                 (offset 0 (lwu t0 sp 8))
-                                 (offset 4 (bge t1 t0 (done)))
-                                 (offset 8 (label done))
-                                 (offset 8 (add a0 a0 x0)))
-                          (size 12)) ...)
-      (symbols (symbol (main) s 0 #x1000) …)
-      (problems …))
+(layout-program target program data layout-input)
+  -> ((phase measured)
+      (segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)
+                         (items (offset 0 (label main))
+                                (offset 0 (lwu t0 sp 8))
+                                (offset 4 (bge t1 t0 (done)))
+                                (offset 8 (label done))
+                                (offset 8 (add a0 a0 x0)))
+                         (size 12)) ...)
+      (anchors (anchor (main) s 0)
+               (anchor (done) s 8) ...)
+      (requests (needs-far …) (scratch-hole …) (la-too-far …))
+      (problems (unplaced …) (undefined-target …)))
 ```
 
 `kind` 只有 `code` / `data` 两种。代码里**没有 `section`**，也没有 `primary` / `entry`：
@@ -47,8 +51,8 @@ layout  : ((segments (segment (name 名) (kind code|data)
 
 | 文件 | API |
 | --- | --- |
-| `layout.rkt` | `layout-program` `layout-problems` `as-items` `run` |
-| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload`；地址表达式 `address-expr?` / `address-expr-chains` / `arith-head?` 来自 `sexp.rkt`，求值用本层的 `eval-address` `la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
+| `layout.rkt` | `layout-program` `layout-phase` `layout-problems` `layout-requests` `layout-segments` `layout-anchors` `anchor-row` `as-items` `run` |
+| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload`；地址表达式 `address-expr?` / `address-expr-chains` / `arith-head?` 来自 `sexp.rkt`，求值用 `sexp.rkt` 的 `eval-address`（resolver）；`la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
 
 ## 4. 规则
 
@@ -156,51 +160,52 @@ layout  : ((segments (segment (name 名) (kind code|data)
   = 造了一个未完成的 item：layout 报 `scratch-hole`，encode 拒绝出产物 —— 这是诊断，不是静默错误；`la` 的 scratch 是**可选槽**
   （`(la rd 链)` / `(la rd tmp 链)`），缺省不是缺陷，不报 `scratch-hole`。
 
-### 4.7 范围检查：只有 layout 有符号表
+### 4.7 范围检查：只算临时位置
 
 ```racket
-(value 宽度 表达式)     ; 表达式里的链都在? **表达式的值**放得进 宽度 个字节?
-(la rd [tmp] 表达式)    ; 同上 + delta = 值 − 当前地址 落得进 auipc+addi?
-(la rd [tmp] 链)                ; 链存在? delta 落得进 auipc+addi?
+(value 宽度 表达式)     ; 只查表达式里的链都在 anchors 里
+(la rd [tmp] 表达式)    ; 链都在? delta = 临时位置 − 当前地址 落得进 auipc+addi?
 ```
 
-- `value` 的整数不用查（expand-data 已经按宽度查过值域）。
+- `value` 的**宽度**不在本层查：要等 `bind-labels` 拿到最终地址。
 - `la` 用 `fits-auipc-pair?`（不是简单的 ±2GB 区间，而是 auipc+addi 的精确可达集）。
-- 链不存在 → `undefined-target`；放不下 → `value-out-of-range` / `la-too-far`。
-  这三者和 `needs-far` 一样是**范围**问题，不是指令合法性 —— 只有 layout 算得出地址。
+- 链不存在 → `undefined-target`（problem）；放不下 → `la-too-far`（request）。
+- `needs-far` / `la-too-far` 只用 anchors + 段 start 算临时距离，不写进产物。
 
-### 4.8 problems：哪些是自己的，哪些是交接
+### 4.8 problems / requests：哪些是自己的，哪些是交接
 
-| 类别 | problems |
+| 类别 | 归属 |
 | --- | --- |
-| 放置 | `unplaced-block` `unplaced` `unlabeled-run` `ambiguous-placement` `unmatched-place` `unknown-segment` |
-| 段 | `segment-overflow` `segment-misaligned` `segment-overlap` `segment-name-duplicated` `segment-bad-range` |
-| 段归属 | `code-data-mixed` `data-code-mixed` |
-| 顺序 | `broken-fallthrough` |
-| 符号 / 范围 | `undefined-target` `value-out-of-range` `la-too-far` `needs-far` |
-| 交给 relax | `needs-far`（升远形式）、`scratch-hole`（等"寄存器使用"层） |
+| 放置 | problems：`unplaced-block` `unplaced` `unlabeled-run` `ambiguous-placement` `unmatched-place` `unknown-segment` |
+| 段 | problems：`segment-misaligned` `segment-overlap` `segment-name-duplicated` `segment-bad-range` |
+| 段归属 | problems：`code-data-mixed` `data-code-mixed` |
+| 顺序 | problems：`broken-fallthrough` |
+| 符号 | problems：`undefined-target` |
+| 交给 relax | requests：`needs-far`（升远形式） |
+| 交给寄存器层 | requests：`scratch-hole` / `la-too-far` |
+| 只有最终地址/尺寸能判 | **不在这里**：`value-out-of-range` / `segment-overflow` 属于 `bind-labels` |
 
-`needs-far` / `scratch-hole` 带 `(code 块下标 项下标)` 定位（`measure` 记在 `measured.origins` 里），
-relax 才能精确改那一条。
+`needs-far` / `scratch-hole` / `la-too-far` 带 `(code 块下标 项下标)` 定位（`measure` 记在 `measured.origins` 里），
+relax / 寄存器层才能精确改那一条。
 
 **不在这个名单里的都不是本层的事**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
 都是"变二进制"（encode）的事。
 
 ## 5. 不归本层管
 
+- 绝对地址 / `value` 最终宽度 / 段容量：bind-labels。
 - 合法性（拼写 / 操作数 / 立即数范围 / code 段对齐）：encode。
 - 填 scratch 空槽：留给"动态内存布局 / 寄存器使用"层。
 - 分支松弛：relax。补 fallthrough 跳转：目前没有实现。
 - 端序：encode。
 
-## 6. 测试（`layout/test.rkt`，185 条）
+## 6. 测试（`layout/test.rkt`）
 
 形式表（尺寸 / 类别 / 区间 / 空槽 / 值）、放置、region、对齐（含绝对地址）、
-fallthrough、符号表、每类 problem、expand-data 边界（expand-data 的输出必须能被本层度量）、
-`li` 精确尺寸、`la` 范围。
+fallthrough、anchors、每类 problem/request、expand-data 边界、`li` 精确尺寸、`la` 范围。
 
 ## 7. 已知缺口
 
 - `place` 只能按精确链匹配，没有通配 / 正则。
-- 段 `end` 只是容量上界（用来查 `segment-overflow`），不参与地址计算。
+- 段 `end` 只是容量上界（由 bind-labels 查 `segment-overflow`），不参与地址计算。
 - 补 fallthrough 跳转没做（`broken-fallthrough` 只报）。

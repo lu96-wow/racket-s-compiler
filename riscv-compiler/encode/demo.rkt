@@ -1,21 +1,24 @@
 #lang racket
 ;;; encode/demo.rkt -- 编码（最后一步）
 ;;;
-;;; 本层的**全部输入**就是 relax 的产物（layout）：
+;;; 本层的**全部输入**就是 bind-labels 的产物（bound-layout）：
 ;;;
-;;;   ((segments (segment (name …) (kind …) (start …) (end …) (align …)
+;;;   ((phase bound)
+;;;    (segments (segment (name …) (kind …) (start …) (end …) (align …)
 ;;;                       (items (offset k item) ...) (size n)) ...)
-;;    (symbols (symbol 链 段名 偏移 绝对地址) ...)
-;;;    (problems ...))          ; 空的时候就是 (problems)
+;;;    (anchors (anchor 链 段名 偏移) ...)
+;;;    (symbols (symbol 链 段名 偏移 绝对地址) ...)
+;;;    (requests ...) (problems ...))
 ;;;
-;;; 所以这个 demo 直接手写 layout，不跑前面的层（那属于别层的 demo）。
-;;; 这里手写的形状和 layout/demo.rkt 打印出来的完全一样，可以对照着看。
+;;; 这个 demo 先手写 measured-layout，再跑 bind-labels 得到 bound-layout。
 
 (require "encode.rkt"
-         (only-in "../target.rkt" target-rv64-base))
+         (only-in "../target.rkt" target-rv64-base)
+         (rename-in "../bind-labels/bind.rkt" [bind-labels bind-labels*]))
 
 (define laid
-  '((segments
+  '((phase measured)
+    (segments
      (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)
               (items (offset 0 (label main))
                      (offset 0 (li t0 #x12345678))       ; 8 字节: lui + addi
@@ -32,12 +35,12 @@
                      (offset 16 (value 4 #x12345678))
                      (offset 20 (fill 4 #xAA)))
               (size 24)))
-    (symbols (symbol (main) prog1 0 #x100000)
-             (symbol (data1 table) data1 0 #x200000))
-    ;; problems 为空时 layout 写成 (problems) —— 一个只有头的表
+    (anchors (anchor (main) prog1 0)
+             (anchor (data1 table) data1 0))
+    (requests)
     (problems)))
 
-(displayln ";; 输入: layout（每段: 起点 + 每条 item 的偏移 + 尺寸）")
+(displayln ";; 输入: measured-layout（每段: 起点 + 每条 item 的偏移 + 尺寸）")
 (for ([seg (in-list (cdr (assoc 'segments laid)))])
   (displayln (format "  ~a ~a start=#x~x size=~a"
                      (cadr (assoc 'name (cdr seg)))
@@ -47,7 +50,15 @@
   (for ([e (in-list (cdr (assoc 'items (cdr seg))))]) (displayln (format "    ~s" e))))
 (newline)
 
-(define build (encode-layout target-rv64-base laid))
+(define bound (bind-labels* laid))
+
+(newline)
+(displayln ";; bind-labels 产物: 符号行（偏移 -> 绝对地址）")
+(for ([sym (in-list (cdr (assoc 'symbols bound)))])
+  (displayln (format "  ~s -> ~a+~x (#x~x)"
+                     (cadr sym) (caddr sym) (cadddr sym) (last sym))))
+
+(define build (encode-layout target-rv64-base bound))
 
 (define (hexdump start bs)
   (for ([i (in-range 0 (bytes-length bs) 16)])

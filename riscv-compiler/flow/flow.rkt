@@ -4,7 +4,7 @@
 ;;; 构建流: 用一张 stage 表 + 一个名字列表把各层串起来。
 ;;;
 ;;;   (run-flow target
-;;;             (list 'expand-data 'flatten 'expand-pseudo 'analyze 'dce 'relax 'encode)
+;;;             (list 'expand-data 'flatten 'expand-pseudo 'analyze 'dce 'relax 'bind-labels 'encode)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
 ;;; 每个 stage 声明两件事:
@@ -17,7 +17,7 @@
 ;;;   * 平层   = 两个 stage 的 requires/provides 相同（例如 layout 与 relax），
 ;;;              写哪个、写几次都由列表决定
 ;;;   * 依赖   = 运行到某步时按 requires 检查，缺了就报错并给出"谁能提供"
-;;;   * target = run-flow 的显式参数，stage run 接收 (in target)
+;;;   * target = run-flow 的显式参数，stage run 接收 (target in)
 ;;;
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
@@ -28,6 +28,7 @@
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
          (only-in "../relax/relax.rkt" relax)
+         (only-in "../bind-labels/bind.rkt" bind-labels)
          (only-in "../encode/encode.rkt" encode-layout))
 
 (provide (struct-out stage)
@@ -51,8 +52,9 @@
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
 ;;   names          flatten 建的名字表（链 -> 位置）
 ;;   program        (struct program blocks flows)
-;;   layout         布局产物（segments + symbols + problems）
-;;   build          最终产物 (build (segment …) …)
+;;   measured-layout 度量产物（segments + anchors + requests + problems）
+;;   bound-layout    绑定产物（segments + anchors + symbols + requests + problems）
+;;   build           最终产物 (build (segment …) …)
 ;;
 ;;   外部输入（seed）：rich-data / program-items / data-items / layout-spec
 ;; ---------------------------------------------------------------------------
@@ -95,29 +97,36 @@
           "死代码消除（三个 pass 跑到不动点）")
 
    'layout
-   (stage 'layout '(program data-items layout-spec) '(layout)
+   (stage 'layout '(program data-items layout-spec) '(measured-layout)
           (lambda (target in)
-            (hash 'layout
+            (hash 'measured-layout
                   (layout-program target
                                   (hash-ref in 'program)
                                   (hash-ref in 'data-items)
                                   (hash-ref in 'layout-spec))))
-          "布局计算: 放置 + 度量 + 符号表 + problems")
+          "布局度量: 放置 + 尺寸 + anchors + requests/problems（无绝对地址）")
 
    'relax
-   (stage 'relax '(program data-items layout-spec) '(layout)
+   (stage 'relax '(program data-items layout-spec) '(measured-layout)
           (lambda (target in)
-            (hash 'layout
+            (hash 'measured-layout
                   (relax target
                          (hash-ref in 'program)
                          (hash-ref in 'data-items)
                          (hash-ref in 'layout-spec))))
           "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
 
+   'bind-labels
+   (stage 'bind-labels '(measured-layout) '(bound-layout)
+          (lambda (_target in)
+            (hash 'bound-layout
+                  (bind-labels (hash-ref in 'measured-layout))))
+          "地址绑定: anchors -> symbols（偏移 -> 绝对地址）+ 最终宽度/容量检查")
+
    'encode
-   (stage 'encode '(layout) '(build)
-          (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'layout))))
-          "编码: layout -> (build …)；有 problem 就拒绝出产物")))
+   (stage 'encode '(bound-layout) '(build)
+          (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'bound-layout))))
+          "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -133,7 +142,7 @@
 
 ;; 默认流: 从 rich 数据走到字节，含松弛、不含可选的名字展平/伪指令（按需加）
 (define default-flow
-  '(expand-data flatten expand-pseudo analyze dce relax encode))
+  '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 选择器: 层名 / 层组 / 任意片段
@@ -145,7 +154,7 @@
   (hash
    'frontend '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
-   'backend  '(relax encode)          ; layout 在 relax 内部跑
+   'backend  '(relax bind-labels encode) ; layout 在 relax 内部跑
    'all      default-flow))
 
 (define (group-names)

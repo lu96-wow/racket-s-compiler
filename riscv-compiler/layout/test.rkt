@@ -156,7 +156,8 @@
   (findf (lambda (s) (equal? (cadr (assoc 'name (cdr s))) name)) (segments-of layout)))
 (define (items-of-seg layout name) (cdr (assoc 'items (cdr (seg-of layout name)))))
 (define (size-of-seg layout name) (cadr (assoc 'size (cdr (seg-of layout name)))))
-(define (symbols-of layout) (cdr (assoc 'symbols layout)))
+(define (anchors-of layout) (cdr (assoc 'anchors layout)))
+(define (requests-of layout) (cdr (assoc 'requests layout)))
 (define (problems-of layout) (cdr (assoc 'problems layout)))
 
 ;; ---------------------------------------------------------------------------
@@ -170,7 +171,7 @@
                 '((segments (segment (name prog1) (kind code) (start #x100000) (end #x100FFF) (align 16)))
                   (place prog1 (main) (b) (c)))))
 
-(check-equal? (map car l1) '(segments symbols problems))   ; 顶层是字段表, 无标签
+(check-equal? (map car l1) '(phase segments anchors requests problems))   ; 顶层是字段表, 无标签
 (check-equal? (items-of-seg l1 'prog1)
               '((offset 0 (label main)) (offset 0 (addi a0 a0 1)) (offset 4 (bge a0 a1 (c)))
                 (offset 8 (label b)) (offset 8 (addi a1 a1 1))
@@ -178,13 +179,15 @@
 (check-equal? (size-of-seg l1 'prog1) 16)
 (check-equal? (problems-of l1) '())
 
-;; 符号行带 tag: (symbol 链 段名 偏移 绝对地址)
-(check-equal? (findf (lambda (s) (equal? (cadr s) '(main))) (symbols-of l1))
-              '(symbol (main) prog1 0 #x100000))
-(check-equal? (findf (lambda (s) (equal? (cadr s) '(b))) (symbols-of l1))
-              '(symbol (b) prog1 8 #x100008))
-(check-equal? (findf (lambda (s) (equal? (cadr s) '(c))) (symbols-of l1))
-              '(symbol (c) prog1 12 #x10000c))
+;; measured 只有 anchor 行: (anchor 链 段名 偏移), 没有绝对地址
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(main))) (anchors-of l1))
+              '(anchor (main) prog1 0))
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(b))) (anchors-of l1))
+              '(anchor (b) prog1 8))
+(check-equal? (findf (lambda (s) (equal? (cadr s) '(c))) (anchors-of l1))
+              '(anchor (c) prog1 12))
+(check-false (assoc 'symbols l1))
+(check-equal? (map car l1) '(phase segments anchors requests problems))
 
 ;; 压缩分支/跳转: 同理占 2 字节, 目标照查
 ;; (目标故意不指向物理下一块, 否则会被 dce 当冗余转移删掉)
@@ -203,8 +206,8 @@
 (check-equal? (size-of-seg lc 's1) 8)
 (check-equal? (problems-of lc) '())
 
-;; 压缩跳转超出 ±2 KiB -> needs-far (c.jal 会落下, 中间块可达)
-(check-equal? (problems-of
+;; 压缩跳转超出 ±2 KiB -> needs-far request (c.jal 会落下, 中间块可达)
+(check-equal? (requests-of
                (lay '((label a) (c.jal (far))
                       (label mid) (align 4096) (addi a0 a0 1)
                       (label far) (addi a1 a1 1))
@@ -245,8 +248,8 @@
 (check-equal? (size-of-seg l2 'prog1) 12)
 (check-equal? (size-of-seg l2 'prog1cold) 4)
 
-;; jal 跨段 2MB -> needs-far, 留给 far 层
-(check-equal? (problems-of l2)
+;; jal 跨段 2MB -> needs-far request, 留给 far 层
+(check-equal? (requests-of l2)
               '((needs-far prog1 4 (jal x0 (cold)) 2097148 (code 1 0))))
 
 ;; ---------------------------------------------------------------------------
@@ -440,7 +443,7 @@
                                '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
                                  (place s1 (main)))))
               '((undefined-target s1 0 (jal x0 (ghost)))))
-(check-equal? (problems-of (lay '((label main) (branch-indirect beq a0 a1 (done))
+(check-equal? (requests-of (lay '((label main) (branch-indirect beq a0 a1 (done))
                                   (label keep) (jal x0 (keep))   ; 让目标不是紧邻下一块
                                   (label done) (jalr x0 ra 0))
                                '()
@@ -449,7 +452,7 @@
               '((scratch-hole s1 0 (branch-indirect beq a0 a1 (done)) (code 0 0))))
 
 ;; jump-far: 要不要 scratch 由 link 决定, 不是由"少一项"决定
-(check-equal? (problems-of (lay0 '((label main) (jump-far x0 (done))
+(check-equal? (requests-of (lay0 '((label main) (jump-far x0 (done))
                                    (label done) (jalr x0 ra 0))
                                 '()
                                 '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
@@ -495,7 +498,7 @@
               '((code-data-mixed s1 0 (fill 4 0))))
 
 ;; la 够不着 ±2GB / 目标不存在
-(check-equal? (problems-of
+(check-equal? (requests-of
                (lay0 '((label main) (la t0 (d t)) (ret))
                      '((label d t) (bytes 1))
                      '((segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4))
@@ -528,12 +531,6 @@
                                            (segment (name b) (kind code) (start #x2000) (end #x1FFF) (align 4)))
                                  (place a (main)))))
               '((segment-bad-range b)))
-
-;; 越界
-(check-equal? (problems-of (lay '((label main) (addi a0 a0 1) (addi a0 a0 1)) '()
-                               '((segments (segment (name s1) (kind code) (start #x1000) (end #x1007) (align 4)))
-                                 (place s1 (main)))))
-              '((segment-overflow s1 8 7)))
 
 ;; ---------------------------------------------------------------------------
 ;; 边界: expand-data 的输出必须能被 layout 原样度量 (expand-data 的词汇就是 layout 的数据词汇)
@@ -588,15 +585,6 @@
                                  (segment (name d) (kind data) (start #x10000) (end #x1FFFF) (align 8)))
                        (place s1 (main)) (place d (d t)))))
               '((undefined-target d 0 (value 8 (ghost)))))
-
-;; 4 字节放不下这个地址 -> 和 needs-far 同一批(布局范围问题)
-(check-equal? (problems-of
-               (lay0 '((label main) (jalr x0 ra 0))
-                     '((label d t) (value 4 (d t)))
-                     '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4))
-                                 (segment (name d) (kind data) (start #x100000000) (end #x100000FFF) (align 8)))
-                       (place s1 (main)) (place d (d t)))))
-              '((value-out-of-range d 0 (value 4 (d t)) #x100000000)))
 
 ;; 判的是**表达式的值**, 不是绝对地址: 两个 label 都在 4GB, 差 24 也能放进 4 字节
 (check-equal? (problems-of
@@ -689,9 +677,9 @@
        '((segments (segment (name s1) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place s1 (a) (mid)))))
 (check-equal? (problems-of l-mid) '((unmatched-place (mid))))
-;; 块内 label 照样有偏移(符号表里有它)
-(check-equal? (findf (lambda (r) (equal? (cadr r) '(mid))) (symbols-of l-mid))
-              '(symbol (mid) s1 4 #x1004))
+;; 块内 label 照样有偏移(anchors 里有它)
+(check-equal? (findf (lambda (r) (equal? (cadr r) '(mid))) (anchors-of l-mid))
+              '(anchor (mid) s1 4))
 
 ;; place 名字写错 -> 也报 unmatched-place
 (check-equal? (problems-of (lay '((label a) (addi a0 a0 1)) '()

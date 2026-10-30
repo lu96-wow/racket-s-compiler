@@ -1,7 +1,15 @@
 #lang racket
 ;;; layout/layout.rkt
 ;;;
-;;; 布局计算: program + data + layout 输入 -> ((segments ...) (symbols ...) (problems ...))
+;;; 布局度量: program + data + layout 输入
+;;;   -> ((phase measured) (segments ...) (anchors ...) (requests ...) (problems ...))
+;;;
+;;; 本层只产出“位置”，不产出绝对地址:
+;;;   anchors  = label 的身份 + 段 + 段内偏移
+;;;   requests = needs-far / scratch-hole / la-too-far（交给 relax 或寄存器层）
+;;;   problems = 放置 / 段 / fallthrough / undefined-target
+;;;
+;;; 绝对地址由 bind-labels 一次性绑定；value 宽度和段容量也在那里做最终检查。
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
@@ -32,10 +40,12 @@
 
 (provide layout-program
          as-items
+         layout-phase
          layout-problems
-         symbol-row       ; 符号行查找
-         symbol-address
-         eval-address     ; 地址表达式求值 (encode 也要用)
+         layout-requests
+         layout-segments
+         layout-anchors
+         anchor-row
          (struct-out run))
 
 ;; ---------------------------------------------------------------------------
@@ -216,7 +226,6 @@
 (define (measure target seg blks runs problem!)
   (define seg-name (segment-name seg))
   (define seg-kind (segment-kind seg))
-  (define capacity (- (segment-end seg) (segment-start seg)))
   (define cursor 0)
   (define out '())
 
@@ -259,9 +268,6 @@
     (for ([it (in-list (run-items r))] [i (in-naturals)])
       (emit-item! it (list 'data ri i))))
 
-  (when (and (>= capacity 0) (> cursor capacity))
-    (problem! `(segment-overflow ,seg-name ,cursor ,capacity)))
-
   (measured seg (reverse out) cursor blks origins))
 
 (define (measure-all target segs code-by-seg data-by-seg problem!)
@@ -296,96 +302,80 @@
                                          ,(hash-ref labels-of ft '()))))))))
 
 ;; ---------------------------------------------------------------------------
-;; 符号表
+;; anchors / 临时位置
 ;; ---------------------------------------------------------------------------
 
-;; 符号行: (symbol 链 段名 偏移 绝对地址)
-(define (collect-symbols measured-segs)
+;; anchor 行: (anchor 链 段名 偏移) —— 只有位置, 没有绝对地址
+(define (collect-anchors measured-segs)
   (for*/list ([m (in-list measured-segs)]
               [entry (in-list (measured-items m))]
               #:when (label-form? (caddr entry)))
     (define off (cadr entry))
     (define path (cdr (caddr entry)))
     (define seg (measured-segment m))
-    (list 'symbol path (segment-name seg) off (+ (segment-start seg) off))))
+    (list 'anchor path (segment-name seg) off)))
 
-(define (symbol-row symbols path)
-  (and path (findf (lambda (row) (equal? (cadr row) path)) symbols)))
+(define (anchor-row anchors path)
+  (and path (findf (lambda (row) (equal? (cadr row) path)) anchors)))
 
-;; 绝对地址在最后一列
-(define (symbol-address row) (last row))
-
-;; 地址表达式求值: 整数 | (链) | (+ …) | (- …)
-;; 链都该在符号表里（verify 已经查过 undefined-target）；查不到就是内部错误。
-(define (eval-address expr symbols)
-  (cond
-    [(exact-integer? expr) expr]
-    [(arith-head? expr)
-     (if (eq? (car expr) '+)
-         (for/sum ([a (in-list (cdr expr))]) (eval-address a symbols))
-         (- (eval-address (cadr expr) symbols)
-            (for/sum ([a (in-list (cddr expr))]) (eval-address a symbols))))]
-    [else
-     (define row (symbol-row symbols expr))
-     (or (and row (symbol-address row))
-         (error 'layout "undefined symbol in address expression: ~s" expr))]))
+;; measured 相内部的临时位置: 链 -> 段 start + 段内偏移。
+;; 只在本层用于 needs-far / la-too-far 的距离判断, 不写进产物。
+(define (collect-positions measured-segs anchors)
+  (define start-of
+    (for/hash ([m (in-list measured-segs)])
+      (values (segment-name (measured-segment m))
+              (segment-start (measured-segment m)))))
+  (for/hash ([a (in-list anchors)])
+    (values (cadr a) (+ (hash-ref start-of (caddr a)) (cadddr a)))))
 
 ;; ---------------------------------------------------------------------------
-;; 校验: 只报 problems, 不抛异常。
-;; 四类各一个小函数, 由 verify 逐 item 调用:
-;;   control  目标存在 / 距离够
-;;   scratch  空槽(要不要填交给 relax / 未实现的寄存器层)
-;;   la       8 字节的 auipc+addi 够不够得着
-;;   value    数据里的地址字: 链存在 / 放得进宽度
+;; 校验: 只报 problems/requests, 不抛异常。
+;;   control  目标存在 / 距离够 -> undefined-target(problem) / needs-far(request)
+;;   scratch  空槽 -> scratch-hole(request)
+;;   la       8 字节的 auipc+addi 够不够得着 -> la-too-far(request)
+;;   value    数据里的地址字: 只查链存在; 宽度等 bind-labels 用最终地址查
 ;; ---------------------------------------------------------------------------
 
-;; 一个 item 的上下文: 四个小函数都要这几样, 装起来免得每个都 7 个参数
-(struct site (seg off item here origin symbols report) #:transparent)
+(struct site (seg off item here origin positions problem! request!) #:transparent)
 
-(define (report! s p) ((site-report s) p))
+(define (problem! s p) ((site-problem! s) p))
+(define (request! s p) ((site-request! s) p))
 
 (define (check-control s)
   (define it (site-item s))
   (when (control-form? it)
-    (define row (symbol-row (site-symbols s) (normalize-path (control-target it))))
+    (define target (normalize-path (control-target it)))
+    (define addr (and target (hash-ref (site-positions s) target #f)))
     (cond
-      [(not row) (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
+      [(not addr) (problem! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
       [else
        ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
-       (define d (- (symbol-address row) (site-here s)))
+       (define d (- addr (site-here s)))
        (define range (form-range it))
        (when (and range (not (<= (car range) d (cdr range))))
-         (report! s `(needs-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
+         (request! s `(needs-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
 
 (define (check-scratch s)
   (define it (site-item s))
   (when (scratch-hole? it)
-    (report! s `(scratch-hole ,(site-seg s) ,(site-off s) ,it ,(site-origin s)))))
+    (request! s `(scratch-hole ,(site-seg s) ,(site-off s) ,it ,(site-origin s)))))
 
-;; 地址表达式里的链都在符号表里吗? 缺了就报 undefined-target（每条缺的报一次）
+;; 地址表达式里的链都在临时位置表里吗? 缺了就报 undefined-target（每条缺的报一次）
 (define (check-chains s expr)
   (define ok? #t)
   (for ([c (in-list (address-expr-chains expr))])
-    (unless (symbol-row (site-symbols s) c)
+    (unless (hash-ref (site-positions s) c #f)
       (set! ok? #f)
-      (report! s `(undefined-target ,(site-seg s) ,(site-off s) ,(site-item s)))))
+      (problem! s `(undefined-target ,(site-seg s) ,(site-off s) ,(site-item s)))))
   ok?)
 
-(define (fits-width? n width)
-  (define bits (* 8 width))
-  ;; 和 expand-data 同一条规则: 有符号或无符号能放进 bits 位即可
-  (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits))))
-
-;; 数据里的值: 整数在 expand-data 已经查过; 地址表达式查"链都在 + 值放得进宽度"。
-;; 注意查的是**表达式的值**: (- (end) (start)) 差 24 能放进 4 字节, 哪怕两个地址都在 4GB。
-(define (check-value s)
+;; 数据里的值: 本层只保证链存在; 值是否放得进宽度由 bind-labels 用最终地址查。
+(define (check-value-chains s)
   (define it (site-item s))
   (when (value-form? it)
     (define v (value-payload it))
-    (when (and (not (exact-integer? v)) (check-chains s v))
-      (define n (eval-address v (site-symbols s)))
-      (unless (fits-width? n (value-width it))
-        (report! s `(value-out-of-range ,(site-seg s) ,(site-off s) ,it ,n))))))
+    (when (not (exact-integer? v))
+      (check-chains s v))))
 
 ;; (la rd [tmp] 地址表达式): 近形式 8 字节够不够得着?
 ;; 远形式需要 scratch 寄存器, 属于未实现的那一层。
@@ -394,11 +384,12 @@
   (when (la-form? it)
     (define expr (last it))
     (when (check-chains s expr)
-      (define d (- (eval-address expr (site-symbols s)) (site-here s)))
+      (define d (- (eval-address expr (lambda (c) (hash-ref (site-positions s) c #f)))
+                   (site-here s)))
       (unless (fits-auipc-pair? d (target-xlen target))
-        (report! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
+        (request! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
 
-(define (verify target measured-segs symbols report)
+(define (verify target measured-segs positions problem! request!)
   (for ([m (in-list measured-segs)])
     (define seg (measured-segment m))
     (for ([entry (in-list (measured-items m))])
@@ -407,18 +398,19 @@
       (define s (site (segment-name seg) off it
                       (+ (segment-start seg) off)
                       (hash-ref (measured-origins m) off #f)
-                      symbols report))
+                      positions problem! request!))
       (check-control s)
       (check-scratch s)
       (check-la target s)
-      (check-value s))))
+      (check-value-chains s))))
 
 ;; ---------------------------------------------------------------------------
 ;; 输出
 ;; ---------------------------------------------------------------------------
 
-(define (layout->sexp measured-segs symbols problems)
-  (list (cons 'segments
+(define (layout->sexp measured-segs anchors requests problems)
+  (list (list 'phase 'measured)
+        (cons 'segments
               (for/list ([m (in-list measured-segs)])
                 (define seg (measured-segment m))
                 (list 'segment
@@ -429,7 +421,8 @@
                       (list 'align (segment-align seg))
                       (cons 'items (measured-items m))
                       (list 'size (measured-size m)))))
-        (cons 'symbols symbols)
+        (cons 'anchors anchors)
+        (cons 'requests requests)
         (cons 'problems problems)))
 
 ;; ---------------------------------------------------------------------------
@@ -440,7 +433,9 @@
   (define segs (parse-segments layout-input))
   (define places (parse-places layout-input))
   (define problems '())
+  (define requests '())
   (define (problem! p) (set! problems (cons p problems)))
+  (define (request! p) (set! requests (cons p requests)))
 
   (validate-segments segs problem!)
   (define by-name (for/hash ([s (in-list segs)]) (values (segment-name s) s)))
@@ -460,12 +455,21 @@
 
   (define measured-segs (measure-all target segs code-by-seg data-by-seg problem!))
   (check-fallthrough measured-segs flows problem!)
-  (define symbols (collect-symbols measured-segs))
-  (verify target measured-segs symbols problem!)
+  (define anchors (collect-anchors measured-segs))
+  (define positions (collect-positions measured-segs anchors))
+  (verify target measured-segs positions problem! request!)
 
-  (layout->sexp measured-segs symbols (reverse problems)))
+  (layout->sexp measured-segs anchors (reverse requests) (reverse problems)))
 
-;; 只看 problems 的便捷函数(测试/上层用)
-(define (layout-problems layout)
-  (define hit (assoc 'problems layout))
+;; 产物字段的便捷访问器(测试/上层用)
+(define (layout-field layout key)
+  (define hit (assoc key layout))
   (and hit (cdr hit)))
+
+(define (layout-phase layout)
+  (define row (assoc 'phase layout))
+  (and row (cadr row)))
+(define (layout-problems layout) (layout-field layout 'problems))
+(define (layout-requests layout) (layout-field layout 'requests))
+(define (layout-segments layout) (layout-field layout 'segments))
+(define (layout-anchors layout) (layout-field layout 'anchors))

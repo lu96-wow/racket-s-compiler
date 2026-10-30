@@ -1,12 +1,15 @@
 #lang racket
 ;;; encode/encode.rkt
 ;;;
-;;; 最后一步: layout -> (build ...)，每个段一坨字节。
+;;; 最后一步: bound-layout -> (build ...)，每个段一坨字节。
 ;;;
-;;; 输入是 relax 之后的 layout:
-;;;   ((segments (segment (name s) (kind code) (start x) (end y) (align n)
+;;; 输入是 bind-labels 之后的 layout:
+;;;   ((phase bound)
+;;;    (segments (segment (name s) (kind code) (start x) (end y) (align n)
 ;;;                       (items (offset k item) ...) (size n)) ...)
+;;;    (anchors ...)
 ;;;    (symbols (symbol 链 段名 偏移 绝对地址) ...)
+;;;    (requests)
 ;;;    (problems))
 ;;;
 ;;; 每条 item 怎么落成字节:
@@ -21,8 +24,11 @@
 ;;; (offset k ...) 是**断言**: 写出去的字节数必须正好让它落在 k。
 ;;; 不符说明 layout 和 encode 对尺寸的理解不一致, 直接报错(这是抓这类 bug 的地方)。
 
-(require "../layout/layout.rkt"
+(require (only-in "../layout/layout.rkt"
+                  layout-problems layout-requests layout-phase layout-segments)
          "../layout/forms.rkt"
+         (only-in "../bind-labels/bind.rkt"
+                  bound-layout? layout-symbols symbol-row symbol-address eval-symbol-address)
          (only-in "../../riscv-help/main.rkt"
                   branch-long jump-jal jump-auipc-jalr zero-register?
                   li load-pcrel)
@@ -39,14 +45,14 @@
 (define (segment-field seg key) (cadr (assoc key (cdr seg))))
 (define (segment-items seg) (cdr (assoc 'items (cdr seg))))
 
-;; 符号行是 (symbol 链 段名 偏移 绝对地址); 查找/取地址复用 layout 的实现
+;; 符号行是 (symbol 链 段名 偏移 绝对地址); 查找/取地址复用 bind-labels 的实现
 (define (resolve-symbol symbols chain addend)
   (define row (symbol-row symbols chain))
   (unless row (error 'encode "undefined symbol: ~s" chain))
   (+ (symbol-address row) addend))
 
 (define (value->bytes w v symbols)
-  (integer->bytes w (eval-address v symbols)))
+  (integer->bytes w (eval-symbol-address v symbols)))
 
 ;; 操作数: 寄存器名/立即数原样交给 insn.rkt;
 ;; 控制转移的最后一项是链 -> 换成相对当前 item 的偏移。
@@ -121,7 +127,7 @@
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
     [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen target)))]
     ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
-    [(la) (define d (- (eval-address (last it) symbols) here))
+    [(la) (define d (- (eval-symbol-address (last it) symbols) here))
           (emit-all! (load-pcrel (cadr it) d))]
     [else (emit-instruction! (car it) (operands-at it here symbols))]))
 
@@ -177,11 +183,19 @@
 ;; ---------------------------------------------------------------------------
 
 (define (encode-layout target layout)
+  (unless (eq? (layout-phase layout) 'bound)
+    (error 'encode
+           "需要 bind-labels 之后的 bound-layout；先跑 bind-labels（当前 phase: ~e）"
+           (layout-phase layout)))
   (define problems (layout-problems layout))
-  (when (pair? problems)
-    (error 'encode "layout 还有未解决的问题, 拒绝出产物:~%~a"
-           (string-join (for/list ([p (in-list problems)]) (format "  ~s" p)) "\n")))
-  (define symbols (cdr (assoc 'symbols layout)))
+  (define requests (layout-requests layout))
+  (when (or (pair? problems) (pair? requests))
+    (error 'encode "layout 还有未解决的 requests/problems, 拒绝出产物:~%~a"
+           (string-join
+            (for/list ([p (in-list (append requests problems))])
+              (format "  ~s" p))
+            "\n")))
+  (define symbols (layout-symbols layout))
   (cons 'build
-        (for/list ([seg (in-list (cdr (assoc 'segments layout)))])
+        (for/list ([seg (in-list (layout-segments layout))])
           (encode-segment target seg symbols))))

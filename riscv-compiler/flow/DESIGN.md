@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | `frontend` | `expand-data flatten expand-pseudo` | 从 rich 数据/源码走到真指令 item |
 | `ir` | `analyze dce` | 控制流分析 + 死代码消除 |
-| `backend` | `relax encode` | 松弛 + 编码（layout 在 relax 内部跑） |
+| `backend` | `relax bind-labels encode` | 松弛 + 绑定地址 + 编码（layout 在 relax 内部跑） |
 | `all` | `default-flow` | 默认全流程 |
 
 组名不能和层名重名；组里只写层名。想临时组合就直接写列表，不必先定义组。
@@ -69,7 +69,8 @@
 | `program-items` | 扁平程序 item（可含 `(module …)`） | seed / `flatten` / `expand-pseudo` |
 | `names` | `flatten` 建的名字表 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
-| `layout` | 布局产物 | `layout` / `relax` |
+| `measured-layout` | 布局度量产物（segments + anchors + requests + problems） | `layout` / `relax` |
+| `bound-layout` | 地址绑定产物（+ symbols，可编码） | `bind-labels` |
 | `build` | 最终产物 `(build …)` | `encode` |
 
 **stage 表（顺序无关，跑的顺序只看选择器）**
@@ -81,9 +82,10 @@
 | `expand-pseudo` | `program-items` | `program-items` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
-| `layout` | `program` `data-items` `layout-spec` | `layout` |
-| `relax` | `program` `data-items` `layout-spec` | `layout` |
-| `encode` | `layout` | `build` |
+| `layout` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `bind-labels` | `measured-layout` | `bound-layout` |
+| `encode` | `bound-layout` | `build` |
 
 ## 4. API
 
@@ -97,7 +99,7 @@
 | `stage-table` / `stage-names` | — / 名字 | stage 表 / 层名列表 |
 | `stage-groups` / `group-names` | — | 层组表 / 组名列表 |
 | `providers-of` | 值名字 | 能产出它的 stage 名（排好序） |
-| `default-flow` | — | `'(expand-data flatten expand-pseudo analyze dce relax encode)` |
+| `default-flow` | — | `'(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)` |
 | `(struct stage name requires provides run doc)` | `run` 接收 `(target in)` | — |
 
 ## 5. 规则
@@ -106,11 +108,13 @@
 2. **顺序 = 列表顺序**。同一个 stage 可以写两次；两个 stage 的 `provides` 相同就后者覆盖。
 3. **平层随便换**：`layout` 和 `relax` 的 `requires`/`provides` 完全一样（`relax` 内部反复跑
    `layout`，所以写 `relax` 就够了，写 `layout` 则不做松弛），`dce` 可以写多次。
+   `bind-labels` 不是平层：它只产 `bound-layout`，`encode` 只认它。
 4. **依赖在运行到那一步时才检查**，不是预先校验：所以“先 `expand-data` 再 `flatten`”
    和“直接 seed `data-items` 再 `flatten`”都对。
 5. **外部输入必须显式给**：没有数据也要写 `(cons 'data-items '())`。
 6. **context 可以续跑**：`run-flow` 会复制 seed/context 到新的可变 hash，不修改传入的 context。
 7. **`run-stage` 只跑一层**：适合单层单元测试；它只返回该层 `provides` 的值。
+   只跑 `layout`/`relax` 拿到的是 measured-layout，不能直接 encode。
 8. **`compile` 是统一出口**：只做 `run-flow + flow-value 'build`，不增加层语义。
 
 ## 6. 不归本层管

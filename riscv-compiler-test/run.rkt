@@ -13,6 +13,7 @@
     "analyze-test.rkt"
     "dce-test.rkt"
     "layout-test.rkt"
+    "bind-labels-test.rkt"
     "relax-test.rkt"
     "encode-test.rkt"
     "flow-test.rkt"

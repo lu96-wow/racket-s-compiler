@@ -3,11 +3,11 @@
 
 (require rackunit
          "helpers.rkt"
-         (rename-in "../riscv-compiler-rebuild/flow/flow.rkt" [run-flow run-flow*])
-         (only-in "../riscv-compiler-rebuild/target.rkt" target-rv64-base)
-         (only-in "../riscv-compiler-rebuild/layout/layout.rkt"
+         (rename-in "../riscv-compiler/flow/flow.rkt" [run-flow run-flow*])
+         (only-in "../riscv-compiler/target.rkt" target-rv64-base)
+         (only-in "../riscv-compiler/layout/layout.rkt"
                   layout-problems)
-         (only-in "../riscv-compiler-rebuild/analyze/analyze.rkt"
+         (only-in "../riscv-compiler/analyze/analyze.rkt"
                   program-blocks program-flows block-head
                   flow-root? flow-fallthrough))
 
@@ -66,7 +66,7 @@
 (check-true (flow-root? (car (program-flows doc-program))))
 (check-false (flow-root? (cadr (program-flows doc-program))))
 
-(check-equal? (layout-problems (flow-value doc-out 'layout)) '())
+(check-equal? (layout-problems (flow-value doc-out 'bound-layout)) '())
 
 ;; ---------------------------------------------------------------------------
 ;; 模块 + 数据侧地址字: flatten / expand-data / analyze roots 一起工作
@@ -228,8 +228,8 @@
                   (cons 'program-items relax-src)
                   (cons 'layout-spec relax-spec))))
 
-(check-equal? (layout-problems (flow-value relax-out 'layout)) '())
-(check-not-false (memq 'branch-far (map car (layout-item-forms (flow-value relax-out 'layout) 'c))))
+(check-equal? (layout-problems (flow-value relax-out 'bound-layout)) '())
+(check-not-false (memq 'branch-far (map car (layout-item-forms (flow-value relax-out 'bound-layout) 'c))))
 (check-equal? (build-size (flow-value relax-out 'build) 'c) 12)
 
 ;; ---------------------------------------------------------------------------
