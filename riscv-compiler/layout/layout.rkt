@@ -45,7 +45,6 @@
          layout-requests
          layout-segments
          layout-anchors
-         anchor-row
          (struct-out run))
 
 ;; ---------------------------------------------------------------------------
@@ -314,9 +313,6 @@
     (define path (cdr (caddr entry)))
     (define seg (measured-segment m))
     (list 'anchor path (segment-name seg) off)))
-
-(define (anchor-row anchors path)
-  (and path (findf (lambda (row) (equal? (cadr row) path)) anchors)))
 
 ;; measured 相内部的临时位置: 链 -> 段 start + 段内偏移。
 ;; 只在本层用于 needs-far / la-too-far 的距离判断, 不写进产物。

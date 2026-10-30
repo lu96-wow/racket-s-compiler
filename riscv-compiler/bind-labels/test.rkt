@@ -6,7 +6,6 @@
          (only-in "../layout/layout.rkt"
                   layout-program layout-phase layout-problems layout-requests
                   layout-segments layout-anchors)
-         (only-in "../layout/forms.rkt" value-form?)
          (only-in "../target.rkt" target-rv64-base)
          (only-in "../analyze/analyze.rkt" analyze))
 

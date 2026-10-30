@@ -1,211 +1,49 @@
-# layout 布局度量（`layout/forms.rkt` `layout/layout.rkt`）
+# layout（`forms.rkt` `layout.rkt`）
 
-> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#layout`](../SEXP.md#layout)。
->
-> 把"块 + 数据 + 段表"变成"每段的 item 序列 + 偏移 + anchors + requests + problems"。
-> **不产出绝对地址**；地址由 `bind-labels` 绑定。
-> 只算，不选：不升级远形式、不填 scratch、不补跳、不重排。
+## 作用
 
-## 1. 职责
+放置与度量：把块/数据游程放进段，算偏移、尺寸，记 `anchors`，把范围检查分成
+`requests` 和 `problems`。**不产出绝对地址。**
 
-| 做 | 不做 |
-| --- | --- |
-| 段内单游标累加尺寸 | 判断真指令是否合法（属于 encode） |
-| `align` 补齐（按**绝对地址**） | 填 scratch 空槽（留给"寄存器使用"层） |
-| 记 anchors（链 → 段 / 偏移） | 绝对地址（属于 bind-labels） |
-| 检查范围并分成 requests / problems（`needs-far` / `scratch-hole` / `la-too-far`） | 绝对地址、value 最终宽度、段容量（属于 bind-labels） |
-| 报放置问题（`unplaced` / `broken-fallthrough` …） | 改 item（除了给 relax 留定位） |
+## 相关 s-exp
 
-## 2. 输入 / 输出
-
-```
-program : dce 输出 ((blocks …) (flows …))
-data    : 核心 item 列表（expand-data 输出）
-layout  : ((segments (segment (name 名) (kind code|data)
-                            (start x) (end y) (align n)) ...)
-           (place 段名 链 ...) ...)
-```
+输入：
 
 ```racket
-(layout-program target program data layout-input)
-  -> ((phase measured)
-      (segments (segment (name s) (kind code) (start #x1000) (end #x1FFF) (align 4)
-                         (items (offset 0 (label main))
-                                (offset 0 (lwu t0 sp 8))
-                                (offset 4 (bge t1 t0 (done)))
-                                (offset 8 (label done))
-                                (offset 8 (add a0 a0 x0)))
-                         (size 12)) ...)
-      (anchors (anchor (main) s 0)
-               (anchor (done) s 8) ...)
-      (requests (needs-far …) (scratch-hole …) (la-too-far …))
-      (problems (unplaced …) (undefined-target …)))
+program                                  ; analyze/dce 的 block + flow
+data-items                               ; label / bytes / fill / pad / value / align
+((segments (segment (name …) (kind code|data) (start …) (end …) (align …)) …)
+ (place 段名 链 …) …)
 ```
 
-`kind` 只有 `code` / `data` 两种。代码里**没有 `section`**，也没有 `primary` / `entry`：
-段归属只写在 `place` 行里。
-
-同一个 `data` 列表也要喂给 analyze 的第二个参数（数据里的地址字 = 取过地址）。
-
-## 3. API
-
-| 文件 | API |
-| --- | --- |
-| `layout.rkt` | `layout-program` `layout-phase` `layout-problems` `layout-requests` `layout-segments` `layout-anchors` `anchor-row` `as-items` `run` |
-| `forms.rkt` | `item-size` `item-kind` `form-range` `scratch-hole?`（`branch-form?` / `jump-form?` 直接借 `analyze/insn.rkt`，名单只有一份）；分类 `label-form?` `align-form?` `bytes-form?` `fill-form?` `value-form?` `compressed-form?` `branch-form?` `jump-form?` `control-form?` `control-target` `segment-form?` `segment-kind?`；取值 `value-width` `value-payload`；地址表达式 `address-expr?` / `address-expr-chains` / `arith-head?` 来自 `sexp.rkt`，求值用 `sexp.rkt` 的 `eval-address`（resolver）；`la-form?` `la-scratch` `jump-far-form?` `jump-far-link` `jump-far-scratch` |
-
-## 4. 规则
-
-### 4.1 本层的数据词汇只有六个
-
-| item | 尺寸 | 说明 |
-| --- | --- | --- |
-| `label 链...` | 0 | 位置 |
-| `bytes b...` | 元素个数 | 已定序字节 |
-| `fill 字节数 b` | 重复次数 | 与端序无关 |
-| `value 宽度 值` | 宽度 | 值是什么由 encode 解释 |
-| `align n` | 由游标算 | **输入侧的请求**；度量时换算成 `(pad …)` |
-| `pad n` | `n` | **精确插 n 个字节**；`align` 的换算结果就是它（源码也可以直接写） |
-
-**其余 item 一律当成不透明代码**：4 字节（`c.*` 2 字节）。不查拼写、不查操作数 ——
-那是编码层的事。所以 `item-size` / `item-kind` 的兜底 `4` / `'code` **是设计，不是漏检**。
-
-### 4.2 放置
-
-- **单位**：代码用 analyze 的块；数据用「label 游程」（数据没有控制流）。
-- **`place` 行**：按**精确链**（`equal?`）匹配块头或游程的 label；不做前缀、不按 kind 自动落位。
-- **region**：命中的块是锚点，之后直到下一个锚点的块跟随它。
-- **顺序**：段内按源顺序（程序先、数据后）；`place` 行书写顺序无关。
-- 指向块内位置标记的链 → `unmatched-place`（块不能拆）。
-
-### 4.3 度量
-
-段内一个游标从 `start` 起；`label` 不占字节只记偏移；其余按 `item-size` 累加。
-
-`align` 在**这里**换算成等价的事实 `pad`（源码里也可以直接写 `pad`，那是"就插 n 字节"）：
+输出 measured-layout：
 
 ```racket
-(align 8)   →  (pad 补出来的字节数)      ; 取决于绝对地址
-(pad 5)     →  (pad 5)                   ; 源码直接写: 与地址无关
+((phase measured)
+ (segments (segment (name …) (kind …) (start …) (end …) (align …)
+                    (items (offset k item) …)
+                    (size n)) …)
+ (anchors (anchor 链 段名 偏移) …)
+ (requests (needs-far …) (scratch-hole …) (la-too-far …))
+ (problems (unplaced …) (undefined-target …) …))
 ```
 
-`pad` 的两个用途（都归本层度量、encode 落字节）：
+本层认识的数据 item：`label` / `bytes` / `fill` / `value` / `align` / `pad`。
+其余 item 一律当不透明代码：4 字节，`c.*` 2 字节。
 
-| 来源 | 语义 | 常见场合 |
-| --- | --- | --- |
-| `align` 换算 | 补到对齐 | 结构体字段、指令对齐 |
-| 源码写 `pad` | 精确插 n 字节 | 固定大小的槽位、把段补到某个长度 |
+## 设计思路
 
-填什么与地址无关，只由段的 `kind` 决定（`target.rkt`）：`code` → `nop` / `c.nop`，`data` → 0。
+- 单位：代码用 analyze 的块；数据用“从一条 label 到下一条 label”的游程。
+- `place` 按精确链匹配；命中的块是锚点，后续块跟随；数据游程不跟随。
+- `align` 在度量时换算成精确的 `(pad n)`；产物写事实，不写请求。
+- 不透明代码的兜底 `4 字节 / 'code` 是设计，不是漏检。
+- 只有 anchors + 段 start，所以本层只能算临时距离；`needs-far` / `la-too-far` 是请求。
+- `(value w 表达式)` 这里只查链存在；宽度等最终地址定了再查。
 
-```racket
-(align n)  ->  (pad (modulo (- n (modulo (+ start cursor) n)) n))
-```
+## 边界
 
-对齐依据是**绝对地址** `start + cursor`（段 start 不一定被 `n` 整除），不是段内偏移。
-绝对地址公式只在这一处出现 —— 产物里直接写"要补几个字节"，encode 只需要决定填什么。
-
-产物里 `(offset k item)` 记的是该 item **开始**的偏移，`align` 的 `(pad n)` 记在
-补齐**前**的位置（下一条的偏移自然会 +n）。
-
-### 4.4 尺寸表
-
-| item | 字节 |
-| --- | --- |
-| `label` | 0 |
-| `bytes` / `fill` | 元素个数 / 重复次数 |
-| `value 宽度 值` | 宽度 |
-| `align n` | 由游标算（度量时换算成 `(pad …)`） |
-| `pad n` | `n` |
-| `li` | **由常量精确决定**：`li-size` ∈ {4, 8, 12, 16, …, 32} |
-| `la` | 8（近形式 `auipc+addi`） |
-| `b*` / `jal` / `jalr` / 其他 | 4 |
-| `c.*` | 2 |
-| `branch-far` | 8 |
-| `branch-indirect` | 12 |
-| `jump-far` | 8 |
-
-`li` 的尺寸不是上界：常量就在 item 里，`item-size` 直接问 `riscv-help` 的 `li-size`。
-
-### 4.5 可达距离（区间，不是 ±幅度）
-
-偏移都是偶数，所以正向最大是 `2^n - 2`：
-
-| item | 区间 |
-| --- | --- |
-| `beq/bne/blt/bge/bltu/bgeu` | `[-4096, 4094]` |
-| `c.beqz` / `c.bnez` | `[-256, 254]` |
-| `c.j` / `c.jal` | `[-2048, 2046]` |
-| `jal` | `[-1048576, 1048574]` |
-| `branch-far` | `[-1048572, 1048578]`（`jal` 在 `+4`，区间整体右移） |
-| `branch-indirect` / `jump-far` | 不设限 |
-
-区间比幅度多挡一种情况：`d = +4096` 看起来够，其实编不出来。
-
-### 4.6 远形式：寄存器全部显式
-
-```racket
-(branch-far      <cond> a b L)      ; 8B, 反向分支 + jal
-(branch-indirect <cond> a b L)      ; 12B, 空槽
-(branch-indirect s <cond> a b L)    ; 已填
-(jump-far link L)                   ; 8B, link = 零寄存器时空槽
-(jump-far link s L)                 ; 已填
-;; <cond> ∈ beq bne blt bge bltu bgeu
-```
-
-- **没有 `call-far`**：它就是 `(jump-far ra L)`，两个名字等于两种拼写。
-- **`<cond>` 必须写**：不带条件的形式展开不了。
-- **scratch 有两种槽**：`branch-indirect` / `(jump-far x0 …)` 是**必填空槽**（缺了报
-  `scratch-hole`，软问题，留给"寄存器使用"层）。源码里手写**带空槽**的远形式
-  = 造了一个未完成的 item：layout 报 `scratch-hole`，encode 拒绝出产物 —— 这是诊断，不是静默错误；`la` 的 scratch 是**可选槽**
-  （`(la rd 链)` / `(la rd tmp 链)`），缺省不是缺陷，不报 `scratch-hole`。
-
-### 4.7 范围检查：只算临时位置
-
-```racket
-(value 宽度 表达式)     ; 只查表达式里的链都在 anchors 里
-(la rd [tmp] 表达式)    ; 链都在? delta = 临时位置 − 当前地址 落得进 auipc+addi?
-```
-
-- `value` 的**宽度**不在本层查：要等 `bind-labels` 拿到最终地址。
-- `la` 用 `fits-auipc-pair?`（不是简单的 ±2GB 区间，而是 auipc+addi 的精确可达集）。
-- 链不存在 → `undefined-target`（problem）；放不下 → `la-too-far`（request）。
-- `needs-far` / `la-too-far` 只用 anchors + 段 start 算临时距离，不写进产物。
-
-### 4.8 problems / requests：哪些是自己的，哪些是交接
-
-| 类别 | 归属 |
-| --- | --- |
-| 放置 | problems：`unplaced-block` `unplaced` `unlabeled-run` `ambiguous-placement` `unmatched-place` `unknown-segment` |
-| 段 | problems：`segment-misaligned` `segment-overlap` `segment-name-duplicated` `segment-bad-range` |
-| 段归属 | problems：`code-data-mixed` `data-code-mixed` |
-| 顺序 | problems：`broken-fallthrough` |
-| 符号 | problems：`undefined-target` |
-| 交给 relax | requests：`needs-far`（升远形式） |
-| 交给寄存器层 | requests：`scratch-hole` / `la-too-far` |
-| 只有最终地址/尺寸能判 | **不在这里**：`value-out-of-range` / `segment-overflow` 属于 `bind-labels` |
-
-`needs-far` / `scratch-hole` / `la-too-far` 带 `(code 块下标 项下标)` 定位（`measure` 记在 `measured.origins` 里），
-relax / 寄存器层才能精确改那一条。
-
-**不在这个名单里的都不是本层的事**：拼写、操作数个数、立即数范围、code 段对齐是否合法，
-都是"变二进制"（encode）的事。
-
-## 5. 不归本层管
-
-- 绝对地址 / `value` 最终宽度 / 段容量：bind-labels。
-- 合法性（拼写 / 操作数 / 立即数范围 / code 段对齐）：encode。
-- 填 scratch 空槽：留给"动态内存布局 / 寄存器使用"层。
-- 分支松弛：relax。补 fallthrough 跳转：目前没有实现。
-- 端序：encode。
-
-## 6. 测试（`layout/test.rkt`）
-
-形式表（尺寸 / 类别 / 区间 / 空槽 / 值）、放置、region、对齐（含绝对地址）、
-fallthrough、anchors、每类 problem/request、expand-data 边界、`li` 精确尺寸、`la` 范围。
-
-## 7. 已知缺口
-
-- `place` 只能按精确链匹配，没有通配 / 正则。
-- 段 `end` 只是容量上界（由 bind-labels 查 `segment-overflow`），不参与地址计算。
-- 补 fallthrough 跳转没做（`broken-fallthrough` 只报）。
+- 绝对地址、`value` 最终宽度、段容量：`bind-labels`。
+- 松弛：`relax`。
+- 填 scratch / `la` 远形式：未来寄存器层。
+- 指令合法性、端序：`encode`。
+- 补 fallthrough 跳转：未实现。

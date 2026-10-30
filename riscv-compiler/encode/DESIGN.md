@@ -1,188 +1,41 @@
-# encode 编码（`encode/insn.rkt` `encode/encode.rkt`；目标事实在顶层 `target.rkt`）
+# encode（`insn.rkt` `encode.rkt` `syntax/*`）
 
-> 速览（功能 / s-exp / 设计理由）：[`../SEXP.md#encode`](../SEXP.md#encode)。
-> 语法局部拆分：[`syntax/DESIGN.md`](syntax/DESIGN.md)。
->
-> 最后一步：`bound-layout -> (build …)`，每个段一坨字节。
-> **端序只出现在这里**；指令编码和位域检查都在 `riscv-asm`。
+## 作用
 
-## 1. 职责
+把 bound-layout 变成每个段一坨字节。负责端序、填充、`li` / `la` / 远形式展开，
+以及把指令交给 `riscv-asm` 编码。
 
-| 做 | 不做 |
-| --- | --- |
-| 逐 item 出字节（数据 + 代码） | 选指令 / 优化 |
-| 端序、对齐补齐 | 布局（属于 layout） |
-| `value` / `ref` 求值 | 松弛（属于 relax） |
-| `li` / `la` / 远形式展开 | 填 scratch 空槽（未实现的那一层） |
-| 断言"写出的字节数 = layout 的偏移" | 加载器格式 / ELF / 分区镜像 |
-| 有 request/problem 就拒绝出产物 | — |
+## 相关 s-exp
 
-## 2. 输入 / 输出
-
-```
-bound-layout : bind-labels 产物（phase=bound, segments + anchors + symbols + requests + problems）
-  ↓
-(build (segment (name s) (kind code) (start #x1000) (size 12) (bytes #vu8…)) ...)
-```
-
-## 3. API
-
-| 文件 | API |
-| --- | --- |
-| `../target.rkt`（顶层共享） | `target` / `target-xlen` / `target-extensions`、`integer->bytes`、`padding-bytes`（**填充策略**） |
-| `insn.rkt` | `encode-instruction` `instruction-arity` `known-instruction?` `split-aqrl`（组合入口） |
-| `syntax/*.rkt` | 后缀 / 操作数值 / 顺序表 / direct form / plan / coverage，见 [`syntax/DESIGN.md`](syntax/DESIGN.md) |
-| `encode.rkt` | `encode-layout`（只接受 phase=bound） |
-
-## 4. 规则
-
-### 4.1 编码交给 riscv-asm
-
-`riscv-asm` 生成的 `rebuilt` 模块里，每条指令就是一个函数：
+输入 bound-layout：
 
 ```racket
-(add 10 11 12)     ; => #x00c58533   (add a0,a1,a2)
-(beq 8 10 11)      ; => #x00b50463   (beq a0,a1,+8)
-(c.addi 10 1)      ; => #0x0505      (c.addi a0,1)
+((phase bound)
+ (segments (segment (name …) (kind …) (start …) (size …)
+                    (items (offset k item) …)) …)
+ (anchors …)
+ (symbols (symbol 链 段名 偏移 绝对地址) …)
+ (requests …)
+ (problems …))
 ```
 
-位域检查也在那里（立即数范围、压缩寄存器约束、aq/rl 值域）：
-
-```
-addi a0,a1,5000  => ERROR: imm12: value 5000 out of range [-2048, 2047]
-c.beqz s2,8      => ERROR: compressed-register: register number 18 out of range [8, 15]
-```
-
-所以 encode **不写**任何合法性检查。
-
-### 4.2 操作数顺序（本层唯一的公开接口约定）
-
-riscv-opcodes 的声明顺序（= rebuilt 函数参数顺序）不是汇编写法：
-分支/存储/原子把合并后的立即数放在第一位。
+输出：
 
 ```racket
-(beq bimm12 rs1 rs2)      ; 函数
-(beq rs1 rs2 L)           ; 我们写
+(build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)
 ```
 
-`encode/insn.rkt` 有一张"调用位置 ← s-exp 位置"的表，键是操作数名列表（32 位 22 类、16 位 25 类）：
+本层处理的 item：`label` / `pad` / `bytes` / `fill` / `value` / 真指令 /
+`li` / `la` / `branch-far` / `branch-indirect` / `jump-far`。
 
-```racket
-("bimm12" "rs1" "rs2")      -> (2 0 1)     ; (beq rs1 rs2 L)
-("simm12" "rs1" "rs2")      -> (2 1 0)     ; (sw 值 基址 偏移)
-("rs1_p" "rs2_p" "c_uimm8") -> (1 0 2)     ; (c.sd 值 基址 偏移)
-("rd" "rs1" "rs2" "aq" "rl")-> (0 2 1 aq rl); (amoadd.d rd rs2 rs1)
-```
+## 设计思路
 
-没有登记的形状 = 还没给语法，报错而不是猜。`fence` / `fence.tso` 的字段不是普通操作数顺序，走下面的直接参数表单。
+- 端序、填充策略、指令编码都属于“变二进制”，集中在这里。
+- `(offset k item)` 是断言：实际写出的字节数必须正好到达 `k`。
+- 有 request/problem 或 `phase` 不是 `bound` 就拒绝出产物。
+- 操作数顺序由 `syntax/order` 的表处理，因为 `riscv-opcodes` 的声明顺序不是汇编写法。
+- `li` / `la` / 远形式先由 `riscv-help` 展开成真指令，再逐条编码。
 
-### 4.3 aq / rl 是助记符后缀
+## 边界
 
-riscv-opcodes 里它们是两个 0/1 操作数；gas 里是后缀。我们只认规范写法：
-
-```racket
-(amoadd.d.aqrl rd rs2 rs1)   ; 3 个 s-exp 操作数 -> 5 个调用参数
-(lr.d.aq rd rs1)
-```
-
-`.rlaq` 是拼错 → 落到"未知助记符"。非原子指令带后缀也报错。
-
-A 扩展的全部原子指令都走这条规则：
-
-```racket
-(lr.w rd rs1)              (lr.d.aq rd rs1)
-(sc.w rd rs2 rs1)          (sc.d.aqrl rd rs2 rs1)
-(amoswap.w rd rs2 rs1)     (amoadd.d.rl rd rs2 rs1)
-(amoand.d.aqrl rd rs2 rs1) ...
-```
-
-`lr` 是 2 个 s-exp 操作数，`sc` / `amo*` 是 3 个；`.aq` / `.rl` / `.aqrl` 不进操作数列表。
-
-### 4.3.1 fence / fence.tso
-
-`fence` 的 `fm` / `rs1` / `rd` 是基础 ISA 的固定/保留字段，不暴露给源码；
-只暴露有语义的 `pred` / `succ`：
-
-```racket
-(fence)                ; 完整 fence = fence iorw, iorw -> 0x0ff0000f
-(fence pred succ)      ; pred/succ = i,o,r,w 的规范顺序组合；0 = 空集
-(fence rw rw)          ; 0x0330000f
-(fence iorw iorw)      ; 0x0ff0000f
-(fence r w)            ; 0x0210000f
-(fence 0 0)            ; 0x0000000f
-(fence.tso)            ; 0x8330000f
-```
-
-- `(fence)` 是 GAS/LLVM 的 no-operand 别名，等价于 `fence iorw, iorw`。
-- 显式形式只接受 `i`, `o`, `r`, `w` 的规范顺序，每个字符最多一次：`rw` / `iorw` 合法，
-  `wr` / `rwx` / 空串报错；数值只接受 `0`（空集，LLVM 也接受）。
-- `fence` 接受 0 或 2 个操作数；`fence.tso` 固定 0 个，`fm/pred/succ` 由指令本身固定。
-- `fence` / `fence.tso` 都不接受 `.aq` / `.rl` 后缀。
-
-固定值已对照 `riscv-asm`、LLVM 和 GAS：
-
-- `fence`：`imm12 = {0000,pred,succ}`，`rs1 = rd = 0`
-- `fence.tso`：`imm12 = {1000,0011,0011}`，`rs1 = rd = 0`
-- `pred/succ` 位：`I=8, O=4, R=2, W=1`
-- 原子：`funct5[31:27]`，`aq[26]`，`rl[25]`；`lr` 是 `rd,rs1`，`sc/amo` 是 `rd,rs2,rs1`
-
-### 4.4 字节规则
-
-| item | 字节 |
-| --- | --- |
-| `label` | 无 |
-| `pad n` | 由 `padding-bytes` 决定：`code` 段补合法指令，其余补 0 |
-| `bytes` / `fill` | 原样 |
-| `value w 值` | `w` 字节按 little-endian；整数直接写，地址表达式用最终 symbols 求值（`eval-symbol-address`，内部复用 `sexp.rkt` 的 `eval-address`） |
-| 真指令 | `riscv-asm` 编码（`width/8` 字节） |
-| 远形式 | `riscv-help` 展开后再编码 |
-| `li` / `la` | `riscv-help` 展开后再编码 |
-
-### 4.5 填充策略（芯片相关的那一部分）
-
-`(pad n)` 到 encode 已经是"要补 n 个字节"的事实（layout 换算好了），这里只决定**填什么**：
-
-| 段 | 填什么 |
-| --- | --- |
-| `data` | `0` |
-| `code` | 合法指令：4 字节优先 `nop`(`0x00000013`)，余 2 用 `c.nop`(`0x0001`) |
-| `code`，余 1 / 余 3 | 报错 —— 没有任何 1 字节指令，这种对齐编不出来 |
-
-`code` 段必须填指令：对齐补出来的字节可能真的会被执行到。
-换目标（比如用 `ebreak` 填、或不允许压缩指令）只改 `target.rkt` 的这张表。
-
-### 4.6 两条断言
-
-1. **`(offset k item)` 是断言**：写出的字节数必须正好让它落在 `k`，
-   否则说明 layout 与 encode 对尺寸的理解不一致 → 报错。
-2. **layout 里还有任何 request/problem 就拒绝出产物**（`needs-far` / `scratch-hole` /
-   `la-too-far` / `undefined-target` …）；`phase` 不是 `bound` 也拒绝。
-
-### 4.7 li / la
-
-```racket
-(li rd 常量)      ; 尺寸由 layout 用 li-size 精确算（4…32），这里用同一个展开器
-(la rd [tmp] 链)  ; 近形式 8 字节；layout 已经保证 fits-auipc-pair?
-```
-
-`la` 的远形式（>±2GB）需要 scratch 寄存器 → 属于未实现的那一层，layout 会留下 `la-too-far` request。
-
-## 5. 不归本层管
-
-- 选指令、优化、布局、松弛、地址绑定：前面的层。
-- 加载器格式（把 `(build …)` 写成文件）：还没做。
-- 真 reloc / 外部符号：还没做。
-
-## 6. 测试与 demo
-
-`encode/test.rkt`、`encode/demo.rkt`（手写 measured-layout → `bind-labels` → `(build …)` + hexdump；
-本层只吃 bound-layout，不需要 program / data）。
-
-单条指令与手算编码对照（含压缩、全部原子、`fence`/`fence.tso`/`fence.i`、CSR、别名）、`aq`/`rl` 后缀、元数、未知指令、
-layout → build 字节精确、`code`/`data` 对齐补齐、`li`（4 / 8 字节）、`la`（auipc+addi 的
-hi/lo 拆分）、`branch-far` 展开后的位域、拒绝出产物。
-
-## 7. 已知缺口
-
-- `la` 的远形式（需要 scratch）、真 reloc、外部符号。
-- 没有加载器格式（`(build …)` 还只是数据结构）。
+不选指令、不布局、不松弛、不绑地址、不填 scratch、不做加载器格式。
