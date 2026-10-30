@@ -23,6 +23,7 @@ data-items ────┘                                │         │       
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与索引 |
 | [`SEXP.md`](SEXP.md) | s-exp 类型速查 |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 构建流 + **跨层硬边界** |
+| [`CONSTRAINTS.md`](CONSTRAINTS.md) | **尺寸/布局/寄存器策略约束** |
 | `*/DESIGN.md` | 每层：作用 / 相关 s-exp / 设计思路 |
 
 ## 跑

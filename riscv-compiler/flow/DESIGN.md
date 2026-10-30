@@ -57,8 +57,8 @@
    - `problems`：放置 / 段 / fallthrough / `undefined-target` / 最终宽度/容量。
 5. **`bind-labels` 是尺寸不变的收尾**：不松弛、不填 scratch、不补跳。
    凡会改变尺寸的 pass（relax、未来的 la-far 展开）必须在它之前收敛。
-6. **寄存器层的位置**：`relax` 之后、`bind-labels` 之前；它消费 `scratch-hole` / `la-too-far`，
-   返回 measured-layout。
+6. **寄存器策略分两段**：会改尺寸的 regalloc/spill 在 `relax` 之前；`scratch-fill` 只填
+   reserved scratch，在 `relax` 之后，且尺寸不变。详见 [`../CONSTRAINTS.md`](../CONSTRAINTS.md)。
 7. **`layout` 和 `relax` 是平层**：`requires` / `provides` 相同，写 `relax` 就够了。
 8. **层间只传 plain list 或 `struct program`**；不认识的 item 原样透传。
 9. **target 是显式参数**：`layout` / `relax` / `encode` 使用；`bind-labels` 不需要。

@@ -1,7 +1,7 @@
 # 架构索引
 
 > 每层只关心自己的 s-exp 和设计。层作用、s-exp 类型、设计思路放在各自的 `DESIGN.md`。
-> **跨层硬边界集中在 [`flow/DESIGN.md`](flow/DESIGN.md)**，本文只做地图。
+> **跨层硬边界集中在 [`flow/DESIGN.md`](flow/DESIGN.md)**；尺寸/寄存器策略约束见 [`CONSTRAINTS.md`](CONSTRAINTS.md)。本文只做地图。
 
 ## 流水线
 
@@ -46,6 +46,7 @@ data-items ────┘                                │         │       
 - [`encode/DESIGN.md`](encode/DESIGN.md)
 - [`encode/syntax/DESIGN.md`](encode/syntax/DESIGN.md)
 - [`flow/DESIGN.md`](flow/DESIGN.md)
+- [`CONSTRAINTS.md`](CONSTRAINTS.md)
 
 ## 顶层共享模块
 
@@ -69,4 +70,4 @@ data-items ────┘                                │         │       
 2. 它认识哪些 s-exp、吃什么/吐什么。
 3. 为什么这样设计，以及它不碰什么。
 
-跨层阶段、绝对地址、requests/problems、尺寸边界等硬规则放在 `flow/DESIGN.md`。
+跨层阶段、绝对地址、requests/problems 等硬规则放在 `flow/DESIGN.md`；尺寸与寄存器策略约束放在 `CONSTRAINTS.md`。
