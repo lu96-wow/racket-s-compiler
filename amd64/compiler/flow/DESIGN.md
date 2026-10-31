@@ -11,6 +11,7 @@
 | --- | --- | --- |
 | `loko-source` | `(loko-source (text …) (data …))` | seed |
 | `loko-aliases` | `(alias 名字 值) …` | `loko-compat` |
+| `loko-ir` | sections / origin / modes / symbols / comms | `loko-compat` |
 | `rich-data` | rich 数据 | seed |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
 | `program-items` | 扁平程序 item | seed / `flatten` / `expand-pseudo` / `loko-compat` |
@@ -25,7 +26,7 @@
 
 | stage | requires | provides |
 | --- | --- | --- |
-| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` |
+| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -65,5 +66,7 @@
 
 - 不实现任何层语义，只做组合。
 - 不替层隐藏依赖；缺 requires 直接报错并列出 providers。
-- `loko-compat`（目录 `../../loko-compatibility/`）的 image 层指令（`%section` / `%comm` / `%origin` / `%mode` /
-  `%call`）在 flow 里作为问题报错。
+- `loko-compat` 采集 `%section` / `%origin` / `%mode` / `%comm` 到 `loko-ir`；
+  当前只有 `%call` 仍作为问题报错。
+- 还没有 `loko-lower` / `loko-image` stage；`'loko` 组暂时只覆盖
+translate + compiler 后半段。

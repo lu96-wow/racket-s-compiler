@@ -6,13 +6,16 @@
 ;;; 本层只做“写法兼容”，不做布局、地址、编码：
 ;;;
 ;;;   mem64+ / mem+ / mem128+       -> b64 / bN / b128 命名字段
-;;;   %label                         -> label
+;;;   %label                         -> label + symbol metadata
 ;;;   %comment                       -> comment
 ;;;   %align                         -> align（不处理显式非零填充字节）
 ;;;   %u8/%u16/%u32/%u64/%u128       -> value
 ;;;   %vu8                           -> bytes
 ;;;   %utf8z                         -> bytes ... 0
 ;;;   %equiv                         -> alias，引用处内联
+;;;   %section/%origin/%mode          -> loko-ir 元数据
+;;;   %comm                           -> comms + bss section 展开
+;;;   %init-bss                       -> 显式 BSS 清零代码
 ;;;   sal/movsxd/setcc/cmovcc        -> 规范拼写
 ;;;   call/jmp + 内存操作数           -> call-indirect / jmp-indirect
 ;;;
@@ -26,6 +29,10 @@
 ;;;     (program-items item ...)
 ;;;     (data-items item ...)
 ;;;     (aliases (alias 名字 值) ...)
+;;;     (symbols (symbol start end section misc) ...)
+;;;     (comms (comm name size align) ...)
+;;;     (origin 地址|#f)
+;;;     (sections (section ...) ...)
 ;;;     (problems problem ...))
 ;;;
 ;;; 不支持的写法不会偷偷丢掉：它变成 (problem 种类 细节 ...) 并出现在
@@ -57,19 +64,24 @@
 ;; aliases:     已解析的 %equiv 值
 ;; problems:    本次变换发现的问题（逆序）
 ;; counter:     匿名标签编号
-;; section:     当前 section 名字
-;; symbols:     Loko 符号元数据（逆序）
-;; sections:    section 名字 -> section-state
-;; section-order: section-state 的逆序创建顺序
-;; current-section: 当前 section-state
-;; origin:      %origin 设置的整体起址
-;; mode:        当前 %mode（16/32/64，未设置时 #f）
-;; comms:       %comm 收集（逆序）
-(struct ctx (labels raw-aliases aliases problems counter section symbols
-                sections section-order current-section origin mode comms)
+;; section-name:      当前 section 名字
+;; symbols:           Loko 符号元数据（逆序）
+;; sections-table:    section 名字 -> section-state
+;; section-order:     section-state 的逆序创建顺序
+;; current-section-state: 当前 section-state
+;; origin:            %origin 设置的整体起址
+;; current-mode:      当前 %mode（16/32/64，未设置时 #f）
+;; comms:             %comm 收集（逆序）
+(struct ctx (labels raw-aliases aliases problems counter section-name symbols
+                sections-table section-order current-section-state origin
+                current-mode comms)
   #:mutable)
 
 (struct section-state (name kind items modes) #:mutable)
+
+(define (make-empty-ctx)
+  (ctx (make-hash) (make-hash) (make-hash) '() 0
+       'text '() (make-hash) '() #f #f #f '()))
 
 ;; Internal problems are records so they cannot collide with a label path
 ;; whose name happens to be `problem`.  They become tagged lists only at the
@@ -88,7 +100,7 @@
 (define (record-problem! ctx p)
   (set-ctx-problems! ctx (cons p (ctx-problems ctx))))
 
-(define (record-problem-comment! ctx p)
+(define (record-problem-as-comment! ctx p)
   (record-problem! ctx p)
   (list (problem->comment-form p)))
 
@@ -97,44 +109,49 @@
 
 (define (record-symbol! ctx start end misc)
   (set-ctx-symbols! ctx
-                    (cons (list 'symbol start end (ctx-section ctx) misc)
+                    (cons (list 'symbol start end (ctx-section-name ctx) misc)
                           (ctx-symbols ctx))))
 
 ;; ---------------------------------------------------------------------------
 ;; sections / origin / mode
 ;; ---------------------------------------------------------------------------
 
-(define (section-kind name)
+(define (section-name->kind name)
   (case name
     [(text) 'code]
     [(data elf) 'data]
     [(bss) 'bss]
     [else 'data]))
 
+;; Loko 的源码不会在另一个 section 之后重新进入同名 section；
+;; 因此同名 section 被视为同一个 run，后续 item 追加到它。
 (define (ensure-section! ctx name)
-  (define table (ctx-sections ctx))
+  (define table (ctx-sections-table ctx))
   (or (hash-ref table name #f)
-      (let ([s (section-state name (section-kind name) '() '())])
+      (let ([s (section-state name (section-name->kind name) '() '())])
         (hash-set! table name s)
         (set-ctx-section-order! ctx (cons s (ctx-section-order ctx)))
         s)))
 
 (define (select-section! ctx name)
-  (set-ctx-section! ctx name)
-  (set-ctx-current-section! ctx (ensure-section! ctx name)))
+  (set-ctx-section-name! ctx name)
+  (set-ctx-current-section-state! ctx (ensure-section! ctx name)))
 
-(define (current-section! ctx)
-  (or (ctx-current-section ctx)
-      (select-section! ctx (ctx-section ctx))))
+(define (sections-in-source-order ctx)
+  (reverse (ctx-section-order ctx)))
+
+(define (current-section-state! ctx)
+  (or (ctx-current-section-state ctx)
+      (select-section! ctx (ctx-section-name ctx))))
 
 (define (add-section-items! ctx items)
   (when (pair? items)
-    (define s (current-section! ctx))
+    (define s (current-section-state! ctx))
     (set-section-state-items! s
                               (append (reverse items) (section-state-items s)))))
 
-(define (add-mode! ctx mode)
-  (define s (current-section! ctx))
+(define (add-mode-run! ctx mode)
+  (define s (current-section-state! ctx))
   (define index (length (section-state-items s)))
   (define modes (section-state-modes s))
   (unless (and (pair? modes) (eqv? (cadr (car modes)) mode))
@@ -242,12 +259,13 @@
              (regexp-match? #rx"^mem[0-9]+\\+$" s)))))
 
 (define (loko-memory-width x)
-  (define s (symbol->string (car x)))
-  (cond
-    [(string=? s "mem+") #f]
-    [(regexp-match #rx"^mem([0-9]+)\\+$" s)
-     => (lambda (m) (string->number (cadr m)))]
-    [else #f]))
+  (and (loko-memory? x)
+       (let ([s (symbol->string (car x))])
+         (cond
+           [(string=? s "mem+") #f]
+           [(regexp-match #rx"^mem([0-9]+)\\+$" s)
+            => (lambda (m) (string->number (cadr m)))]
+           [else #f]))))
 
 (struct mem-parts (base index scale seg disp) #:transparent)
 (struct scaled (index scale) #:transparent)
@@ -521,7 +539,7 @@
 (define (translate-label ctx item)
   (match (cdr item)
     [(list)
-     (record-problem-comment! ctx (problem 'empty-label item))]
+     (record-problem-as-comment! ctx (problem 'empty-label item))]
     [(list start)
      (define start* (label-path ctx start))
      (record-symbol! ctx start* start* '())
@@ -539,15 +557,15 @@
     [(list n)
      (if (exact-positive-integer? n)
          (list (list 'align n))
-         (record-problem-comment! ctx (problem 'bad-align item)))]
+         (record-problem-as-comment! ctx (problem 'bad-align item)))]
     [(list n byte)
      (cond
        [(not (exact-positive-integer? n))
-        (record-problem-comment! ctx (problem 'bad-align item))]
+        (record-problem-as-comment! ctx (problem 'bad-align item))]
        [(not (eqv? byte 0))
-        (record-problem-comment! ctx (problem 'align-fill-not-supported item))]
+        (record-problem-as-comment! ctx (problem 'align-fill-not-supported item))]
        [else (list (list 'align n))])]
-    [_ (record-problem-comment! ctx (problem 'bad-align item))]))
+    [_ (record-problem-as-comment! ctx (problem 'bad-align item))]))
 
 (define (integer-directive-width h)
   (case h
@@ -566,7 +584,7 @@
       (let* ([low (bitwise-and expr (sub1 (expt 2 64)))]
              [high (arithmetic-shift expr -64)])
         (list (list 'value 8 low) (list 'value 8 high)))
-      (record-problem-comment! ctx (problem 'symbolic-u128 expr))))
+      (record-problem-as-comment! ctx (problem 'symbolic-u128 expr))))
 
 (define (translate-integer-value ctx width value)
   (cond
@@ -574,7 +592,7 @@
     [else
      (define e (translate-expr ctx value))
      (cond
-       [(problem? e) (record-problem-comment! ctx e)]
+       [(problem? e) (record-problem-as-comment! ctx e)]
        [(= width 16) (translate-u128 ctx e)]
        [else (list (list 'value width e))])]))
 
@@ -588,7 +606,7 @@
    (for/list ([v (in-list (cdr item))])
      (if (bytes? v)
          (bytes->item v)
-         (record-problem-comment! ctx (problem 'bad-vu8 v))))))
+         (record-problem-as-comment! ctx (problem 'bad-vu8 v))))))
 
 (define (translate-utf8z ctx item)
   (append*
@@ -597,7 +615,7 @@
          (list (cons 'bytes
                      (append (for/list ([b (in-bytes (string->bytes/utf-8 v))]) b)
                              (list 0))))
-         (record-problem-comment! ctx (problem 'bad-utf8z v))))))
+         (record-problem-as-comment! ctx (problem 'bad-utf8z v))))))
 
 ;; 条件码别名：setcc/cmovcc 的旧拼写都落到同一张表。
 (define cc-alias
@@ -653,31 +671,31 @@
   (define h (car item))
   (define default-width (memory-default-width item))
   (cond
-    [(split-prefixed-head h)
-     (define p (split-prefixed-head h))
-     (define inner-out
-       (translate-instruction ctx (cons (cdr p) (cdr item))))
-     (cond
-       [(and (= 1 (length inner-out))
-             (form? (car inner-out))
-             (eq? (caar inner-out) 'comment)
-             (form? (cadar inner-out))
-             (eq? (caadar inner-out) 'loko-compat-problem))
-        inner-out]
-       [else
-        (list (list 'prefix (car p) (car inner-out)))])]
+    [(split-prefixed-head h) =>
+     (lambda (p)
+       (define inner-out
+         (translate-instruction ctx (cons (cdr p) (cdr item))))
+       (cond
+         [(and (= 1 (length inner-out))
+               (form? (car inner-out))
+               (eq? (caar inner-out) 'comment)
+               (form? (cadar inner-out))
+               (eq? (caadar inner-out) 'loko-compat-problem))
+          inner-out]
+         [else
+          (list (list 'prefix (car p) (car inner-out)))]))]
 
     [(eq? h 'jmpf)
-     (record-problem-comment! ctx (problem 'far-jump-not-supported item))]
+     (record-problem-as-comment! ctx (problem 'far-jump-not-supported item))]
 
     [(eq? h 'setcc)
      (match (cdr item)
        [(list cc rm)
         (define op (translate-operand ctx rm 8))
         (if (problem? op)
-            (record-problem-comment! ctx op)
+            (record-problem-as-comment! ctx op)
             (list (list 'setcc (canonical-cc cc) op)))]
-       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
 
     [(eq? h 'cmovcc)
      (match (cdr item)
@@ -685,24 +703,24 @@
         (define d (translate-operand ctx dst default-width))
         (define s* (translate-operand ctx src default-width))
         (cond
-          [(problem? d) (record-problem-comment! ctx d)]
-          [(problem? s*) (record-problem-comment! ctx s*)]
+          [(problem? d) (record-problem-as-comment! ctx d)]
+          [(problem? s*) (record-problem-as-comment! ctx s*)]
           [else (list (list 'cmovcc (canonical-cc cc) d s*))])]
-       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
 
     [(memq h '(jcc jcc-short jcc-near))
      (match (cdr item)
        [(list cc target)
         (define t (translate-operand ctx target 64))
         (if (problem? t)
-            (record-problem-comment! ctx t)
+            (record-problem-as-comment! ctx t)
             (list (list h (canonical-cc cc) t)))]
-       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
 
     [(and (setcc-head? h) (setcc-head-cc h))
      (define op (translate-operand ctx (cadr item) 8))
      (if (problem? op)
-         (record-problem-comment! ctx op)
+         (record-problem-as-comment! ctx op)
          (list (list 'setcc (setcc-head-cc h) op)))]
 
     [(and (cmovcc-head? h) (cmovcc-head-cc h))
@@ -711,7 +729,7 @@
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (if p
-         (record-problem-comment! ctx p)
+         (record-problem-as-comment! ctx p)
          (list (cons 'cmovcc (cons (cmovcc-head-cc h) ops))))]
 
     [else
@@ -720,7 +738,7 @@
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (cond
-       [p (record-problem-comment! ctx p)]
+       [p (record-problem-as-comment! ctx p)]
        [(and (memq h '(jmp call))
              (= 2 (length item))
              (or (loko-memory? (cadr item))
@@ -732,26 +750,26 @@
        [(eq? h 'movsxd) (list (cons 'movsx ops))]
        [else (list (cons h ops))])]))
 
-(define (init-bss-target ctx x)
+(define (label-ref-path ctx x)
   (cond
     [(path? x) x]
-    [(name? x) (label-path ctx x)]
+    [(or (name? x) (vector? x)) (label-path ctx x)]
     [else #f]))
 
 (define (translate-init-bss ctx item)
   (define (expand start end)
-    (define start* (init-bss-target ctx start))
-    (define end* (init-bss-target ctx end))
-    (define mode (ctx-mode ctx))
-    (define section-kind* (section-state-kind (current-section! ctx)))
+    (define start* (label-ref-path ctx start))
+    (define end* (label-ref-path ctx end))
+    (define mode (ctx-current-mode ctx))
+    (define section-kind* (section-state-kind (current-section-state! ctx)))
     (cond
       [(not (eq? section-kind* 'code))
-       (record-problem-comment! ctx (problem 'init-bss-not-in-code item))]
-      [(not start*) (record-problem-comment! ctx (problem 'bad-init-bss-label start))]
-      [(not end*) (record-problem-comment! ctx (problem 'bad-init-bss-label end))]
-      [(not mode) (record-problem-comment! ctx (problem 'init-bss-mode-not-set item))]
+       (record-problem-as-comment! ctx (problem 'init-bss-not-in-code item))]
+      [(not start*) (record-problem-as-comment! ctx (problem 'bad-init-bss-label start))]
+      [(not end*) (record-problem-as-comment! ctx (problem 'bad-init-bss-label end))]
+      [(not mode) (record-problem-as-comment! ctx (problem 'init-bss-mode-not-set item))]
       [(not (= mode 64))
-       (record-problem-comment! ctx (problem 'init-bss-mode-unsupported item mode))]
+       (record-problem-as-comment! ctx (problem 'init-bss-mode-unsupported item mode))]
       [else
        (list '(cld)
              (list 'li 'rdi start*)
@@ -765,7 +783,7 @@
   (match (cdr item)
     [(list) (expand 'bss 'bss-end)]
     [(list start end) (expand start end)]
-    [_ (record-problem-comment! ctx (problem 'bad-init-bss item))]))
+    [_ (record-problem-as-comment! ctx (problem 'bad-init-bss item))]))
 
 (define (translate-item ctx item)
   (cond
@@ -785,29 +803,29 @@
           [(list name)
            (if (name? name)
                (begin (select-section! ctx name) '())
-               (record-problem-comment! ctx (problem 'bad-section item)))]
-          [_ (record-problem-comment! ctx (problem 'bad-section item))])]
+               (record-problem-as-comment! ctx (problem 'bad-section item)))]
+          [_ (record-problem-as-comment! ctx (problem 'bad-section item))])]
        [(%origin)
         (match (cdr item)
           [(list n)
            (if (exact-integer? n)
                (begin (set-ctx-origin! ctx n) '())
-               (record-problem-comment! ctx (problem 'bad-origin item)))]
-          [_ (record-problem-comment! ctx (problem 'bad-origin item))])]
+               (record-problem-as-comment! ctx (problem 'bad-origin item)))]
+          [_ (record-problem-as-comment! ctx (problem 'bad-origin item))])]
        [(%mode)
         (match (cdr item)
           [(list n)
            (if (memv n '(16 32 64))
                (begin
-                 (set-ctx-mode! ctx n)
-                 (add-mode! ctx n)
+                 (set-ctx-current-mode! ctx n)
+                 (add-mode-run! ctx n)
                  '())
-               (record-problem-comment! ctx (problem 'bad-mode item)))]
-          [_ (record-problem-comment! ctx (problem 'bad-mode item))])]
+               (record-problem-as-comment! ctx (problem 'bad-mode item)))]
+          [_ (record-problem-as-comment! ctx (problem 'bad-mode item))])]
        [(%init-bss) (translate-init-bss ctx item)]
        [(%comm) (translate-comm ctx item)]
        [(%call)
-        (record-problem-comment! ctx (problem 'directive-needs-image-layer item))]
+        (record-problem-as-comment! ctx (problem 'directive-needs-image-layer item))]
        [else (translate-instruction ctx item)])]))
 
 (define loko-directive?
@@ -821,24 +839,26 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (translate-half ctx items)
+(define (translate-half-into-sections! ctx items)
   (for ([it (in-list items)])
     (add-section-items! ctx (translate-item ctx it))))
 
-(define (comm-size c) (caddr c))
+(define (comm-entry-size c) (caddr c))
 
-(define (expand-comms! ctx)
+;; Loko 的惯例是所有 %comm 在 %section bss 之前声明；这里统一把它们
+;; 展开到第一个 bss section 的开头。
+(define (expand-comms-into-bss! ctx)
   (define comms (reverse (ctx-comms ctx)))
   (when (pair? comms)
     (define bss
-      (for/first ([s (in-list (reverse (ctx-section-order ctx)))]
+      (for/first ([s (in-list (sections-in-source-order ctx))]
                   #:when (eq? (section-state-kind s) 'bss))
         s))
     (cond
       [(not bss) (record-problem! ctx (problem 'comm-without-bss-section))]
       [else
        (define sorted
-         (sort comms (lambda (a b) (< (comm-size a) (comm-size b)))))
+         (sort comms (lambda (a b) (< (comm-entry-size a) (comm-entry-size b)))))
        (define generated
          (append*
           (for/list ([c (in-list sorted)])
@@ -856,28 +876,27 @@
 (define (translate-comm ctx item)
   (match (cdr item)
     [(list name size align)
-     (define name* (init-bss-target ctx name))
+     (define name* (label-ref-path ctx name))
      (define size* (translate-expr ctx size))
      (define align* (translate-expr ctx align))
      (cond
-       [(not name*) (record-problem-comment! ctx (problem 'bad-comm-name name))]
-       [(problem? size*) (record-problem-comment! ctx size*)]
-       [(problem? align*) (record-problem-comment! ctx align*)]
+       [(not name*) (record-problem-as-comment! ctx (problem 'bad-comm-name name))]
+       [(problem? size*) (record-problem-as-comment! ctx size*)]
+       [(problem? align*) (record-problem-as-comment! ctx align*)]
        [(not (exact-nonnegative-integer? size*))
-        (record-problem-comment! ctx (problem 'bad-comm-size item size*))]
+        (record-problem-as-comment! ctx (problem 'bad-comm-size item size*))]
        [(not (exact-positive-integer? align*))
-        (record-problem-comment! ctx (problem 'bad-comm-align item align*))]
+        (record-problem-as-comment! ctx (problem 'bad-comm-align item align*))]
        [else
         (set-ctx-comms! ctx
                         (cons (list 'comm name* size* align*)
                               (ctx-comms ctx)))
         '()])]
-    [_ (record-problem-comment! ctx (problem 'bad-comm item))]))
+    [_ (record-problem-as-comment! ctx (problem 'bad-comm item))]))
 
 (define (translate-loko-source src)
   (define-values (text data) (loko-source-parts src))
-  (let ([ctx (ctx (make-hash) (make-hash) (make-hash) '() 0 'text '()
-                  (make-hash) '() #f #f #f '())])
+  (let ([ctx (make-empty-ctx)])
 
     ;; Definitions are collected first: code may refer to an alias that is
     ;; defined in the data half (e.g. codegen's initial-pcb-length).
@@ -892,15 +911,15 @@
       (when (problem? v) (record-problem! ctx v)))
 
     (select-section! ctx 'text)
-    (translate-half ctx text)
+    (translate-half-into-sections! ctx text)
     (select-section! ctx 'data)
-    (translate-half ctx data)
-    (expand-comms! ctx)
+    (translate-half-into-sections! ctx data)
+    (expand-comms-into-bss! ctx)
 
-    (define ordered-sections (reverse (ctx-section-order ctx)))
+    (define sections (sections-in-source-order ctx))
     (define (items-of-kind kinds)
       (append*
-       (for/list ([s (in-list ordered-sections)]
+       (for/list ([s (in-list sections)]
                   #:when (memq (section-state-kind s) kinds))
          (reverse (section-state-items s)))))
     (define program-items (items-of-kind '(code)))
@@ -918,5 +937,5 @@
           (cons 'symbols (reverse (ctx-symbols ctx)))
           (cons 'comms (reverse (ctx-comms ctx)))
           (list 'origin (ctx-origin ctx))
-          (cons 'sections (map section->sexp ordered-sections))
+          (cons 'sections (map section->sexp sections))
           (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))

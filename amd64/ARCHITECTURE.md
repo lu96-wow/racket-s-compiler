@@ -124,12 +124,15 @@ symbols: (symbol chain segment offset address)
 | `requests` | layout | 交给 relax 或未来寄存器层 |
 | `needs-near` | layout | short 越界，relax 可消费 |
 | `problems` | layout / bind / encode | 不能继续出产物 |
-| `loko-problems` | loko-compat | 旧写法不能纯变换（image 指令、符号位运算等） |
+| `loko-problems` | loko-compat | 旧写法不能纯变换（如 `%call`、符号运算等） |
 | `undefined-target` | layout | 分支目标找不到 |
 | `needs-far` | layout | near 也放不下，far form 未实现（request，由 encode 拒绝） |
 | `pseudo-leftover` | flow | 伪指令漏到 layout 前 |
 | `unallocated-pseudo` | lower | 伪寄存器没有分配，仍留在 item 里 |
 | `uncolored-pseudo` | lower | 干涉图着色时没有可用物理寄存器 |
+| `comm-without-bss-section` | loko-compat | 有 `%comm` 但没有 bss section |
+| `reserve-outside-bss` | layout | `reserve` 出现在非 bss 段 |
+| `bss-unsupported-item` | layout | bss 段里出现了 reserve/align 之外的 item |
 
 ## 8. 纯函数与状态
 

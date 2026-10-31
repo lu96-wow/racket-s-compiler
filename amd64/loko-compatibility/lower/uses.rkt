@@ -159,7 +159,10 @@
           [_ (values (pseudos-in ops) (directs-in ops))])]
 
        [(push) (values (pseudos-in ops) '())]
-       [(pop) (values (non-direct-pseudos (car ops)) (directs-in ops))]
+       [(pop)
+        (match ops
+          [(list dst) (values (non-direct-pseudos dst) (direct-pseudos dst))]
+          [_ (values (pseudos-in ops) (directs-in ops))])]
        [(xchg xadd) (values (pseudos-in ops) (directs-in ops))]
 
        [(call call-near call-indirect)

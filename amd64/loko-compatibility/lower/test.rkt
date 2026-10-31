@@ -121,6 +121,7 @@
   (lower-program-items '((mov (reg 0) (reg 1)))
                        #:allocation (hash 0 'rax 1 'rcx)))
 (check-equal? (lower-result-items explicit) '((mov rax rcx)))
+(check-equal? (lower-result-allocation explicit) '((0 . rax) (1 . rcx)))
 (check-equal? (lower-result-problems explicit) '())
 
 (define alist

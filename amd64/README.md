@@ -61,7 +61,7 @@ S-expression 汇编编译器，负责 item、控制流、布局、松弛、绑�
 
 ### `loko-compatibility`
 
-Loko 旧汇编写法到核心 item 的纯变换，不处理 image/ELF。
+Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 image/ELF。
 
 ## 总文档
 
@@ -94,7 +94,7 @@ Loko 旧汇编写法到核心 item 的纯变换，不处理 image/ELF。
 
 - lower 的跨调用值 spill、frame allocation
 - `needs-far` / far form / trampoline / scratch 寄存器
-- image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
+- image 层：`loko-ir` -> 带 bss 的 `layout-spec`、`%call`、ELF/symtab
 - 外部符号 / reloc / loader
 - `jmpf`/`far`、16/32 位模式
 - `adc/sbb`、AVX、更多双精度/packed SSE

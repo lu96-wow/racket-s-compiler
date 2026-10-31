@@ -51,12 +51,12 @@
 (define (call-item? x)
   (and (form? x) (call-head? (car x))))
 
-(define (program-of x)
+(define (as-program x)
   (if (program? x) x (analyze x)))
 
 ;; 所有跨调用仍 live 的伪寄存器。
 (define (call-crossing-pseudos lv program-or-items)
-  (define prog (program-of program-or-items))
+  (define prog (as-program program-or-items))
   (define blocks (list->vector (program-blocks prog)))
   (define out (make-hash))
   (for ([i (in-range (vector-length blocks))])
@@ -75,7 +75,9 @@
 ;; 返回 call-save-result：展开后的 items、fresh 数量、problems。
 (struct call-save-result (items fresh-count problems) #:transparent)
 
-(define (item->flat program lv)
+;; 返回两类 entry：块头 label 是直接的 (label ...)，块内 item 是
+;; (item live-out)。
+(define (items-with-live-out program lv)
   ;; 用 analyze 的块顺序重建一个扁平的 item 序列。
   ;; 块头的多个 label 合并成一个 (label 名字 ...)；语义不变。
   (define blocks (list->vector (program-blocks program)))
@@ -108,7 +110,7 @@
     (set! next-fresh (add1 next-fresh))
     n)
 
-  (for ([entry (in-list (item->flat program lv))])
+  (for ([entry (in-list (items-with-live-out program lv))])
     (cond
       [(and (pair? entry) (eq? (car entry) 'label))
        (emit! entry)]

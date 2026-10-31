@@ -253,13 +253,15 @@
       [else
        (define item-kind* (item-kind it))
        (unless (or (eq? item-kind* 'both)
-                   (and (eq? kind 'code) (eq? item-kind* 'code))
+                   ;; A code segment may contain data (ELF/multiboot
+                   ;; headers, jump tables, ...).
+                   (and (eq? kind 'code) (memq item-kind* '(code data)))
                    (and (eq? kind 'data) (eq? item-kind* 'data))
                    (and (eq? kind 'bss) (eq? item-kind* 'data)))
          (problem! (list 'segment-item-kind-mismatch name kind cursor it)))
        (when (and (eq? kind 'bss)
                   (not (or (reserve-form? it) (align-form? it))))
-         (problem! (list 'bss-non-reserve-item name cursor it)))
+         (problem! (list 'bss-unsupported-item name cursor it)))
        (when (and (reserve-form? it) (not (eq? kind 'bss)))
          (problem! (list 'reserve-outside-bss name cursor it)))
        (define size (item-size it))

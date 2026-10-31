@@ -30,11 +30,11 @@
 
 (provide (struct-out allocation-result)
          allocate-pseudo-registers
-         allocation->alist
+         allocation-result->alist
          default-available-registers
          preserved-registers)
 
-;; Loko 的 scratch 集合去掉 %pcb/%closure/rsp 后可用于伪寄存器。
+;; Loko 可用的 GPR：scratch + preserved，去掉 %pcb/%closure/rsp。
 ;; 这是默认集合，不代表跨调用安全。
 (define default-available-registers
   '(rax rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 rbx rbp))
@@ -44,7 +44,7 @@
 
 (struct allocation-result (allocation uncolored available) #:transparent)
 
-(define (allocation->alist result)
+(define (allocation-result->alist result)
   (sort (hash->list (allocation-result-allocation result))
         < #:key car))
 

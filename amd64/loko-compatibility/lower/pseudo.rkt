@@ -17,7 +17,8 @@
          make-pseudo-register
          pseudo-registers-in
          substitute-pseudo-registers
-         allocation-ref)
+         allocation-ref
+         allocation-pair-value)
 
 (define (pseudo-register? x)
   (and (form? x)
@@ -63,7 +64,7 @@
 
 ;; allocation 是 hash 或 alist：伪寄存器下标 -> 物理寄存器名。
 ;; alist 的每一项可以写成点对 (0 . rax)，也可以写成 (0 rax)。
-(define (allocation-entry-value p)
+(define (allocation-pair-value p)
   (if (and (list? p) (= 2 (length p)))
       (cadr p)
       (cdr p)))
@@ -73,7 +74,7 @@
     [(hash? allocation) (hash-ref allocation n #f)]
     [(list? allocation)
      (define p (assq n allocation))
-     (and p (allocation-entry-value p))]
+     (and p (allocation-pair-value p))]
     [else
      (error 'allocation-ref "allocation must be a hash or alist: ~e" allocation)]))
 

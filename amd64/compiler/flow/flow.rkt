@@ -50,6 +50,7 @@
 ;;
 ;;   loko-source    Loko 汇编写法 (loko-source (text ...) (data ...))
 ;;   loko-aliases   %equiv 解析后的 (alias 名字 值) 列表
+;;   loko-ir        sections / origin / modes / symbols / comms
 ;;   rich-data      人写的 rich 数据（expand-data 的输入）
 ;;   data-items     核心数据 item（label / bytes / fill / value / align / pad）
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
@@ -82,7 +83,7 @@
                                  (assq 'symbols fields)
                                  (assq 'comms fields)
                                  (assq 'sections fields))))
-          "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols）")
+          "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols/comms）")
 
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)

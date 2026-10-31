@@ -2,12 +2,14 @@
 
 > 目录：`loko-compatibility/`；flow 里的 stage 名仍是 `loko-compat`。
 
-> 只做写法兼容。输入和输出都是 s-expression；没有布局、地址、编码，也没有
-> 跨调用状态。目标是把 Loko `arch/amd64` 现在吐出的汇编写法接到本后端。
+> 做写法兼容和前端元数据采集。输入和输出都是 s-expression；没有布局、
+> 地址、编码，也没有跨调用状态。目标是把 Loko `arch/amd64` 现在吐出的
+> 汇编写法接到本后端。
 
 ## 1. 作用
 
-把 Loko `arch/amd64` 的旧汇编写法纯变换成本后端的核心 item。
+把 Loko `arch/amd64` 的旧汇编写法纯变换成本后端的核心 item，并采集
+sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 
 ## 2. 相关 s-exp：输入
 
@@ -17,8 +19,8 @@
   (data item ...))  ; Loko 的 data / 数据
 ```
 
-分开 `text` / `data` 是有意的：`%section` / `%origin` / `%mode` 作为
-`loko-ir` 元数据采集；`%comm` / `%call` 及最终镜像仍属于 image 层。
+分开 `text` / `data` 是有意的：`%section` / `%origin` / `%mode` / `%comm`
+作为 `loko-ir` 元数据采集；`%call` 和最终镜像布局仍属于 image 层。
 
 `translate-loko-text-only` / `translate-loko-data-only` 是单边便利入口；如果代码引用了
 另一边的 `%equiv`，用 `translate-loko-source`。
@@ -44,7 +46,7 @@
 - `program-items` / `data-items` 已经是本后端的核心 item。
 - `aliases` 是 `%equiv` 解析后的常量/地址表达式，供 image 层或调试使用。
 - `symbols` 保留 Loko `%label` 的符号元数据：start/end 路径、section、misc。
-- `comms` 保留 `%comm` 的原始声明；image 层会在 `%section bss` 处把它展开。
+- `comms` 保留 `%comm` 的原始声明；`translate.rkt` 已把它展开到 bss section。
 - `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
   `modes` 记录 mode 切换点的 item 下标。
@@ -155,7 +157,7 @@ racket amd64/loko-compatibility/test.rkt
 loko-compatibility/
   translate.rkt        ; 已有：旧写法 -> 核心 item + 符号元数据
   lower/               ; 已有：伪寄存器 / liveness / 图着色 / call save；见 lower/DESIGN.md
-  image/               ; 计划：%origin/%section/%comm/%call / BSS / ELF
+  image/               ; 计划：loko-ir -> layout-spec、%call、ELF/symtab
 ```
 
 lower 目前还缺 spill 和 frame allocation；详细缺口见

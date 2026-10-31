@@ -13,8 +13,7 @@
 ;;; 也可以传入 #:allocation 使用调用方已经算好的分配；这时跳过
 ;;; liveness/allocate，只做替换。
 ;;;
-;;; 这层不处理：
-;;;   - 调用点的具体 save/restore 指令；
+;;; 调用点的 save/restore 注记由 calls.rkt 先展开；本层仍不处理：
 ;;;   - spill 到栈；
 ;;;   - frame allocation；
 ;;;   - %origin/%section/%comm/%call。
@@ -31,22 +30,22 @@
 
 (struct lower-result (items allocation problems) #:transparent)
 
-(define (problem kind . detail)
+(define (lower-problem kind . detail)
   (cons 'problem (cons kind detail)))
-
-(define (allocation-entry-value p)
-  (if (and (list? p) (= 2 (length p)))
-      (cadr p)
-      (cdr p)))
 
 (define (allocation->hash allocation)
   (cond
     [(hash? allocation) allocation]
     [(list? allocation)
      (for/hash ([p (in-list allocation)])
-       (values (car p) (allocation-entry-value p)))]
+       (values (car p) (allocation-pair-value p)))]
     [else
      (error 'lower-program-items "allocation must be a hash or alist: ~e" allocation)]))
+
+(define (allocation-hash->alist allocation)
+  (sort (for/list ([(pseudo register) (in-hash allocation)])
+          (cons pseudo register))
+        < #:key car))
 
 (define (lower-program-items items
                              #:allocation [allocation #f]
@@ -60,15 +59,11 @@
        (values (allocation-result-allocation result)
                (allocation-result-uncolored result))]))
 
-  (define (lower-one item)
-    (define-values (out missing) (substitute-pseudo-registers item alloc))
-    (values out missing))
-
   ;; 逐 item 替换；收集所有缺失伪寄存器，便于一次报告。
   (define missing-all (make-hash))
   (define lowered
     (for/list ([item (in-list items)])
-      (define-values (out missing) (lower-one item))
+      (define-values (out missing) (substitute-pseudo-registers item alloc))
       (for ([n (in-list missing)]) (hash-set! missing-all n #t))
       out))
 
@@ -76,8 +71,8 @@
     (append
      (for/list ([n (in-list (sort (hash-keys missing-all) <))]
                 #:unless (memv n uncolored))
-       (problem 'unallocated-pseudo n))
+       (lower-problem 'unallocated-pseudo n))
      (for/list ([n (in-list uncolored)])
-       (problem 'uncolored-pseudo n))))
+       (lower-problem 'uncolored-pseudo n))))
 
-  (lower-result lowered alloc problems))
+  (lower-result lowered (allocation-hash->alist alloc) problems))

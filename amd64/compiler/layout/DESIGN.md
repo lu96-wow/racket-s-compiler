@@ -44,7 +44,9 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 - `comment` 零尺寸，不进入 items。
 - `(reserve n)` 只增加内存偏移，不产生文件字节。
 - item 尺寸来自 `layout/forms.rkt` -> `instruction-size`。
-- `code` 段只放 code item，`data` 段只放 data item；混放报 `segment-item-kind-mismatch`。
+- `code` 段可以放 code/data item（ELF/multiboot header、跳转表等）；
+  `data` 段只放 data item；code item 放进 data/bss 段报
+  `segment-item-kind-mismatch`。
 - `bss` 段只接受 `label` / `comment` / `align` / `reserve`；`reserve` 不得出现在
   非 bss 段。
 - 段起始对齐、段重叠、段容量都在本层检查。

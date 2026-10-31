@@ -271,6 +271,17 @@
  (for/or ([p (in-list (field 'problems comm-without-bss))])
    (eq? (cadr p) 'comm-without-bss-section)))
 
+;; %comm names can be vector labels (pc-segments uses this).
+(define comm-vector (vector 'comm 'x))
+(define comm-with-vector
+  (translate-loko-source
+   `(loko-source
+     (text (%comm ,comm-vector 8 8) (%label text) (ret))
+     (data (%label bss) (%section bss) (%label bss-end)))))
+(check-equal? (field 'problems comm-with-vector) '())
+(check-equal? (field 'comms comm-with-vector)
+              '((comm (loko-label-0) 8 8)))
+
 (displayln "amd64 loko-compat tests: ok")
 
 ;; value references to vector labels use the same path as %label

@@ -175,6 +175,21 @@
                 (size 48)
                 (bytes #"")))
 
+;; data items are allowed inside a code segment (headers, tables, ...)
+(define mixed-items
+  '((label text)
+    (value 4 #x12345678)
+    (ret)))
+(define mixed-measured (layout-flat-items target-amd64 mixed-items spec))
+(check-equal? (cdr (assq 'problems mixed-measured)) '())
+(define mixed-bound (bind-labels mixed-measured))
+(define mixed-build (encode-layout target-amd64 mixed-bound))
+(check-equal? (cddr (car (cdr mixed-build)))
+              '((kind code)
+                (start #x200000)
+                (size 5)
+                (bytes #"\x78\x56\x34\x12\xc3")))
+
 ;; bind-labels is the final value-width check
 (define bad-value-items '((label data) (value 1 300)))
 (define bad-value-measured (layout-flat-items target-amd64 bad-value-items spec))

@@ -60,7 +60,7 @@
 - [ ] lower 的跨调用值 spill / frame allocation
 - [ ] `adc/sbb`、更多双精度/packed SSE
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
-- [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
+- [ ] image 层：`loko-ir` -> 带 bss 的 `layout-spec`、`%call`、ELF/symtab
 - [x] block-aware layout：place/region/wildcard、data runs、fallthrough
 - [x] 段起始对齐/重叠、代码数据混放、RIP/绝对 disp32 范围检查
 - [x] relax 按 `(code 块下标 项下标)` origin 精确升级

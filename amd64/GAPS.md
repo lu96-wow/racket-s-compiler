@@ -87,7 +87,7 @@
 
 1. `loko-compatibility/translate.rkt`：`%label start end` 语义、sections/origin/mode 采集已完成
 2. `loko-compatibility/lower/`：补齐 spill / frame / GC 注记
-3. `loko-compatibility/image/`：sections / origin / comm / mode / call / BSS / ELF
+3. `loko-compatibility/image/`：loko-ir -> layout-spec、call、BSS/NOBITS、ELF/symtab
 4. `amd64-asm/` far form + mode
 5. `amd64-help/`：far/表达式辅助
 6. Racket ↔ Loko bridge
