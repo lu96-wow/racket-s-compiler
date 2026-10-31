@@ -2,7 +2,7 @@
 
 > 本文记录跨层规则和当前实现事实。每层细节见各自的 `DESIGN.md`。
 
-> 指令类别、前缀和字符串指令的模型见 [`INSTRUCTIONS.md`](INSTRUCTIONS.md)。
+> 指令类别、前缀和字符串指令的模型见 [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。
 
 ## 1. 共享事实层
 
@@ -10,13 +10,13 @@
 
 | 模块 | 内容 |
 | --- | --- |
-| `sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
-| `item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
-| `insn.rkt` | 真实指令表、前缀/字符串指令、`instruction-size`、`encode-instruction` |
-| `registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`REGISTERS.md`](REGISTERS.md) |
-| `target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`TARGET.md`](TARGET.md) |
+| `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
+| `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
+| `amd64-asm/insn.rkt` | 真实指令表、前缀/字符串指令、`instruction-size`、`encode-instruction` |
+| `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |
+| `amd64-asm/target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md) |
 
-`insn.rkt` 同时服务 layout 和 encode，避免两边各自维护尺寸。
+`amd64-asm/insn.rkt` 同时服务 layout 和 encode，避免两边各自维护尺寸。
 
 ## 2. 流水线
 
@@ -30,7 +30,7 @@ rich data -> expand-data -> flatten -> program-items / data-items
 ```
 
 `layout` 是可单独选择的 stage；默认流不直接写 `layout`。
-`loko-compat` 只做旧写法到核心 item 的纯变换，不处理 image 层。
+`loko-compat`（目录 `loko-compatibility/`）只做旧写法到核心 item 的纯变换，不处理 image 层。
 
 ## 3. 层契约
 
@@ -136,7 +136,7 @@ symbols: (symbol chain segment offset address)
 ## 9. 当前入口
 
 ```racket
-(require "amd64/flow/flow.rkt")
+(require "amd64/compiler/flow/flow.rkt")
 
 (compile target-amd64
          (list (cons 'rich-data ...)

@@ -25,12 +25,12 @@
 ## 当前进度
 
 - [x] `amd64/SEXP.md`：形式定稿（内存宽度 `b8/b16/b32/b64`，命名字段）
-- [x] `amd64/sexp.rkt`：通用形状 + 内存操作数解析
-- [x] `amd64/expand-data`：rich 数据 -> 核心数据 item（复用 RISC-V 的 target-neutral 实现）
-- [x] `amd64/flatten`：module/provide/require 名字解析（复用 RISC-V 的 target-neutral 实现）
-- [x] `amd64/registers.rkt`：寄存器表（共享事实）
-- [x] `amd64/insn.rkt`：第一版整数/控制流编码 + `instruction-size`（layout/encode 共享）
-- [x] `amd64/expand-pseudo/rewrite.rkt`：`jmp/jcc/call/li` 与条件码别名规范化
+- [x] `amd64/amd64-asm/sexp.rkt`：通用形状 + 内存操作数解析
+- [x] `amd64/compiler/expand-data`：rich 数据 -> 核心数据 item（复用 RISC-V 的 target-neutral 实现）
+- [x] `amd64/compiler/flatten`：module/provide/require 名字解析（复用 RISC-V 的 target-neutral 实现）
+- [x] `amd64/amd64-asm/registers.rkt`：寄存器表（共享事实）
+- [x] `amd64/amd64-asm/insn.rkt`：第一版整数/控制流编码 + `instruction-size`（layout/encode 共享）
+- [x] `amd64/compiler/expand-pseudo/rewrite.rkt`：`jmp/jcc/call/li` 与条件码别名规范化
 - [x] 编码测试、expand-pseudo 测试、expand-data 测试、flatten 测试
 - [x] `layout` 精确尺寸与段布局（早期扁平 item；现已升级为 block-aware）
 - [x] `bind-labels`
@@ -40,9 +40,9 @@
 - [x] `relax`（short -> near 只增）
 - [x] 符号 memory displacement（归一化为固定 disp32，encode 时解析）
 - [x] 基本整数指令扩展（test/inc/dec/neg/not/shift/imul/div/idiv/movzx/movsx/setcc/cqo/cdq）
-- [x] 结构清理：`item.rkt` / `insn.rkt` 共享事实；layout 不再依赖 encode；target 显式传参；flow 检查伪指令残留
+- [x] 结构清理：`compiler/item.rkt` / `amd64-asm/insn.rkt` 共享事实；layout 不再依赖 encode；target 显式传参；flow 检查伪指令残留
 - [x] `li` 整数 -> mov，地址表达式 -> RIP-relative lea
-- [x] `loko-compat`：Loko 旧汇编写法 -> 核心 item 的纯变换
+- [x] `loko-compatibility`：Loko 旧汇编写法 -> 核心 item 的纯变换
 - [x] `comment` 零尺寸 item、`cmovcc`、`b128` 内存宽度事实
 - [x] 整数扩展：`imul` 1/2/3、shift by `cl`、`push/pop` 内存/立即数、`xchg/bswap/bsf/bsr/popcnt/shrd`
 - [x] 系统/原子/端口/屏障指令：`cdqe cpuid rdtsc rdtscp syscall in out cmpxchg xadd rdrand rdseed clflush fences`
@@ -157,39 +157,63 @@ call-indirect
 
 ```text
 amd64/
-  PLAN.md
+  README.md
+  ARCHITECTURE.md
   SEXP.md
-  target.rkt
-  sexp.rkt
-  expand-data/
-  flatten/
-  expand-pseudo/
-  analyze/
-  dce/
-  layout/
-  relax/
-  bind-labels/
-  encode/
-  flow/
+  PLAN.md
+
+  amd64-asm/
+    sexp.rkt
+    registers.rkt
+    target.rkt
+    insn.rkt
+    test.rkt
+    INSTRUCTIONS.md
+    REGISTERS.md
+    TARGET.md
+
+  compiler/
+    item.rkt
+    expand-data/
+    flatten/
+    expand-pseudo/
+    analyze/
+    dce/
+    layout/
+    relax/
+    bind-labels/
+    encode/
+    flow/
+    test/
+
+  amd64-help/
+    li.rkt
+    ranges.rkt
+    DESIGN.md
+
+  loko-compatibility/
+    translate.rkt
+    test.rkt
+    DESIGN.md
 ```
 
 ### 各层职责
 
 | 层 | 内容 |
 | --- | --- |
-| `target.rkt` | `target-amd64`、指针宽度、代码段 NOP padding、端序 |
-| `sexp.rkt` | item / chain / 地址表达式；amd64 内存操作数判定 |
-| `loko-compat` | Loko 旧汇编写法（memN+、%label、%uN 等）-> 核心 item |
-| `expand-data` | 先复用 RISC-V 的数据展开规则 |
-| `flatten` | 名字解析，可复用 RISC-V 实现 |
-| `expand-pseudo` | `jmp/jcc/call`、`ret`、`nop`、`li`、常见 mov/算术别名 |
-| `analyze` | amd64 的分支/跳转/终止指令分类、CFG |
-| `dce` | 与 RISC-V 同构 |
-| `layout` | 精确 item 尺寸、对齐、anchor、范围请求 |
-| `relax` | `short -> near` 单调升级 |
-| `bind-labels` | anchor -> symbol / 绝对地址 |
-| `encode` | 表驱动编码，输出每段字节 |
-| `flow` | stage 表和选择器 |
+| `amd64-asm/target.rkt` | `target-amd64`、指针宽度、代码段 NOP padding、端序 |
+| `amd64-asm/sexp.rkt` | item / chain / 地址表达式；amd64 内存操作数判定 |
+| `loko-compatibility` | Loko 旧汇编写法（memN+、%label、%uN 等）-> 核心 item |
+| `compiler/expand-data` | 先复用 RISC-V 的数据展开规则 |
+| `compiler/flatten` | 名字解析，可复用 RISC-V 实现 |
+| `compiler/expand-pseudo` | `jmp/jcc/call`、`ret`、`nop`、`li`、常见 mov/算术别名 |
+| `compiler/analyze` | amd64 的分支/跳转/终止指令分类、CFG |
+| `compiler/dce` | 与 RISC-V 同构 |
+| `compiler/layout` | 精确 item 尺寸、对齐、anchor、范围请求 |
+| `compiler/relax` | `short -> near` 单调升级 |
+| `compiler/bind-labels` | anchor -> symbol / 绝对地址 |
+| `compiler/encode` | 表驱动编码，输出每段字节 |
+| `compiler/flow` | stage 表和选择器 |
 
 ## 6. 编码器设计
 

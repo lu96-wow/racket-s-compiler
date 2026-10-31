@@ -2,15 +2,16 @@
 
 > 目标：形状固定、尺寸可精确计算、编码器不偷偷改 form。
 > 总体计划见 [`PLAN.md`](PLAN.md)。
-> 共享事实层另有 [`TARGET.md`](TARGET.md)、[`REGISTERS.md`](REGISTERS.md)、
-> [`INSTRUCTIONS.md`](INSTRUCTIONS.md)。
+> 共享事实层另有 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md)、
+> [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md)、
+> [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。
 
 ## 1. 通用约定
 
 - item 是真列表：`(mnemonic operand ...)`
 - 名字：symbol / string / number
 - 链：非空名字列表，例如 `(main)`、`(prog1 done)`
-- 地址表达式复用 `riscv/riscv-compiler/sexp.rkt` 的形状：
+- 地址表达式复用 `amd64/amd64-asm/sexp.rkt` 的形状：
   ```text
   整数
   | (链)
