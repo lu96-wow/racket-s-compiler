@@ -52,7 +52,7 @@
 
 - 精确尺寸（当前用 near 分支上界，DCE 后可能留 gap）
 - `%call` -> 声明式 ELF header / strtab/symtab，替代宿主回调
-- `%elf` / `image-plan` 已支持 entry/load/section/symbol；还需要覆盖 Loko 现有 ELF callback 的全部语义
+- `%elf` / `image-plan` 已支持 canonical region/load/symbol；`content`/`perm` 派生 ELF 元数据；还需要覆盖 Loko 现有 ELF callback 的全部语义
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
 - 多 PT_LOAD / text-data 权限分离
 - 符号 size（当前为 0）

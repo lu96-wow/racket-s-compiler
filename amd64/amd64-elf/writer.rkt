@@ -8,6 +8,7 @@
 ;;;   build    (build (segment (name ...) (kind code|data|hole)
 ;;;                            (start ...) (size ...) (bytes ...)) ...)
 ;;;   symbols  (symbol chain segment offset address) ...
+;;;   plan     (image-plan (entry ...) (region ...) (load ...) (symbol ...))
 ;;;
 ;;; 输出：
 ;;;
@@ -15,6 +16,7 @@
 ;;;     (entry 地址)
 ;;;     (size n)
 ;;;     (sections (section ...) ...)
+;;;     (symbols (symbol ...) ...)
 ;;;     (bytes #"..."))
 ;;;
 ;;; 当前实现：
@@ -111,15 +113,6 @@
   (define s (list->string (append* out)))
   (if (string=? s "") "symbol" s))
 
-(define (segment-section-name name kind)
-  (define base
-    (case kind
-      [(code) (if (eq? name 'text) ".text" (format ".~a" name))]
-      [(data) (if (eq? name 'data) ".data" (format ".~a" name))]
-      [(hole) (if (eq? name 'bss) ".bss" (format ".~a" name))]
-      [else (format ".~a" name)]))
-  base)
-
 (define (unique-names names)
   (define seen (make-hash))
   (for/list ([name (in-list names)])
@@ -179,16 +172,45 @@
         (list 'align (elf-section-align s))
         (list 'entsize (elf-section-entsize s))))
 
-(define (section-flags kind)
-  (case kind
-    [(code) #x6]                    ; ALLOC | EXECINSTR
-    [(data hole) #x3]               ; ALLOC | WRITE
-    [else #x3]))
+(define (perm-string x)
+  (cond
+    [(symbol? x) (symbol->string x)]
+    [(string? x) x]
+    [else (error 'write-elf "bad permission: ~e" x)]))
 
-(define (section-type kind)
-  (if (eq? kind 'hole) 8 1))        ; NOBITS / PROGBITS
+(define (perm->pf-flags x)
+  (define str (perm-string x))
+  (+ (if (and (> (string-length str) 0) (char=? (string-ref str 0) #\r)) 4 0)
+     (if (and (> (string-length str) 1) (char=? (string-ref str 1) #\w)) 2 0)
+     (if (and (> (string-length str) 2) (char=? (string-ref str 2) #\x)) 1 0)))
 
-(define (section-align kind)
+(define (perm->section-flags x)
+  (define str (perm-string x))
+  (bitwise-ior #x2                          ; ALLOC
+               (if (and (> (string-length str) 1)
+                        (char=? (string-ref str 1) #\w))
+                   #x1 0)                   ; WRITE
+               (if (and (> (string-length str) 2)
+                        (char=? (string-ref str 2) #\x))
+                   #x4 0)))                 ; EXECINSTR
+
+(define (perm-exec? x)
+  (define str (perm-string x))
+  (and (> (string-length str) 2) (char=? (string-ref str 2) #\x)))
+
+(define (content->section-type content)
+  (case content
+    [(materialized) 1]                  ; PROGBITS
+    [(reserved) 8]                      ; NOBITS
+    [else (error 'write-elf "bad region content: ~e" content)]))
+
+(define (default-content kind)
+  (if (eq? kind 'hole) 'reserved 'materialized))
+
+(define (default-perm kind)
+  (if (eq? kind 'code) 'r-x 'rw-))
+
+(define (default-section-align kind)
   (if (eq? kind 'code) 16 8))
 
 (define (make-symbol-records symbols)
@@ -199,8 +221,12 @@
                 (symbol-address s))))
 
 ;; ---------------------------------------------------------------------------
-;; image plan
+;; canonical image model
 ;; ---------------------------------------------------------------------------
+
+(struct image-region (id content section perm align load-id start size bytes kind)
+  #:transparent)
+(struct image-load (id start end file-end align flags regions) #:transparent)
 
 (define (plan-clauses plan key)
   (for/list ([c (in-list plan)]
@@ -215,14 +241,14 @@
   (define c (for/first ([c (in-list (plan-clauses plan 'entry))]) c))
   (and c (plan-field c 'entry)))
 
-(define (plan-load-for plan name)
-  (for/first ([c (in-list (plan-clauses plan 'load))]
-              #:when (eq? (plan-field c 'name) name))
+(define (plan-region-for plan id)
+  (for/first ([c (in-list (plan-clauses plan 'region))]
+              #:when (eq? (plan-field c 'id) id))
     c))
 
-(define (plan-section-for plan segment)
-  (for/first ([c (in-list (plan-clauses plan 'section))]
-              #:when (eq? (plan-field c 'segment) segment))
+(define (plan-load-for plan id)
+  (for/first ([c (in-list (plan-clauses plan 'load))]
+              #:when (eq? (plan-field c 'id) id))
     c))
 
 (define (plan-symbol-for plan chain)
@@ -240,51 +266,6 @@
        (eval-address expr
                      (lambda (chain)
                        (find-symbol-address symbols chain)))))
-
-(define (perm-string->flags str)
-  (+ (if (and (> (string-length str) 0)
-              (char=? (string-ref str 0) #\r))
-         4 0)
-     (if (and (> (string-length str) 1)
-              (char=? (string-ref str 1) #\w))
-         2 0)
-     (if (and (> (string-length str) 2)
-              (char=? (string-ref str 2) #\x))
-         1 0)))
-
-(define (perm->flags x)
-  (cond
-    [(symbol? x) (perm-string->flags (symbol->string x))]
-    [(string? x) (perm-string->flags x)]
-    [else (error 'write-elf "bad load flags: ~e" x)]))
-
-(define (section-flags->number x)
-  (cond
-    [(symbol? x) (perm->flags x)]
-    [(list? x)
-     (for/fold ([f 0]) ([s (in-list x)])
-       (bitwise-ior f
-                    (case s
-                      [(write) #x1]
-                      [(alloc) #x2]
-                      [(exec execinstr) #x4]
-                      [else 0])))]
-    [else (error 'write-elf "bad section flags: ~e" x)]))
-
-(define (section-type-name->number x)
-  (case x
-    [(null) 0]
-    [(progbits) 1]
-    [(symtab) 2]
-    [(strtab) 3]
-    [(rela) 4]
-    [(hash) 5]
-    [(dynamic) 6]
-    [(note) 7]
-    [(nobits) 8]
-    [(rel) 9]
-    [(dynsym) 11]
-    [else (error 'write-elf "bad section type: ~e" x)]))
 
 (define (symbol-type->number x)
   (case x
@@ -322,41 +303,81 @@
     [(2) 'weak]
     [else n]))
 
-(define (segment-load-flags plan s)
-  (define p (plan-load-for plan (elf-segment-name s)))
-  (define f (and p (plan-field p 'flags)))
-  (cond
-    [f (perm->flags f)]
-    [(eq? (elf-segment-kind s) 'code) #x5] ; R|X
-    [else #x6]))                            ; R|W
+(define (normalize-regions segments plan)
+  (define plan-regions (plan-clauses plan 'region))
+  (define plan-loads (plan-clauses plan 'load))
+  (define single-default-load?
+    (and (null? plan-regions) (null? plan-loads)))
+  (define segment-names
+    (for/list ([s (in-list segments)]) (elf-segment-name s)))
+  (for ([p (in-list plan-regions)])
+    (unless (memq (plan-field p 'id) segment-names)
+      (error 'write-elf "plan region has unknown id: ~e" (plan-field p 'id))))
+  (for/list ([s (in-list segments)])
+    (define id (elf-segment-name s))
+    (define kind (elf-segment-kind s))
+    (define p (plan-region-for plan id))
+    (define content
+      (or (and p (plan-field p 'content))
+          (default-content kind)))
+    (define perm
+      (or (and p (plan-field p 'perm))
+          (default-perm kind)))
+    (define section-name
+      (or (and p (plan-field p 'section))
+          (format ".~a" id)))
+    (define section-name*
+      (if (string? section-name)
+          section-name
+          (format "~a" section-name)))
+    (define align
+      (or (and p (plan-field p 'align))
+          (default-section-align kind)))
+    (define load-id
+      (or (and p (plan-field p 'load))
+          (if single-default-load? 'image id)))
+    (define bytes (elf-segment-bytes s))
+    (define size (elf-segment-size s))
+    (case content
+      [(materialized)
+       (unless (= (bytes-length bytes) size)
+         (error 'write-elf "materialized region ~a has ~a bytes, size is ~a"
+                id (bytes-length bytes) size))]
+      [(reserved)
+       (unless (zero? (bytes-length bytes))
+         (error 'write-elf "reserved region ~a has file bytes" id))]
+      [else (error 'write-elf "bad region content: ~e" content)])
+    (image-region id content section-name* perm align load-id
+                  (elf-segment-start s) size bytes kind)))
 
-(define (segment-load-align plan s)
-  (define p (plan-load-for plan (elf-segment-name s)))
-  (or (and p (plan-field p 'align)) 4096))
-
-(define (segment-section-name-from-plan plan s)
-  (define p (plan-section-for plan (elf-segment-name s)))
-  (define n (and p (plan-field p 'name)))
-  (cond
-    [(string? n) n]
-    [(symbol? n) (symbol->string n)]
-    [else (segment-section-name (elf-segment-name s)
-                                (elf-segment-kind s))]))
-
-(define (segment-section-type plan s)
-  (define p (plan-section-for plan (elf-segment-name s)))
-  (define t (and p (plan-field p 'type)))
-  (if t (section-type-name->number t) (section-type (elf-segment-kind s))))
-
-(define (segment-section-flags plan s)
-  (define p (plan-section-for plan (elf-segment-name s)))
-  (define f (and p (plan-field p 'flags)))
-  (if f (section-flags->number f) (section-flags (elf-segment-kind s))))
-
-(define (segment-section-align plan s)
-  (define p (plan-section-for plan (elf-segment-name s)))
-  (or (and p (plan-field p 'align))
-      (section-align (elf-segment-kind s))))
+(define (normalize-loads regions plan)
+  (define plan-loads (plan-clauses plan 'load))
+  (define ids
+    (remove-duplicates
+     (append (for/list ([c (in-list plan-loads)]) (plan-field c 'id))
+             (for/list ([r (in-list regions)]) (image-region-load-id r)))))
+  (for/list ([id (in-list ids)])
+    (define rs
+      (for/list ([r (in-list regions)]
+                 #:when (eq? (image-region-load-id r) id))
+        r))
+    (unless (pair? rs)
+      (error 'write-elf "unused image load: ~a" id))
+    (define start
+      (apply min (for/list ([r (in-list rs)]) (image-region-start r))))
+    (define end
+      (apply max (for/list ([r (in-list rs)])
+                   (+ (image-region-start r) (image-region-size r)))))
+    (define file-end
+      (for/fold ([e start]) ([r (in-list rs)]
+                             #:when (eq? (image-region-content r) 'materialized))
+        (max e (+ (image-region-start r) (image-region-size r)))))
+    (define flags
+      (for/fold ([f 0]) ([r (in-list rs)])
+        (bitwise-ior f (perm->pf-flags (image-region-perm r)))))
+    (define p (plan-load-for plan id))
+    (define align (or (and p (plan-field p 'align)) 4096))
+    (image-load id start end file-end align flags rs)))
 
 (define (write-phdr! out off type flags offset vaddr paddr filesz memsz align)
   (set-u32! out off type)
@@ -380,14 +401,17 @@
   (define segments (build-segments build))
   (unless (pair? segments)
     (error 'write-elf "build has no segments"))
-  (define image-base (apply min (map elf-segment-start segments)))
-  (define image-end (apply max (map (lambda (s)
-                                      (+ (elf-segment-start s) (elf-segment-size s)))
-                                    segments)))
+  (define regions (normalize-regions segments plan*))
+  (define loads (normalize-loads regions plan*))
+  (define image-base
+    (apply min (for/list ([r (in-list regions)]) (image-region-start r))))
+  (define image-end
+    (apply max (for/list ([r (in-list regions)])
+                 (+ (image-region-start r) (image-region-size r)))))
   (define file-mem-end
-    (for/fold ([end image-base]) ([s (in-list segments)]
-                                  #:unless (eq? (elf-segment-kind s) 'hole))
-      (max end (+ (elf-segment-start s) (elf-segment-size s)))))
+    (for/fold ([end image-base]) ([r (in-list regions)]
+                                  #:when (eq? (image-region-content r) 'materialized))
+      (max end (+ (image-region-start r) (image-region-size r)))))
   (define data-span (max 0 (- file-mem-end image-base)))
   (define mem-span (max 0 (- image-end image-base)))
 
@@ -397,60 +421,39 @@
     (or entry-address
         (and plan-entry (eval-plan-expr plan-entry symbols))
         (and entry-path (find-symbol-address symbols entry-path))
-        (for/first ([s (in-list segments)] #:when (eq? (elf-segment-kind s) 'code))
-          (elf-segment-start s))
-        (error 'write-elf "no entry symbol ~e and no code segment" entry)))
-
-  (define plan-loads (plan-clauses plan* 'load))
-  (define per-segment-loads? (pair? plan-loads))
-  (for ([p (in-list plan-loads)])
-    (define name (plan-field p 'name))
-    (unless (for/or ([s (in-list segments)])
-              (eq? name (elf-segment-name s)))
-      (error 'write-elf "plan load names unknown segment: ~e" name)))
+        (for/first ([r (in-list regions)]
+                    #:when (perm-exec? (image-region-perm r)))
+          (image-region-start r))
+        (error 'write-elf "no entry symbol ~e and no executable region" entry)))
 
   (define layout-align
-    (if per-segment-loads?
-        (apply max 4096
-               (for/list ([s (in-list segments)])
-                 (segment-load-align plan* s)))
-        4096))
-  (define phnum
-    (if per-segment-loads?
-        (+ 1 (length segments))
-        2))
+    (apply max 4096 (for/list ([l (in-list loads)]) (image-load-align l))))
+  (define phnum (+ 1 (length loads)))
   (define ehdr-size 64)
   (define phdr-size 56)
   (define header-end (+ ehdr-size (* phdr-size phnum)))
-  ;; p_offset and p_vaddr must be congruent modulo p_align.
   (define data-offset
     (+ (align-up header-end layout-align)
        (modulo image-base layout-align)))
 
   ;; section names / indices
   (define base-section-names
-    (for/list ([s (in-list segments)])
-      (segment-section-name-from-plan plan* s)))
-  (define segment-section-names (unique-names base-section-names))
-  (define segment-section-index
-    (for/hash ([name (in-list segment-section-names)]
+    (for/list ([r (in-list regions)]) (image-region-section r)))
+  (define region-section-names (unique-names base-section-names))
+  (define region->section-index
+    (for/hash ([r (in-list regions)] [name (in-list region-section-names)]
                [i (in-naturals 1)])
-      (values name i)))
-  (define segment->section-index
-    (for/hash ([s (in-list segments)]
-               [name (in-list segment-section-names)])
-      (values (elf-segment-name s) (hash-ref segment-section-index name))))
-
-  (define segment-sections
-    (for/list ([s (in-list segments)] [name (in-list segment-section-names)])
+      (values (image-region-id r) i)))
+  (define region-sections
+    (for/list ([r (in-list regions)] [name (in-list region-section-names)])
       (elf-section name
-                   (segment-section-type plan* s)
-                   (segment-section-flags plan* s)
-                   (elf-segment-start s)
-                   (+ data-offset (- (elf-segment-start s) image-base))
-                   (elf-segment-size s)
+                   (content->section-type (image-region-content r))
+                   (perm->section-flags (image-region-perm r))
+                   (image-region-start r)
+                   (+ data-offset (- (image-region-start r) image-base))
+                   (image-region-size r)
                    0 0
-                   (segment-section-align plan* s)
+                   (image-region-align r)
                    0)))
 
   ;; symbols + string table
@@ -465,60 +468,58 @@
         [orig (in-list symbols)]
         [i (in-naturals 1)])
     (define off (* 24 i))
-    (define seg (elf-symbol-seg sym))
-    (define kind
-      (for/first ([s (in-list segments)] #:when (eq? (elf-segment-name s) seg))
-        (elf-segment-kind s)))
     (define plan-sym (plan-symbol-for plan* (symbol-chain orig)))
-    (define plan-size
-      (and plan-sym (eval-plan-expr (plan-field plan-sym 'size) symbols)))
-    (define plan-type
-      (and plan-sym
-           (plan-field plan-sym 'type)
-           (symbol-type->number (plan-field plan-sym 'type))))
-    (define plan-bind
-      (and plan-sym
-           (plan-field plan-sym 'bind)
-           (symbol-bind->number (plan-field plan-sym 'bind))))
-    (define plan-section
-      (and plan-sym (plan-field plan-sym 'section)))
+    (define region-id
+      (if plan-sym (plan-field plan-sym 'region) (symbol-seg orig)))
+    (define region
+      (for/first ([r (in-list regions)]
+                  #:when (eq? (image-region-id r) region-id))
+        r))
+    (unless region
+      (error 'write-elf "symbol ~a references unknown region: ~e"
+             (elf-symbol-name sym) region-id))
     (define section-index
-      (cond
-        [(and plan-section
-              (symbol? plan-section)
-              (hash-ref segment->section-index plan-section #f))]
-        [(and plan-section
-              (for/first ([sec (in-list segment-sections)]
-                          [idx (in-naturals 1)]
-                          #:when (equal? (elf-section-name sec)
-                                         (format "~a" plan-section)))
-                idx))]
-        [else (hash-ref segment->section-index seg 0)]))
-    (define type (or plan-type (if (eq? kind 'code) 2 1)))
-    (define bind (or plan-bind 1))
-    (set-u32! symtab-bytes off (string-offset symbol-name-offsets (elf-symbol-name sym)))
+      (hash-ref region->section-index region-id 0))
+    (define size
+      (if plan-sym
+          (or (eval-plan-expr (plan-field plan-sym 'size) symbols) 0)
+          0))
+    (define default-type
+      (if (perm-exec? (image-region-perm region)) 2 1))
+    (define type
+      (or (and plan-sym
+               (plan-field plan-sym 'type)
+               (symbol-type->number (plan-field plan-sym 'type)))
+          default-type))
+    (define bind
+      (or (and plan-sym
+               (plan-field plan-sym 'bind)
+               (symbol-bind->number (plan-field plan-sym 'bind)))
+          1))
+    (set-u32! symtab-bytes off
+              (string-offset symbol-name-offsets (elf-symbol-name sym)))
     (set-u8! symtab-bytes (+ off 4)
              (bitwise-ior (arithmetic-shift bind 4) type))
     (set-u8! symtab-bytes (+ off 5) 0)
     (set-u16! symtab-bytes (+ off 6) section-index)
     (set-u64! symtab-bytes (+ off 8) (elf-symbol-address sym))
-    (set-u64! symtab-bytes (+ off 16) (or plan-size 0))
+    (set-u64! symtab-bytes (+ off 16) size)
     (set! symbol-output
           (cons (list 'symbol
                       (list 'name (elf-symbol-name sym))
                       (list 'value (elf-symbol-address sym))
-                      (list 'size (or plan-size 0))
+                      (list 'size size)
                       (list 'section section-index)
                       (list 'type (symbol-type->name type))
                       (list 'bind (symbol-bind->name bind)))
                 symbol-output)))
 
-  (define symtab-index (+ 1 (length segments)))
+  (define symtab-index (+ 1 (length regions)))
   (define strtab-index (+ symtab-index 1))
   (define shstrtab-index (+ strtab-index 1))
   (define section-names
     (append (list "")
-            segment-section-names
+            region-section-names
             (list ".symtab" ".strtab" ".shstrtab")))
   (define-values (section-name-offsets shstrtab)
     (build-string-table section-names))
@@ -534,7 +535,7 @@
   (define sections
     (append
      (list (elf-section "" 0 0 0 0 0 0 0 0 0))
-     segment-sections
+     region-sections
      (list (elf-section ".symtab" 2 0 0 symtab-offset symtab-size
                         strtab-index 1 8 24)
            (elf-section ".strtab" 3 0 0 strtab-offset
@@ -542,35 +543,23 @@
            (elf-section ".shstrtab" 3 0 0 shstrtab-offset
                         (bytes-length shstrtab) 0 0 1 0))))
 
-  ;; load program headers
   (define load-phdrs
-    (if per-segment-loads?
-        (for/list ([s (in-list segments)])
-          (define kind (elf-segment-kind s))
-          (define b (elf-segment-bytes s))
-          (unless (or (eq? kind 'hole) (= (bytes-length b) (elf-segment-size s)))
-            (error 'write-elf "segment ~a file size mismatch"
-                   (elf-segment-name s)))
-          (list 1
-                (segment-load-flags plan* s)
-                (+ data-offset (- (elf-segment-start s) image-base))
-                (elf-segment-start s)
-                (elf-segment-start s)
-                (if (eq? kind 'hole) 0 (bytes-length b))
-                (elf-segment-size s)
-                (segment-load-align plan* s)))
-        (list (list 1 #x7 data-offset image-base image-base
-                    data-span mem-span 4096))))
+    (for/list ([l (in-list loads)])
+      (list 1
+            (image-load-flags l)
+            (+ data-offset (- (image-load-start l) image-base))
+            (image-load-start l)
+            (image-load-start l)
+            (- (image-load-file-end l) (image-load-start l))
+            (- (image-load-end l) (image-load-start l))
+            (image-load-align l))))
 
-  ;; copy segment bytes
-  (for ([s (in-list segments)] #:unless (eq? (elf-segment-kind s) 'hole))
-    (define b (elf-segment-bytes s))
-    (unless (= (bytes-length b) (elf-segment-size s))
-      (error 'write-elf "segment ~a file size mismatch"
-             (elf-segment-name s)))
+  ;; copy materialized region bytes
+  (for ([r (in-list regions)]
+        #:when (eq? (image-region-content r) 'materialized))
     (bytes-copy! out
-                 (+ data-offset (- (elf-segment-start s) image-base))
-                 b))
+                 (+ data-offset (- (image-region-start r) image-base))
+                 (image-region-bytes r)))
   (bytes-copy! out symtab-offset symtab-bytes)
   (bytes-copy! out strtab-offset symbol-strtab)
   (bytes-copy! out shstrtab-offset shstrtab)
@@ -594,7 +583,7 @@
   (set-u32! out 48 0)
   (set-u16! out 52 ehdr-size)
   (set-u16! out 54 phdr-size)
-  (set-u16! out 56 (+ 1 (length load-phdrs)))
+  (set-u16! out 56 phnum)
   (set-u16! out 58 64)
   (set-u16! out 60 shnum)
   (set-u16! out 62 shstrtab-index)

@@ -34,7 +34,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
   (aliases (alias 名字 值) ...)
   (symbols (symbol start end section misc) ...)
   (comms (comm name size align) ...)
-  (image-plan (entry ...) (load ...) (section ...) (symbol ...))
+  (image-plan (entry ...) (region ...) (load ...) (symbol ...))
   (origin 地址|#f)
   (sections
     (section (name 名字) (kind code|data|hole)
@@ -51,6 +51,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 - `sections` 的 `kind` 用后端词汇：源码的 `%section bss` 出 IR 时翻成 `hole`。
   “bss” 这个词只留在源码指令、section 名字和 ELF 段名里。
 - `image-plan` 是 `%elf` 的显式声明，交给 `amd64-elf` 消费；不是过程。
+  `region` 的 `content` 决定 PROGBITS/NOBITS，`perm` 决定 section/PT_LOAD 权限。
 - `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
   `modes` 记录 mode 切换点的 item 下标。
@@ -70,7 +71,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 | `(%comm name size align)` | `(comm name size align)` + bss 段里的 `(align) (label) (reserve)` | 按 size 升序展开到第一个 bss section 开头 |
 | `(%init-bss)` | 64 位：`cld` + `li` + `sub` + `xor` + `rep stosb` | 显式源码 marker；默认 `bss`/`bss-end`，clobber `rax rcx rdi` |
 | `(%init-bss start end)` | 同上 | 自定义 BSS 起止 label |
-| `(%elf (entry ...) (load ...) (section ...) (symbol ...))` | `image-plan` | 显式 ELF 计划；表达式保留到 `amd64-elf` 求值 |
+| `(%elf (entry ...) (region ...) (load ...) (symbol ...))` | `image-plan` | `region` 是 canonical 身份；`content`/`perm` 派生 ELF 元数据 |
 | `(%comment ...)` | `(comment ...)` | 零尺寸注记 |
 | `(%align n)` / `(%align n 0)` | `(align n)` | 显式非零填充字节暂不支持 |
 | `(%u8 v)` / `(%u16 v)` / `(%u32 v)` / `(%u64 v)` | `(value 1/2/4/8 v)` | 一条可展开成多条 |
@@ -118,6 +119,55 @@ push/pop 或改用自定义指令序列。
 - 必须已经设置 `%mode 64`；
 - 起止 label 必须存在；`end >= start` 目前由源码/镜像布局保证；
 - 32/16 位暂报 `init-bss-mode-unsupported`。
+
+## 4.2 `%elf`
+
+`%elf` 用 canonical region 模型描述 ELF：
+
+```scheme
+(%elf
+  (entry text)
+
+  (load (id text) (align 4096))
+  (load (id data) (align 4096))
+  (load (id bss)  (align 4096))
+
+  (region (id text)
+          (content materialized)
+          (section .text)
+          (perm r-x)
+          (align 16)
+          (load text))
+
+  (region (id data)
+          (content materialized)
+          (section .data)
+          (perm rw-)
+          (align 8)
+          (load data))
+
+  (region (id bss)
+          (content reserved)
+          (section .bss)
+          (perm rw-)
+          (align 8)
+          (load bss))
+
+  (symbol (name elf-entry)
+          (region text)
+          (size 0)
+          (type func)
+          (bind global)))
+```
+
+规则：
+
+- `content materialized` -> `SHT_PROGBITS`，必须有 build bytes；
+- `content reserved` -> `SHT_NOBITS`，不能有 build bytes；
+- `perm` 决定 section flags 和对应 load 的 `p_flags`；
+- `region` id 是唯一身份；symbol 用 `region` 引用，不按 section 名字回退；
+- `section` 只是显示名；
+- `load` 只负责分组和 `p_align`，权限由成员 region 派生。
 
 ## 5. 边界：不在这里做的事
 

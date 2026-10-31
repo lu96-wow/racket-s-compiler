@@ -28,11 +28,22 @@ test.rkt     header / program header / section / symtab 检查
 ;; 可选，来自 loko-ir 的显式计划
 (image-plan
   (entry ...)
-  (load (name text) (flags r-x) (align 4096))
-  (section (segment text) (name .text)
-           (type progbits) (flags (alloc exec)) (align 16))
-  (symbol (name (text)) (size ...) (type func) (bind global)))
+  (load (id text) (align 4096))
+  (region (id text)
+          (content materialized)
+          (section .text)
+          (perm r-x)
+          (align 16)
+          (load text))
+  (symbol (name (text)) (region text) (size ...) (type func) (bind global)))
 ```
+
+`region` 是 canonical 身份：
+
+- `content materialized` -> PROGBITS，要求 build bytes；
+- `content reserved` -> NOBITS，要求 build bytes 为空；
+- `perm` 同时派生 section flags 和 PT_LOAD flags；
+- `load` 只分组和对齐，不单独设置权限。
 
 输出：
 

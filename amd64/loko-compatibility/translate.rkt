@@ -802,55 +802,62 @@
   (andmap (lambda (f) (memq (car f) allowed)) fields))
 
 (define (translate-elf-load ctx fields)
-  (define name (plan-field fields 'name))
-  (define flags (plan-field fields 'flags))
+  (define id (plan-field fields 'id))
   (define align (plan-field fields 'align))
   (cond
-    [(not (symbol? name)) (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
-    [(not (known-plan-fields? fields '(name flags align)))
+    [(not (symbol? id))
      (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
-    [(and flags (not (symbol? flags)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-load-flags flags))]
+    [(not (known-plan-fields? fields '(id align)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
     [(and align (not (exact-positive-integer? align)))
      (record-problem-as-comment! ctx (problem 'bad-elf-load-align align))]
     [else
-     (list (append (list 'load (list 'name name))
-                   (if flags (list (list 'flags flags)) '())
+     (list (append (list 'load (list 'id id))
                    (if align (list (list 'align align)) '())))]))
 
-(define (translate-elf-section ctx fields)
-  (define segment (plan-field fields 'segment))
-  (define name (plan-field fields 'name))
-  (define type (plan-field fields 'type))
-  (define flags (plan-field fields 'flags))
+(define (translate-elf-region ctx fields)
+  (define id (plan-field fields 'id))
+  (define content (plan-field fields 'content))
+  (define section (plan-field fields 'section))
+  (define perm (plan-field fields 'perm))
   (define align (plan-field fields 'align))
+  (define load (plan-field fields 'load))
   (cond
-    [(not (symbol? segment))
-     (record-problem-as-comment! ctx (problem 'bad-elf-section fields))]
-    [(not (or (symbol? name) (string? name)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-section-name name))]
-    [(not (known-plan-fields? fields '(segment name type flags align)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-section fields))]
+    [(not (symbol? id))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region fields))]
+    [(not (known-plan-fields? fields '(id content section perm align load)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region fields))]
+    [(and content (not (memq content '(materialized reserved))))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region-content content))]
+    [(and section (not (or (symbol? section) (string? section))))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region-section section))]
+    [(and perm (not (or (symbol? perm) (string? perm))))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region-perm perm))]
     [(and align (not (exact-positive-integer? align)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-section-align align))]
+     (record-problem-as-comment! ctx (problem 'bad-elf-region-align align))]
+    [(and load (not (symbol? load)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-region-load load))]
     [else
-     (list (append (list 'section (list 'segment segment))
-                   (if name (list (list 'name name)) '())
-                   (if type (list (list 'type type)) '())
-                   (if flags (list (list 'flags flags)) '())
-                   (if align (list (list 'align align)) '())))]))
+     (list (append (list 'region (list 'id id))
+                   (if content (list (list 'content content)) '())
+                   (if section (list (list 'section section)) '())
+                   (if perm (list (list 'perm perm)) '())
+                   (if align (list (list 'align align)) '())
+                   (if load (list (list 'load load)) '())))]) )
 
 (define (translate-elf-symbol ctx fields)
   (define name (plan-field fields 'name))
+  (define region (plan-field fields 'region))
   (define size (plan-field fields 'size))
   (define type (plan-field fields 'type))
   (define bind (plan-field fields 'bind))
-  (define section (plan-field fields 'section))
   (define name* (and name (label-ref-path ctx name)))
   (cond
     [(not name*)
      (record-problem-as-comment! ctx (problem 'bad-elf-symbol-name name))]
-    [(not (known-plan-fields? fields '(name size type bind section)))
+    [(not (symbol? region))
+     (record-problem-as-comment! ctx (problem 'bad-elf-symbol-region region))]
+    [(not (known-plan-fields? fields '(name region size type bind)))
      (record-problem-as-comment! ctx (problem 'bad-elf-symbol fields))]
     [else
      (define size* (if size (translate-expr ctx size) #f))
@@ -858,10 +865,10 @@
        [(problem? size*) (record-problem-as-comment! ctx size*)]
        [else
         (list (append (list 'symbol (list 'name name*))
+                      (list (list 'region region))
                       (if size* (list (list 'size size*)) '())
                       (if type (list (list 'type type)) '())
-                      (if bind (list (list 'bind bind)) '())
-                      (if section (list (list 'section section)) '())))])]))
+                      (if bind (list (list 'bind bind)) '())) )])]))
 
 (define (translate-elf-clause ctx clause)
   (match clause
@@ -871,7 +878,7 @@
          (record-problem-as-comment! ctx e)
          (list (list 'entry e)))]
     [(cons 'load fields) (translate-elf-load ctx fields)]
-    [(cons 'section fields) (translate-elf-section ctx fields)]
+    [(cons 'region fields) (translate-elf-region ctx fields)]
     [(cons 'symbol fields) (translate-elf-symbol ctx fields)]
     [_ (record-problem-as-comment! ctx (problem 'bad-elf-clause clause))]))
 
