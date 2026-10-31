@@ -171,3 +171,43 @@
                 (prefix rep (stos (b64 (base rdi) (disp 0)) rax))
                 (prefix rep (ins (b32 (base rdi) (disp 0)) dx))
                 (prefix rep (outs dx (b32 (base rsi) (disp 0))))))
+
+;; XMM registers are registers, not labels; SSE memory widths stay explicit
+(define sse
+  (translate-loko-source
+   '(loko-source
+     (text
+      (movq xmm1 rax)
+      (movss xmm2 xmm1)
+      (movd xmm2 (mem32+ c_231))
+      (ldmxcsr (mem32+ mxcsr-floor))
+      (roundss xmm1 xmm1 #b0001)
+      (xorpd xmm0 xmm0))
+     (data))))
+(check-equal? (field 'problems sse) '())
+(check-equal? (field 'program-items sse)
+              '((movq xmm1 rax)
+                (movss xmm2 xmm1)
+                (movd xmm2 (b32 (disp (c_231))))
+                (ldmxcsr (b32 (disp (mxcsr-floor))))
+                (roundss xmm1 xmm1 1)
+                (xorpd xmm0 xmm0)))
+
+;; PC control registers and descriptor tables are passes for spelling only
+(define pc-system
+  (translate-loko-source
+   '(loko-source
+     (text
+      (mov cr4 eax)
+      (mov rax cr2)
+      (lgdt (mem+ gdtr))
+      (lldt ax)
+      (sysretq))
+     (data))))
+(check-equal? (field 'problems pc-system) '())
+(check-equal? (field 'program-items pc-system)
+              '((mov cr4 eax)
+                (mov rax cr2)
+                (lgdt (b64 (disp (gdtr))))
+                (lldt ax)
+                (sysretq)))

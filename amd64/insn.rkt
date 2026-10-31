@@ -268,18 +268,43 @@
 
 (define (parse-rm op)
   (cond
-    [(reg? op) op]
     [(mem? op) op]
-    [(symbol? op) (lookup-register op)]
     [(mem-form? op) (parse-mem op)]
+    [(or (reg? op) (symbol? op))
+     (define r (if (reg? op) op (lookup-register op)))
+     (unless (gpr? r)
+       (error 'parse-rm "expected GPR or memory, got XMM register: ~e" op))
+     r]
     [else (error 'parse-rm "expected register or memory operand: ~e" op)]))
 
 (define (parse-reg op)
-  (define r (and (symbol? op) (lookup-register op #f)))
+  (define r (cond
+              [(reg? op) op]
+              [(symbol? op) (lookup-register op #f)]
+              [else #f]))
   (cond
-    [(reg? op) op]
-    [r r]
+    [(and r (gpr? r)) r]
+    [(and r (xmm? r))
+     (error 'parse-reg "expected GPR, got XMM register: ~e" op)]
     [else (error 'parse-reg "expected register operand: ~e" op)]))
+
+(define (parse-xmm op)
+  (define r (cond
+              [(reg? op) op]
+              [(symbol? op) (lookup-register op #f)]
+              [else #f]))
+  (cond
+    [(and r (xmm? r)) r]
+    [(and r (gpr? r))
+     (error 'parse-xmm "expected XMM register, got GPR: ~e" op)]
+    [else (error 'parse-xmm "expected XMM register: ~e" op)]))
+
+(define (parse-xmm-or-mem op)
+  (cond
+    [(mem? op) op]
+    [(mem-form? op) (parse-mem op)]
+    [(or (reg? op) (symbol? op)) (parse-xmm op)]
+    [else (error 'parse-xmm-or-mem "expected XMM register or memory: ~e" op)]))
 
 (define (imm-value op)
   (cond
@@ -308,7 +333,65 @@
 ;; 指令编码器
 ;; ---------------------------------------------------------------------------
 
+(define (reg-class-of x)
+  (define r (cond
+              [(reg? x) x]
+              [(symbol? x) (lookup-register x #f)]
+              [else #f]))
+  (and r (reg-class r)))
+
+(define (special-register? x)
+  (memq (reg-class-of x) '(control debug)))
+
+(define (parse-special-register op)
+  (define r (cond
+              [(reg? op) op]
+              [(symbol? op) (lookup-register op #f)]
+              [else #f]))
+  (unless (and r (memq (reg-class r) '(control debug)))
+    (error 'parse-special-register "expected control/debug register: ~e" op))
+  r)
+
+(define (emit-special-mov opcode sr gpr)
+  (define rex-r (if (>= (reg-index sr) 8) 1 0))
+  (define rex-b (if (>= (reg-index gpr) 8) 1 0))
+  (define rex (make-rex #f (list gpr) rex-r 0 rex-b))
+  (append (if rex (list rex) '())
+          (list #x0f opcode
+                (bitwise-ior #b11000000
+                             (arithmetic-shift
+                              (bitwise-and (reg-index sr) #b111) 3)
+                             (bitwise-and (reg-index gpr) #b111)))))
+
+(define (encode-special-mov dst src)
+  (cond
+    [(special-register? dst)
+     (define sr (parse-special-register dst))
+     (define g (parse-reg src))
+     (emit-special-mov (case (reg-class sr)
+                         [(control) #x22]
+                         [(debug) #x23]
+                         [else (error 'encode-mov "bad special register: ~e" sr)])
+                       sr g)]
+    [(special-register? src)
+     (define sr (parse-special-register src))
+     (define g (parse-reg dst))
+     (emit-special-mov (case (reg-class sr)
+                         [(control) #x20]
+                         [(debug) #x21]
+                         [else (error 'encode-mov "bad special register: ~e" sr)])
+                       sr g)]
+    [else (error 'encode-mov "expected a control/debug register: ~e ~e" dst src)]))
+
 (define (encode-mov operands)
+  (match operands
+    [(list dst src)
+     (if (or (special-register? dst) (special-register? src))
+         (encode-special-mov dst src)
+         (encode-mov-normal operands))]
+    [_ (error 'encode-mov "mov takes two operands: ~e" operands)]))
+
+(define (encode-mov-normal operands)
   (match operands
     [(list dst src)
      (define dst* (parse-rm dst))
@@ -990,6 +1073,189 @@
        [else (error 'encode-outs "outs supports only b8/b16/b32: ~e" w)])]
     [_ (error 'encode-outs "outs takes dx, src: ~e" operands)]))
 
+
+;; ---------------------------------------------------------------------------
+;; SSE / XMM
+;;
+;; XMM 操作数的宽度是 128，但 128 不是 x86 的 operand-size 前缀。
+;; 这些编码器自己决定 mandatory prefix（F3/66/F2）和 REX.W。
+;; ---------------------------------------------------------------------------
+
+(define (xmm-operand? x)
+  (define r (cond
+              [(reg? x) x]
+              [(symbol? x) (lookup-register x #f)]
+              [else #f]))
+  (and r (xmm? r)))
+
+(define (gpr-operand? x)
+  (define r (cond
+              [(reg? x) x]
+              [(symbol? x) (lookup-register x #f)]
+              [else #f]))
+  (and r (gpr? r)))
+
+(define (check-mem-width op width who)
+  (when (and (mem? op) (not (= (mem-width op) width)))
+    (error who "memory width must be b~a: ~e" width op)))
+
+(define (emit-sse prefix width regs rm-enc opcode [imm '()])
+  (emit-rm/base width regs rm-enc opcode imm prefix))
+
+(define (encode-movss operands)
+  (match operands
+    [(list dst src)
+     (cond
+       [(xmm-operand? dst)
+        (define d (parse-xmm dst))
+        (define s (parse-xmm-or-mem src))
+        (check-mem-width s 32 'encode-movss)
+        (emit-sse (list #xf3) 32 (list d) (encode-rm s d) '(#x0f #x10))]
+       [(or (mem? dst) (mem-form? dst))
+        (define d (parse-rm dst))
+        (define s (parse-xmm src))
+        (check-mem-width d 32 'encode-movss)
+        (emit-sse (list #xf3) 32 (list s) (encode-rm d s) '(#x0f #x11))]
+       [else (error 'encode-movss "unsupported movss operands: ~e" operands)])]
+    [_ (error 'encode-movss "movss takes two operands: ~e" operands)]))
+
+(define (encode-movd operands)
+  (match operands
+    [(list dst src)
+     (cond
+       [(xmm-operand? dst)
+        (define d (parse-xmm dst))
+        (define s (parse-rm src))
+        (check-mem-width s 32 'encode-movd)
+        (unless (= 32 (if (mem? s) (mem-width s) (reg-width s)))
+          (error 'encode-movd "movd source must be 32 bits: ~e" src))
+        (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x6e))]
+       [(or (mem? dst) (mem-form? dst) (gpr-operand? dst))
+        (define d (parse-rm dst))
+        (define s (parse-xmm src))
+        (check-mem-width d 32 'encode-movd)
+        (unless (= 32 (if (mem? d) (mem-width d) (reg-width d)))
+          (error 'encode-movd "movd destination must be 32 bits: ~e" dst))
+        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #x7e))]
+       [else (error 'encode-movd "unsupported movd operands: ~e" operands)])]
+    [_ (error 'encode-movd "movd takes two operands: ~e" operands)]))
+
+(define (encode-movq operands)
+  (match operands
+    [(list dst src)
+     (cond
+       [(xmm-operand? dst)
+        (define d (parse-xmm dst))
+        (cond
+          [(or (xmm-operand? src) (mem? src) (mem-form? src))
+           (define s (parse-xmm-or-mem src))
+           (check-mem-width s 64 'encode-movq)
+           (emit-sse (list #xf3) 32 (list d) (encode-rm s d) '(#x0f #x7e))]
+          [(gpr-operand? src)
+           (define s (parse-reg src))
+           (unless (= 64 (reg-width s))
+             (error 'encode-movq "movq GPR source must be 64 bits: ~e" src))
+           (emit-sse (list #x66) 64 (list d) (encode-rm s d) '(#x0f #x6e))]
+          [else (error 'encode-movq "unsupported movq source: ~e" src)])]
+       [(or (mem? dst) (mem-form? dst))
+        (define d (parse-rm dst))
+        (define s (parse-xmm src))
+        (check-mem-width d 64 'encode-movq)
+        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #xd6))]
+       [(gpr-operand? dst)
+        (define d (parse-reg dst))
+        (unless (= 64 (reg-width d))
+          (error 'encode-movq "movq GPR destination must be 64 bits: ~e" dst))
+        (define s (parse-xmm src))
+        (emit-sse (list #x66) 64 (list s) (encode-rm d s) '(#x0f #x7e))]
+       [else (error 'encode-movq "unsupported movq operands: ~e" operands)])]
+    [_ (error 'encode-movq "movq takes two operands: ~e" operands)]))
+
+(define (encode-movdqa operands)
+  (match operands
+    [(list dst src)
+     (cond
+       [(xmm-operand? dst)
+        (define d (parse-xmm dst))
+        (define s (parse-xmm-or-mem src))
+        (check-mem-width s 128 'encode-movdqa)
+        (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x6f))]
+       [(or (mem? dst) (mem-form? dst))
+        (define d (parse-rm dst))
+        (define s (parse-xmm src))
+        (check-mem-width d 128 'encode-movdqa)
+        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #x7f))]
+       [else (error 'encode-movdqa "unsupported movdqa operands: ~e" operands)])]
+    [_ (error 'encode-movdqa "movdqa takes two operands: ~e" operands)]))
+
+(define (encode-sse-scalar name opcode prefix mem-width operands)
+  (match operands
+    [(list dst src)
+     (define d (parse-xmm dst))
+     (define s (parse-xmm-or-mem src))
+     (check-mem-width s mem-width name)
+     (emit-sse prefix 32 (list d) (encode-rm s d) (list #x0f opcode))]
+    [_ (error name "~a takes two operands: ~e" name operands)]))
+
+(define (encode-roundss operands)
+  (match operands
+    [(list dst src imm)
+     (define d (parse-xmm dst))
+     (define s (parse-xmm-or-mem src))
+     (check-mem-width s 32 'encode-roundss)
+     (define v (or (imm-value imm)
+                   (error 'encode-roundss "roundss immediate must be an integer: ~e" imm)))
+     (check-imm8 v 'encode-roundss)
+     (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x3a #x0a) (u8 v))]
+    [_ (error 'encode-roundss "roundss takes dst, src, imm8: ~e" operands)]))
+
+(define (encode-cvtsi2ss operands)
+  (match operands
+    [(list dst src)
+     (define d (parse-xmm dst))
+     (define s (parse-rm src))
+     (define width (if (mem? s) (mem-width s) (reg-width s)))
+     (unless (memq width '(32 64))
+       (error 'encode-cvtsi2ss "source must be 32/64 bits: ~e" src))
+     (emit-sse (list #xf3) (if (= width 64) 64 32)
+               (list d) (encode-rm s d) '(#x0f #x2a))]
+    [_ (error 'encode-cvtsi2ss "cvtsi2ss takes dst, src: ~e" operands)]))
+
+(define (encode-mxcsr digit name operands)
+  (match operands
+    [(list m)
+     (define m* (parse-rm m))
+     (unless (mem? m*) (error name "~a needs a memory operand: ~e" name m))
+     (check-mem-width m* 32 name)
+     (emit-sse '() 32 (regs-in-op m*) (encode-rm m* digit) '(#x0f #xae))]
+    [_ (error name "~a takes one memory operand: ~e" name operands)]))
+
+
+;; ---------------------------------------------------------------------------
+;; PC 系统描述符 / MSR
+;; ---------------------------------------------------------------------------
+
+(define (encode-descriptor-table opcode digit name operands)
+  (match operands
+    [(list m)
+     (define m* (parse-rm m))
+     (unless (mem? m*)
+       (error name "~a needs a memory operand: ~e" name m))
+     (emit-rm/base 32 (regs-in-op m*) (encode-rm m* digit)
+                   (list #x0f opcode) '() '())]
+    [_ (error name "~a takes one memory operand: ~e" name operands)]))
+
+(define (encode-system-rm16 digit name operands)
+  (match operands
+    [(list rm)
+     (define r (parse-rm rm))
+     (define width (if (mem? r) (mem-width r) (reg-width r)))
+     (unless (= width 16)
+       (error name "~a needs a 16-bit operand: ~e" name rm))
+     (emit-rm/base 32 (regs-in-op r) (encode-rm r digit)
+                   '(#x0f #x00) '() '())]
+    [_ (error name "~a takes one operand: ~e" name operands)]))
+
 ;; ---------------------------------------------------------------------------
 ;; 表
 ;; ---------------------------------------------------------------------------
@@ -1049,6 +1315,36 @@
    'in         (insn-def 2 encode-in)
    'out        (insn-def 2 encode-out)
    'prefix     (insn-def 2 encode-prefix)
+   'movss      (insn-def 2 encode-movss)
+   'movd       (insn-def 2 encode-movd)
+   'movq       (insn-def 2 encode-movq)
+   'movdqa     (insn-def 2 encode-movdqa)
+   'addss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'addss #x58 (list #xf3) 32 ops)))
+   'subss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'subss #x5c (list #xf3) 32 ops)))
+   'mulss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'mulss #x59 (list #xf3) 32 ops)))
+   'divss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'divss #x5e (list #xf3) 32 ops)))
+   'minss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'minss #x5d (list #xf3) 32 ops)))
+   'maxss      (insn-def 2 (lambda (ops) (encode-sse-scalar 'maxss #x5f (list #xf3) 32 ops)))
+   'sqrtss     (insn-def 2 (lambda (ops) (encode-sse-scalar 'sqrtss #x51 (list #xf3) 32 ops)))
+   'ucomiss    (insn-def 2 (lambda (ops) (encode-sse-scalar 'ucomiss #x2e '() 32 ops)))
+   'cvtss2sd   (insn-def 2 (lambda (ops) (encode-sse-scalar 'cvtss2sd #x5a (list #xf3) 32 ops)))
+   'cvtsd2ss   (insn-def 2 (lambda (ops) (encode-sse-scalar 'cvtsd2ss #x5a (list #xf2) 64 ops)))
+   'roundss    (insn-def 3 encode-roundss)
+   'cvtsi2ss   (insn-def 2 encode-cvtsi2ss)
+   'ldmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 2 'ldmxcsr ops)))
+   'stmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 3 'stmxcsr ops)))
+   'xorps      (insn-def 2 (lambda (ops) (encode-sse-scalar 'xorps #x57 '() 128 ops)))
+   'xorpd      (insn-def 2 (lambda (ops) (encode-sse-scalar 'xorpd #x57 (list #x66) 128 ops)))
+   'orps       (insn-def 2 (lambda (ops) (encode-sse-scalar 'orps #x56 '() 128 ops)))
+   'lgdt       (insn-def 1 (lambda (ops) (encode-descriptor-table #x01 2 'lgdt ops)))
+   'lidt       (insn-def 1 (lambda (ops) (encode-descriptor-table #x01 3 'lidt ops)))
+   'lldt       (insn-def 1 (lambda (ops) (encode-system-rm16 2 'lldt ops)))
+   'ltr        (insn-def 1 (lambda (ops) (encode-system-rm16 3 'ltr ops)))
+   'rdmsr      (insn-def 0 (fixed-instruction 'rdmsr '(#x0f #x32)))
+   'wrmsr      (insn-def 0 (fixed-instruction 'wrmsr '(#x0f #x30)))
+   'swapgs     (insn-def 0 (fixed-instruction 'swapgs '(#x0f #x01 #xf8)))
+   'sysretq    (insn-def 0 (fixed-instruction 'sysretq '(#x48 #x0f #x07)))
+   'iretq      (insn-def 0 (fixed-instruction 'iretq '(#x48 #xcf)))
    'movs       (insn-def 2 encode-movs)
    'stos       (insn-def 2 encode-stos)
    'ins        (insn-def 2 encode-ins)

@@ -47,8 +47,10 @@
 - [x] 整数扩展：`imul` 1/2/3、shift by `cl`、`push/pop` 内存/立即数、`xchg/bswap/bsf/bsr/popcnt/shrd`
 - [x] 系统/原子/端口/屏障指令：`cdqe cpuid rdtsc rdtscp syscall in out cmpxchg xadd rdrand rdseed clflush fences`
 - [x] 前缀与字符串指令：`(prefix lock/rep …)`、`movs/stos/ins/outs`
-- [ ] SSE/xmm、`adc/sbb`
-- [ ] PC 控制面：control/debug registers、`lgdt/lidt/lldt/ltr`、`wrmsr/rdmsr`、`swapgs/sysretq/iretq/jmpf`、16/32 模式
+- [x] SSE/xmm：`movss/movq/movd/movdqa`、算术/比较/转换、`ldmxcsr/stmxcsr`、`xorps/xorpd/orps`
+- [x] PC 控制面：`mov cr/dr`、`lgdt/lidt/lldt/ltr`、`rdmsr/wrmsr`、`swapgs/sysretq/iretq`
+- [ ] `adc/sbb`、更多双精度/packed SSE
+- [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - [ ] `place` region / 通配、外部 reloc
 
@@ -218,7 +220,7 @@ setcc
 nop, ud2
 ```
 
-先不覆盖 SSE/AVX。
+SSE 标量单精度已覆盖；AVX / 完整 packed SSE 先不做。
 
 ## 7. 实施阶段
 

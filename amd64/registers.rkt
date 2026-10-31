@@ -1,18 +1,23 @@
 #lang racket
 ;;; amd64/registers.rkt
 ;;;
-;;; 寄存器名、宽度和编码编号。只放事实，不做分配。
+;;; 寄存器名、class（GPR/XMM）、宽度和编码编号。只放事实，不做分配。
 
 (provide (struct-out reg)
          lookup-register
          register?
+         gpr?
+         xmm?
+         reg-class
          reg-width
          reg-index
          reg-rex8?
          reg-high8?
          reg-name)
 
-(struct reg (name width index rex8? high8?) #:transparent)
+;; class = 'gpr | 'xmm.  Width is the natural register width; XMM registers
+;; have width 128 but SSE encoders do not treat that as an operand-size prefix.
+(struct reg (name width index rex8? high8? class) #:transparent)
 
 (define register-list
   '(
@@ -94,9 +99,28 @@
     (r14  64 14 #f #f)
     (r15  64 15 #f #f)))
 
+(define xmm-register-list
+  (for/list ([i (in-range 16)])
+    (list (string->symbol (format "xmm~a" i)) 128 i #f #f 'xmm)))
+
+(define control-register-list
+  '((cr0 0) (cr2 2) (cr3 3) (cr4 4) (cr8 8)))
+
+(define debug-register-list
+  (for/list ([i (in-range 8)])
+    (list (string->symbol (format "dr~a" i)) i)))
+
 (define registers
-  (for/hash ([r (in-list register-list)])
-    (values (car r) (apply reg r))))
+  (let ([h (make-hash)])
+    (for ([r (in-list register-list)])
+      (hash-set! h (car r) (apply reg (append r (list 'gpr)))))
+    (for ([r (in-list xmm-register-list)])
+      (hash-set! h (car r) (apply reg r)))
+    (for ([r (in-list control-register-list)])
+      (hash-set! h (car r) (reg (car r) 64 (cadr r) #f #f 'control)))
+    (for ([r (in-list debug-register-list)])
+      (hash-set! h (car r) (reg (car r) 64 (cadr r) #f #f 'debug)))
+    h))
 
 (define missing (gensym 'missing-register))
 
@@ -108,3 +132,5 @@
     [else default]))
 
 (define (register? name) (and (hash-ref registers name #f) #t))
+(define (gpr? r) (and (reg? r) (eq? (reg-class r) 'gpr)))
+(define (xmm? r) (and (reg? r) (eq? (reg-class r) 'xmm)))

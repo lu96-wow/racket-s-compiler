@@ -423,6 +423,9 @@
   (define ops (cdr item))
   (cond
     [(memq h '(push pop call jmp)) 64]
+    ;; Descriptor-table operands are 10-byte pseudo-descriptors; the encoder
+    ;; only needs their address, so any fixed width is fine.
+    [(memq h '(lgdt lidt)) 64]
     ;; IN/OUT string forms are 16/32-bit only; Loko writes mem+ and expects
     ;; the 32-bit form in 64-bit mode.
     [(memq h '(ins outs)) 32]

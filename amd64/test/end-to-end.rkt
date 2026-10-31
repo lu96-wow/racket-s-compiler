@@ -94,3 +94,20 @@
                 (start #x200000)
                 (size 11)
                 (bytes #"\xf0H\x0f\xc1\x1c%\x00\x00\x30\x00\xc3")))
+
+;; SSE / XMM and b128 memory in the layout -> encode path
+(define sse-items
+  '((label text)
+    (movss xmm1 xmm2)
+    (movdqa (b128 (base rsp) (disp 0)) xmm0)
+    (ret)))
+(define sse-measured (layout-items target-amd64 sse-items spec))
+(check-equal? (cdr (assq 'problems sse-measured)) '())
+(define sse-bound (bind-labels sse-measured))
+(check-equal? (cdr (assq 'problems sse-bound)) '())
+(define sse-build (encode-layout target-amd64 sse-bound))
+(check-equal? (cddr (car (cdr sse-build)))
+              '((kind code)
+                (start #x200000)
+                (size 10)
+                (bytes #"\xf3\x0f\x10\xca\x66\x0f\x7f\x04\x24\xc3")))

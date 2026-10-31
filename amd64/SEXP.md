@@ -41,6 +41,8 @@
 8-bit:  al cl dl bl spl bpl sil dil r8b ... r15b
         ah ch dh bh              ; 仅限不带 REX 的 8 位形式
 xmm:    xmm0 ... xmm15
+control: cr0 cr2 cr3 cr4 cr8
+debug:   dr0 ... dr7
 ```
 
 `rip` 只允许作为内存基址。
@@ -55,8 +57,8 @@ xmm:    xmm0 ... xmm15
 (b64 (base rax) (seg fs))
 ```
 
-`b8` / `b16` / `b32` / `b64` / `b128` 表示内存访问宽度。`b128` 目前只是宽度事实，
-SSE/AVX 编码还没实现。
+`b8` / `b16` / `b32` / `b64` / `b128` 表示内存访问宽度。`b128` 用于
+`movdqa` 等 SSE 内存操作数；AVX 还没实现。
 字段可以按规范顺序写；解析时按字段名取值，不靠位置猜。
 
 字段：
@@ -251,6 +253,11 @@ register
 (out 128 al)
 (mfence)
 (pushfq)
+(movss xmm1 xmm2)
+(movq xmm1 rax)
+(movdqa (b128 (base rsp) (disp 0)) xmm0)
+(mov cr3 rax)
+(lgdt (b64 (disp (gdtr))))
 (nop)
 (ud2)
 ```
@@ -299,6 +306,16 @@ pushfq popfq
 clflush mfence lfence sfence
 movs stos ins outs
 prefix
+movss movq movd movdqa
+addss subss mulss divss minss maxss sqrtss
+ucomiss roundss
+cvtss2sd cvtsd2ss cvtsi2ss
+ldmxcsr stmxcsr
+xorps xorpd orps
+mov cr/dr
+lgdt lidt lldt ltr
+rdmsr wrmsr
+swapgs sysretq iretq
 nop ud2
 ```
 
@@ -309,8 +326,8 @@ nop ud2
 
 ```text
 adc sbb
-SSE/AVX
-PC 控制/调试寄存器
+更多 SSE（双精度/packed）
+`jmpf`/`far`、16/32 模式
 ```
 
 ## 7. 尺寸类别

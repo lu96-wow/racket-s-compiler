@@ -48,7 +48,7 @@ form + operands
 | 字符串 | `movs/stos/ins/outs` | 隐式 `rSI/rDI/DX`，操作数只用于选宽度 |
 | 前缀 | `(prefix lock ...)` / `(prefix rep ...)` | 一个 legacy prefix 字节 + 内部指令 |
 | 系统 | fences、`clflush`、`rdrand/rdseed` | 固定 opcode 或 `/digit` |
-| SSE（计划） | `movss/addss/...` | 强制前缀 + XMM 寄存器 + b128 内存 |
+| SSE | `movss/addss/...` | 强制前缀 + XMM 寄存器 + b128 内存 |
 
 ## 4. 前缀表示
 
@@ -111,20 +111,23 @@ size(prefix p inner) = 1 + size(inner)
 
 ## 7. 寄存器类
 
-当前只有 GPR：
+当前寄存器类：
 
 ```text
-rax ... r15
-eax ... r15d
-ax ... r15w
-al ... r15b
+GPR:      rax ... r15 / eax ... r15d / ax ... r15w / al ... r15b
+XMM:      xmm0 ... xmm15
+control:  cr0 cr2 cr3 cr4 cr8
+debug:    dr0 ... dr7
 ```
+
+`registers.rkt` 的 `reg` 带 `class` 事实（`'gpr` / `'xmm` / `'control` / `'debug`）。
+GPR 编码器通过 `parse-reg` / `parse-rm` 拒绝 XMM/控制/调试寄存器；
+SSE 编码器通过 `parse-xmm` / `parse-xmm-or-mem` 接受 XMM；
+`mov cr/dr` 在 `encode-mov` 里走专门的控制/调试寄存器编码。
 
 后续计划：
 
-- `xmm0 ... xmm15`：SSE；
-- `cr0/cr2/cr3/cr4`、`dr0...dr7`：PC 控制/调试寄存器；
-- 每类寄存器在 `registers.rkt` 里带 `class` 事实，GPR 编码器拒绝 XMM/控制寄存器。
+- 模式相关的 16/32 位寄存器形式。
 
 ## 8. 当前已实现
 
@@ -151,19 +154,26 @@ pushfq popfq
 clflush mfence lfence sfence
 movs stos ins outs
 prefix lock / rep
+
+movss movq movd movdqa
+addss subss mulss divss minss maxss sqrtss
+ucomiss roundss
+cvtss2sd cvtsd2ss cvtsi2ss
+ldmxcsr stmxcsr
+xorps xorpd orps
+
+mov cr/dr
+lgdt lidt lldt ltr
+rdmsr wrmsr
+swapgs sysretq iretq
 ```
 
-尚未实现：SSE/xmm、控制/调试寄存器、`lgdt/lidt/lldt/ltr`、`wrmsr/rdmsr`、
-`swapgs`、`sysretq`、`iretq`、`jmpf`/`far`、16/32 位模式。
+尚未实现：`jmpf`/`far`、16/32 位模式。
 
 ## 9. 扩展顺序
 
-1. **SSE/xmm**：`registers.rkt` 加 XMM class，`insn.rkt` 加强制前缀 helper 和
-   `movss/addss/subss/mulss/divss/minss/maxss/sqrtss/ucomiss/roundss`，
-   再补 `movd/movq/movdqa/ldmxcsr/stmxcsr/xorps/xorpd/orps`。
-2. **PC 控制面**：control/debug register class、`mov cr/dr`、`lgdt/lidt/lldt/ltr`、
-   `wrmsr/rdmsr`、`swapgs`、`sysretq`、`iretq`、`jmpf`。
-3. **模式**：16/32/64 模式支持只对 PC 启动有意义；Linux/NetBSD 用户态保持 64。
+1. **PC 模式/远跳**：`%mode` 16/32/64、`jmpf` + `(far seg offset)`。
+2. **SSE 扩展**：按需补 `movsd/addsd/...` 等双精度和更多 packed 指令。
 
 ## 10. 测试
 
