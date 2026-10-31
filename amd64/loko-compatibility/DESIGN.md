@@ -71,9 +71,10 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 本层把它们变成 `(problem directive-needs-image-layer ...)`，不猜位置、不生成
 bss、不调用宿主过程。等 image 层设计好后再接。
 
-`$`（当前 IP）和带标签的 `bitwise-*` / `shift` 表达式也不在这里硬解释：
-它们要么需要布局期地址，要么需要扩展核心地址表达式。当前显式报
-`current-ip-expression` / `symbolic-bit-expression`。
+`$`（当前 IP）会原样变成核心地址表达式里的 `$`，由 layout / bind / encode
+在求值时解析。带标签的 `bitwise-and` / `bitwise-ior` / `ash` /
+`bitwise-bit-field` 也会保留到核心地址表达式；其它符号运算仍显式报
+`symbolic-bit-expression`。
 
 ## 6. 设计思路：纯函数
 
@@ -90,14 +91,15 @@ racket amd64/loko-compatibility/test.rkt
 
 ## 8. 后续结构
 
-`loko-compatibility/` 现在只有语法适配器。完整 Loko 兼容还需要：
+`loko-compatibility/` 现在有语法适配器和第一版 lower：
 
 ```text
 loko-compatibility/
   translate.rkt        ; 已有：旧写法 -> 核心 item
-  lower/               ; 计划：伪寄存器 / regalloc / liveness / %comment
+  lower/               ; 已有：伪寄存器 / liveness / 图着色分配；见 lower/DESIGN.md
   image/               ; 计划：%origin/%section/%comm/%call / BSS / ELF
 ```
 
-详细缺口见 [`../GAPS.md`](../GAPS.md)。
+lower 目前不做调用点 save/restore、spill 和 frame allocation；详细缺口见
+[`../GAPS.md`](../GAPS.md)。
 

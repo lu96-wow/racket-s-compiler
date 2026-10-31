@@ -27,11 +27,11 @@
   (unless row (error 'encode "undefined symbol: ~e" chain))
   (caddr (cddr row)))
 
-(define (resolve-address symbols expr)
-  (eval-address expr (lambda (chain) (resolve-symbol symbols chain))))
+(define (resolve-address symbols expr here)
+  (eval-address expr (lambda (chain) (resolve-symbol symbols chain)) here))
 
-(define (value->bytes width expr symbols)
-  (list->bytes (integer->bytes width (resolve-address symbols expr))))
+(define (value->bytes width expr symbols here)
+  (list->bytes (integer->bytes width (resolve-address symbols expr here))))
 
 (define control-transfer-forms '(jmp-short jmp-near jcc-short jcc-near call-near))
 
@@ -41,8 +41,8 @@
     (cond
       [(exact-integer? d) d]
       [(eq? (mem-base m) 'rip)
-       (- (resolve-address symbols d) (+ here size))]
-      [else (resolve-address symbols d)]))
+       (- (resolve-address symbols d here) (+ here size))]
+      [else (resolve-address symbols d here)]))
   (struct-copy mem m [disp resolved]))
 
 (define (resolve-operand op here size symbols)
@@ -104,7 +104,7 @@
       [(bytes-form? it) (emit! (list->bytes (cdr it)))]
       [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
       [(value-form? it)
-       (emit! (value->bytes (value-width it) (value-payload it) symbols))]
+       (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
       [else
        (emit! (encode-code (car it) (cdr it) here symbols))]))
   (unless (= cursor size)

@@ -49,6 +49,11 @@
 - [x] 前缀与字符串指令：`(prefix lock/rep …)`、`movs/stos/ins/outs`
 - [x] SSE/xmm：`movss/movq/movd/movdqa`、算术/比较/转换、`ldmxcsr/stmxcsr`、`xorps/xorpd/orps`
 - [x] PC 控制面：`mov cr/dr`、`lgdt/lidt/lldt/ltr`、`rdmsr/wrmsr`、`swapgs/sysretq/iretq`
+- [x] 地址表达式支持 `$`（当前 item 地址）
+- [x] 地址表达式支持符号 `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field`
+- [x] lower 第一版：伪寄存器 `(reg N)`、uses/sets、liveness、图着色分配
+- [x] lower 的调用点 save/restore 注记展开
+- [ ] lower 的跨调用值 spill / frame allocation
 - [ ] `adc/sbb`、更多双精度/packed SSE
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`

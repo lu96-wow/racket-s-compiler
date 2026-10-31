@@ -43,7 +43,9 @@
           (cond
             [(exact-integer? payload) payload]
             [(all-chains-known? payload symbols)
-             (eval-address payload (lambda (c) (hash-ref symbols c)))]
+             (eval-address payload
+                           (lambda (c) (hash-ref symbols c))
+                           (+ (field-value 'start seg) offset))]
             [else #f]))
         (when (and n (not (fits-width? n width)))
           (problem! (list 'value-out-of-range seg-name offset item n))))))

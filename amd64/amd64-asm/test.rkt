@@ -4,7 +4,8 @@
 ;;; 第一版编码 golden test。只测已经实现的 form。
 
 (require rackunit
-         "insn.rkt")
+         "insn.rkt"
+         "sexp.rkt")
 
 (define (enc name . operands)
   (encode-instruction name operands))
@@ -53,6 +54,23 @@
 (check-equal? (enc 'jcc-near 'e 8) (bytes #x0f #x84 #x08 #x00 #x00 #x00))
 (check-equal? (enc 'call-near 8) (bytes #xe8 #x08 #x00 #x00 #x00))
 (check-equal? (enc 'ret) (bytes #xc3))
+
+;; ---------------------------------------------------------------------------
+;; address expressions
+;; ---------------------------------------------------------------------------
+
+(check-true (address-expr? '(+ (data) 8)))
+(check-true (address-expr? '(bitwise-ior (data) 1)))
+(check-true (address-expr? '(ash (data) 4)))
+(check-true (address-expr? '(bitwise-bit-field (data) 8 16)))
+(check-true (address-expr? '$))
+(check-false (address-expr? '(ash (data))))
+
+(check-equal? (eval-address '(bitwise-ior (data) 1) (lambda (c) #x1000)) #x1001)
+(check-equal? (eval-address '(ash (data) 2) (lambda (c) #x1000)) #x4000)
+(check-equal? (eval-address '(ash (data) -2) (lambda (c) #x1000)) #x400)
+(check-equal? (eval-address '(bitwise-bit-field (data) 8 16) (lambda (c) #x123456)) #x34)
+(check-equal? (eval-address '(+ $ 4) (lambda (c) (error 'unexpected)) #x2000) #x2004)
 
 (displayln "amd64 encode tests: ok")
 

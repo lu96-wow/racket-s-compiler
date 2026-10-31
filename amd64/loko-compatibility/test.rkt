@@ -93,6 +93,30 @@
  (for/or ([p (in-list (field 'problems unsupported))])
    (equal? (cadr p) 'directive-needs-image-layer)))
 
+;; `$` is the current item address; it stays symbolic until layout/bind.
+(define current-ip
+  (translate-loko-source
+   '(loko-source (text (mov rax (mem+ ($))) (%u64 ($))) (data))))
+(check-equal? (field 'problems current-ip) '())
+(check-equal? (field 'program-items current-ip)
+              '((mov rax (b64 (disp $)))
+                (value 8 $)))
+
+;; symbolic bit operations stay symbolic until layout/bind/encode
+(define symbolic-bits
+  (translate-loko-source
+   '(loko-source
+     (text)
+     (data
+      (%u64 (bitwise-ior (data) 1))
+      (%u64 (<< (data) 4))
+      (%u64 (>> (data) 4))))))
+(check-equal? (field 'problems symbolic-bits) '())
+(check-equal? (field 'data-items symbolic-bits)
+              '((value 8 (bitwise-ior (data) 1))
+                (value 8 (ash (data) 4))
+                (value 8 (ash (data) (- 0 4)))))
+
 (displayln "amd64 loko-compat tests: ok")
 
 ;; value references to vector labels use the same path as %label

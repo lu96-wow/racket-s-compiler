@@ -374,9 +374,20 @@
                       (lambda (_) (problem 'bad-constant-expression expr))])
        (const-op-value (car expr) vals))]
     [else
-     ;; Symbolic bit operations are not part of the core address-expression
-     ;; language.  Keep this explicit instead of guessing.
-     (problem 'symbolic-bit-expression expr)]))
+     ;; Symbolic operands: keep the operation for layout/bind/encode.
+     (case (car expr)
+       [(* ) (problem 'unsupported-symbolic-expression expr)]
+       [(<< asl)
+        (match vals
+          [(list a b) (list 'ash a b)]
+          [_ (problem 'bad-shift expr)])]
+       [(>> asr)
+        (match vals
+          [(list a b) (list 'ash a (list '- 0 b))]
+          [_ (problem 'bad-shift expr)])]
+       [(ash bitwise-and bitwise-ior bitwise-bit-field)
+        (cons (car expr) vals)]
+       [else (problem 'symbolic-bit-expression expr)])]))
 
 (define (translate-expr ctx expr [resolving '()])
   (cond
@@ -391,12 +402,15 @@
     [(or (string? expr) (vector? expr)) (label-path ctx expr)]
     [(form? expr)
      (case (car expr)
-       [($) (problem 'current-ip-expression expr)]
+       [($) '$]
        [(+) (translate-sum ctx (cdr expr) resolving)]
        [(-) (translate-diff ctx (cdr expr) resolving)]
        [(<< >> ash asr asl * bitwise-and bitwise-ior bitwise-bit-field)
         (translate-const-op ctx expr resolving)]
-       [else (problem 'unsupported-expression expr)])]
+       [else
+        (if (path? expr)
+            expr
+            (problem 'unsupported-expression expr))])]
     [else (problem 'bad-expression expr)]))
 
 ;; ---------------------------------------------------------------------------
@@ -412,7 +426,7 @@
     [(symbol? op)
      (cond
        [(register-name? op) op]
-       [(memq op '(fs gs rip)) op]
+       [(memq op '(fs gs rip $)) op]
        [else (label-path ctx op)])]
     [(or (string? op) (vector? op)) (label-path ctx op)]
     [(form? op) (translate-expr ctx op)]

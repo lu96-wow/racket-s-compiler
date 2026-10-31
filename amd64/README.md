@@ -83,10 +83,13 @@ Loko 旧汇编写法到核心 item 的纯变换，不处理 image/ELF。
 - short -> near relax
 - bind-labels + value 宽度检查
 - encode 最终尺寸断言
-- Loko 旧汇编写法兼容层
+- Loko 旧汇编写法兼容层（`$`、符号位运算）
+- lower 第一版：伪寄存器、liveness、图着色分配、调用点 save/restore 展开
+  （不含 spill/frame allocation）
 
 未实现：
 
+- lower 的跨调用值 spill、frame allocation
 - `needs-far` / far form / trampoline / scratch 寄存器
 - image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - 外部符号 / reloc / loader
@@ -106,4 +109,5 @@ racket amd64/compiler/relax/test.rkt
 racket amd64/compiler/test/end-to-end.rkt
 racket amd64/compiler/test/flow-test.rkt
 racket amd64/loko-compatibility/test.rkt
+racket amd64/loko-compatibility/lower/test.rkt
 ```

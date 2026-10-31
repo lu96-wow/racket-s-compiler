@@ -112,6 +112,44 @@
                 (size 10)
                 (bytes #"\xf3\x0f\x10\xca\x66\x0f\x7f\x04\x24\xc3")))
 
+;; `$` is the current item address in both code and data
+(define current-ip-items
+  '((label text)
+    (mov rax (b64 (disp $)))
+    (ret)
+    (label data)
+    (value 8 $)))
+(define current-ip-measured
+  (layout-flat-items target-amd64 current-ip-items spec))
+(check-equal? (cdr (assq 'problems current-ip-measured)) '())
+(define current-ip-bound (bind-labels current-ip-measured))
+(define current-ip-build (encode-layout target-amd64 current-ip-bound))
+(check-equal? (cddr (car (cdr current-ip-build)))
+              '((kind code)
+                (start #x200000)
+                (size 9)
+                (bytes #"H\x8b\x04%\x00\x00 \x00\xc3")))
+(check-equal? (cddr (cadr (cdr current-ip-build)))
+              '((kind data)
+                (start #x300000)
+                (size 8)
+                (bytes #"\x00\x00\x30\x00\x00\x00\x00\x00")))
+
+;; symbolic bit expressions resolve in data values
+(define bits-items
+  '((label data)
+    (value 8 (bitwise-ior (data) 1))
+    (value 8 (ash (data) 1))))
+(define bits-measured (layout-flat-items target-amd64 bits-items spec))
+(check-equal? (cdr (assq 'problems bits-measured)) '())
+(define bits-bound (bind-labels bits-measured))
+(define bits-build (encode-layout target-amd64 bits-bound))
+(check-equal? (cddr (cadr (cdr bits-build)))
+              '((kind data)
+                (start #x300000)
+                (size 16)
+                (bytes #"\x01\x00\x30\x00\x00\x00\x00\x00\x00\x00\x60\x00\x00\x00\x00\x00")))
+
 ;; bind-labels is the final value-width check
 (define bad-value-items '((label data) (value 1 300)))
 (define bad-value-measured (layout-flat-items target-amd64 bad-value-items spec))

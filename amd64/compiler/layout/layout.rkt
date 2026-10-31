@@ -352,7 +352,7 @@
         [missing?
          (problem! (list 'undefined-target (segment-name seg) offset item))]
         [else
-         (define value (eval-address d (lambda (c) (hash-ref positions c))))
+         (define value (eval-address d (lambda (c) (hash-ref positions c)) m-here))
          (cond
            [(eq? (mem-base m) 'rip)
             (define rel (- value (+ m-here m-size)))

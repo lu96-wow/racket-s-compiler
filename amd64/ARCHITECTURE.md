@@ -22,7 +22,7 @@
 
 ```text
 loko-source -> loko-compat -> program-items / data-items
-  -> expand-pseudo -> analyze -> dce
+  -> expand-pseudo -> loko-lower -> analyze -> dce
   -> relax (内部反复 layout) -> bind-labels -> encode
 
 rich data -> expand-data -> flatten -> program-items / data-items
@@ -31,12 +31,15 @@ rich data -> expand-data -> flatten -> program-items / data-items
 
 `layout` 是可单独选择的 stage；默认流不直接写 `layout`。
 `loko-compat`（目录 `loko-compatibility/`）只做旧写法到核心 item 的纯变换，不处理 image 层。
+`loko-lower`（目录 `loko-compatibility/lower/`）消除 `(reg N)`；目前还是可选层，
+尚未注册进 `flow` 的默认 stage 表。
 
 ## 3. 层契约
 
 | stage | requires | provides |
 | --- | --- | --- |
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` |
+| `loko-lower`（可选） | `program-items` | `program-items` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -124,6 +127,8 @@ symbols: (symbol chain segment offset address)
 | `undefined-target` | layout | 分支目标找不到 |
 | `needs-far` | layout | near 也放不下，far form 未实现（request，由 encode 拒绝） |
 | `pseudo-leftover` | flow | 伪指令漏到 layout 前 |
+| `unallocated-pseudo` | lower | 伪寄存器没有分配，仍留在 item 里 |
+| `uncolored-pseudo` | lower | 干涉图着色时没有可用物理寄存器 |
 
 ## 8. 纯函数与状态
 

@@ -7,7 +7,7 @@
 
 | 位置 | 现状 | 缺口 |
 | --- | --- | --- |
-| `loko-compatibility/` | 只有 `translate.rkt`：旧写法 -> 核心 item | 没有 `lower/`：伪寄存器、regalloc、liveness、`%comment` 解释、`$` / 符号位表达式 |
+| `loko-compatibility/` | `translate.rkt` + `lower/`：伪寄存器、liveness、图着色 | lower 还缺跨调用值 spill、frame allocation；符号乘法等表达式仍未接 |
 | `loko-compatibility/` | 同上 | 没有 `image/`：`%origin` / `%section` / `%comm` / `%call`、BSS/NOBITS、strtab/symtab、ELF |
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
 | `amd64-asm/` | 指令编码、寄存器、target | 没有通用 `bss` 段、far form、16/32 模式、外部 reloc/loader |
@@ -20,13 +20,20 @@
 
 ### `loko-compatibility/lower/`
 
-- 伪寄存器 `(reg N)` 消除
-- register allocation / spill
-- liveness
+已完成：
+
+- 伪寄存器 `(reg N)` 消除（`pseudo.rkt`）
+- uses/sets 与基本块 liveness（`uses.rkt` / `liveness.rkt`）
+- 干涉图 + 图着色分配（`allocate.rkt`）
+- 组合入口与未分配/未着色报告（`lower.rkt`）
+- 调用点 save/restore 注记展开（`calls.rkt`）
+
+还缺：
+
+- 跨调用值的 preserved 分配或 spill
+- frame allocation / `LOCALS`
 - `%comment liveness-information` -> GC 注记
 - peephole
-- `%equiv` / `%label name end` / `%u*` / `%vu8` / `%utf8z`
-- `$` 当前 IP
 - 固定值表达式求值
 
 ### `loko-compatibility/image/`
@@ -57,10 +64,8 @@
 
 还缺：
 
-- 带标签的 `bitwise-ior` / `bitwise-and` / `ash` / `bitwise-bit-field`
-- `$` 当前地址
+- 带标签的 `*` / `bitwise-xor` / `bitwise-not` 等其它表达式
 - `%u128` 的符号表达式
-- bind 之后的符号表达式求值层
 
 ## 4. 集成缺口
 

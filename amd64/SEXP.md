@@ -14,9 +14,14 @@
 - 地址表达式复用 `amd64/amd64-asm/sexp.rkt` 的形状：
   ```text
   整数
+  | $
   | (链)
   | (+ a b ...)
   | (- a b ...)
+  | (bitwise-and a ...)
+  | (bitwise-ior a ...)
+  | (ash a n)
+  | (bitwise-bit-field n start end)
   ```
 - 入口接受 `(quote ...)` / `(begin ...)`，出口一律 plain list
 - 段、label、`value` / `bytes` / `fill` / `pad` / `align` 的语义与 RISC-V 保持一致
@@ -96,6 +101,9 @@ debug:   dr0 ... dr7
 - `rsp` / `r12` 不能做 index。
 - `rip` 不能和 index 同时出现。
 - 没有 `index` 时 `scale` 必须省略或为 1。
+- `$` 表示当前 item 的绝对地址；layout / bind / encode 在求值时传入。
+- `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field` 可以带符号；
+  它们和 `+` / `-` 一样在 layout / bind / encode 时求值。
 - 符号位移一律按 disp32 / RIP-relative disp32 处理，不在 layout 后缩成 disp8；
   内部会用 `disp-width = 32` 固定这个选择。
 - 常量位移在 normalize 阶段按值选择 `disp8` / `disp32`；一旦选定，form 不再变化。

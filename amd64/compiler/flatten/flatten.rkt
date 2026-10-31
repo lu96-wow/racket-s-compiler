@@ -40,7 +40,8 @@
 ;;; 之后的层看到的全是完整链, 不知道模块存在。链 -> 偏移 是 layout 的事。
 
 (require (only-in "../../amd64-asm/sexp.rkt"
-                  form? name? path? normalize-path as-items arith-head?))
+                  form? name? path? normalize-path as-items
+                  arith-head? address-op-head?))
 
 (provide name?
          path?
@@ -347,8 +348,9 @@
   (cond
     [(path? x) (resolve x)]
     ;; 地址表达式: 递归进去, 只重写其中的链; +/− 和整数不动
-    [(arith-head? x) (cons (car x) (for/list ([a (in-list (cdr x))])
-                                    (rewrite-operand st scope a)))]
+    [(or (arith-head? x) (address-op-head? x))
+     (cons (car x) (for/list ([a (in-list (cdr x))])
+                     (rewrite-operand st scope a)))]
     [else x]))
 
 (define (rewrite-operands item scope st)
