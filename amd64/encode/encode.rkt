@@ -35,6 +35,22 @@
 
 (define branch-forms '(jmp-short jmp-near jcc-short jcc-near call-near))
 
+(define (resolve-mem m here size symbols)
+  (define d (mem-disp m))
+  (define resolved
+    (cond
+      [(exact-integer? d) d]
+      [(eq? (mem-base m) 'rip)
+       (- (resolve-address symbols d) (+ here size))]
+      [else (resolve-address symbols d)]))
+  (struct-copy mem m [disp resolved]))
+
+(define (resolve-operand op here size symbols)
+  (cond
+    [(mem? op) (resolve-mem op here size symbols)]
+    [(mem-form? op) (resolve-mem (parse-mem op) here size symbols)]
+    [else op]))
+
 (define (encode-code name operands here symbols)
   (if (memq name branch-forms)
       (let* ([target (last operands)]
@@ -43,7 +59,10 @@
              [offset (- address (+ here size))]
              [ops (append (drop-right operands 1) (list offset))])
         (encode-instruction name ops))
-      (encode-instruction name operands)))
+      (let* ([size (instruction-size name operands)]
+             [ops (map (lambda (op) (resolve-operand op here size symbols))
+                       operands)])
+        (encode-instruction name ops))))
 
 (define (encode-segment target seg symbols)
   (define name (segment-field seg 'name))

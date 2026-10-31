@@ -37,7 +37,9 @@
 - [x] `analyze` / `dce`（amd64 控制流分类）
 - [x] `flow`（默认流含 relax）
 - [x] `relax`（short -> near 只增）
-- [ ] `place` region / 通配、符号 memory displacement、外部 reloc
+- [x] 符号 memory displacement（归一化为固定 disp32，encode 时解析）
+- [x] 基本整数指令扩展（test/inc/dec/neg/not/shift/imul/div/idiv/movzx/movsx/setcc/cqo/cdq）
+- [ ] `place` region / 通配、外部 reloc
 
 ## 2. 总体流水线
 

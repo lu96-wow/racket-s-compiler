@@ -65,6 +65,7 @@
   (define index (and index-name (lookup-register index-name)))
   (define scale (mem-scale m))
   (define disp (mem-disp m))
+  (define disp-width (mem-disp-width m))
   (define seg (mem-seg m))
   (unless (exact-integer? disp)
     (error 'encode-mem-rm "memory displacement must be resolved to an integer: ~e" disp))
@@ -133,6 +134,12 @@
      (define rm-field (if need-sib? #b100 base-low))
      (define-values (mod disp-bytes)
        (cond
+         [(eq? disp-width 32)
+          (values #b10 (disp32-bytes disp))]
+         [(eq? disp-width 8)
+          (unless (disp8? disp)
+            (error 'encode-mem-rm "forced disp8 does not fit: ~e" disp))
+          (values #b01 (u8 disp))]
          [(and (zero? disp) (not (= base-low #b101))) (values #b00 '())]
          [(disp8? disp) (values #b01 (u8 disp))]
          [else (values #b10 (disp32-bytes disp))]))
@@ -507,6 +514,132 @@
      (emit-rm 64 (regs-in-op rm*) (encode-rm rm* opcode) '(#xff))]
     [_ (error name "~a takes one operand: ~e" name operands)]))
 
+(define (encode-test operands)
+  (match operands
+    [(list dst src)
+     (define dst* (parse-rm dst))
+     (cond
+       [(and (rm-operand? src) (reg? (parse-rm src)))
+        (define src* (parse-rm src))
+        (define width (rm-width dst*))
+        (unless (= width (reg-width src*))
+          (error 'encode-test "operand widths do not match: ~e ~e" dst src))
+        (emit-rm width (list src*) (encode-rm dst* src*) '(#x85))]
+       [(imm-value src)
+        (define value (imm-value src))
+        (define width (rm-width dst*))
+        (define regs (regs-in-op dst*))
+        (case width
+          [(8)
+           (check-imm8 value 'encode-test)
+           (emit-rm 8 regs (encode-rm dst* 0) '(#xf6) (u8 value))]
+          [(16)
+           (check-imm16 value 'encode-test)
+           (emit-rm 16 regs (encode-rm dst* 0) '(#xf7) (u16 value))]
+          [(32)
+           (check-imm32 value 'encode-test)
+           (emit-rm 32 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
+          [(64)
+           (check-imm32/signed value 'encode-test)
+           (emit-rm 64 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
+          [else (error 'encode-test "bad width: ~e" width)])]
+       [else (error 'encode-test "unsupported operands: ~e" operands)])]
+    [_ (error 'encode-test "test takes two operands: ~e" operands)]))
+
+(define (encode-unary name operands)
+  (match operands
+    [(list rm)
+     (define rm* (parse-rm rm))
+     (define width (rm-width rm*))
+     (define-values (op8 op digit)
+       (case name
+         [(inc) (values #xfe #xff 0)]
+         [(dec) (values #xfe #xff 1)]
+         [(not) (values #xf6 #xf7 2)]
+         [(neg) (values #xf6 #xf7 3)]
+         [else (error 'encode-unary "unknown unary instruction: ~e" name)]))
+     (emit-rm width (regs-in-op rm*)
+              (encode-rm rm* digit)
+              (list (if (= width 8) op8 op)))]
+    [_ (error 'encode-unary "~a takes one operand: ~e" name operands)]))
+
+(define (encode-shift name operands)
+  (match operands
+    [(list rm count)
+     (define rm* (parse-rm rm))
+     (define width (rm-width rm*))
+     (define value (or (imm-value count)
+                       (error 'encode-shift "shift count must be an immediate: ~e" count)))
+     (check-imm8 value 'encode-shift)
+     (define digit (case name [(shl) 4] [(shr) 5] [(sar) 7]
+                          [else (error 'encode-shift "unknown shift: ~e" name)]))
+     (emit-rm width (regs-in-op rm*)
+              (encode-rm rm* digit)
+              (list (if (= width 8) #xc0 #xc1))
+              (u8 value))]
+    [_ (error 'encode-shift "~a takes two operands: ~e" name operands)]))
+
+(define (encode-imul operands)
+  (match operands
+    [(list dst src)
+     (define dst* (parse-reg dst))
+     (define src* (parse-rm src))
+     (define width (reg-width dst*))
+     (unless (= width (rm-width src*))
+       (error 'encode-imul "operand widths do not match: ~e ~e" dst src))
+     (emit-rm width (list dst*) (encode-rm src* dst*) '(#x0f #xaf))]
+    [_ (error 'encode-imul "imul takes two operands: ~e" operands)]))
+
+(define (encode-divide name operands)
+  (match operands
+    [(list rm)
+     (define rm* (parse-rm rm))
+     (define width (rm-width rm*))
+     (define digit (case name [(div) 6] [(idiv) 7]
+                         [else (error 'encode-divide "unknown divide: ~e" name)]))
+     (emit-rm width (regs-in-op rm*)
+              (encode-rm rm* digit)
+              (list (if (= width 8) #xf6 #xf7)))]
+    [_ (error 'encode-divide "~a takes one operand: ~e" name operands)]))
+
+(define (encode-movx signed? operands)
+  (match operands
+    [(list dst src)
+     (define dst* (parse-reg dst))
+     (define src* (parse-rm src))
+     (define dw (reg-width dst*))
+     (define sw (rm-width src*))
+     (define opcode
+       (cond
+         [(and signed? (= sw 8)) '(#x0f #xbe)]
+         [(and signed? (= sw 16)) '(#x0f #xbf)]
+         [(and signed? (= sw 32) (= dw 64)) '(#x63)]
+         [(and (not signed?) (= sw 8)) '(#x0f #xb6)]
+         [(and (not signed?) (= sw 16)) '(#x0f #xb7)]
+         [else (error 'encode-movx "unsupported width combination: ~e -> ~e" sw dw)]))
+     (emit-rm dw (list dst*) (encode-rm src* dst*) opcode)]
+    [_ (error 'encode-movx "~a takes two operands: ~e"
+              (if signed? 'movsx 'movzx) operands)]))
+
+(define (encode-setcc operands)
+  (match operands
+    [(list cc rm)
+     (define rm* (parse-rm rm))
+     (unless (= (rm-width rm*) 8)
+       (error 'encode-setcc "setcc requires an 8-bit destination: ~e" rm))
+     (emit-rm 8 (regs-in-op rm*)
+              (encode-rm rm* 0)
+              (list #x0f (+ #x90 (cc-index cc))))]
+    [_ (error 'encode-setcc "setcc takes a condition and an operand: ~e" operands)]))
+
+(define (encode-cqo operands)
+  (unless (null? operands) (error 'encode-cqo "cqo takes no operands: ~e" operands))
+  '(#x48 #x99))
+
+(define (encode-cdq operands)
+  (unless (null? operands) (error 'encode-cdq "cdq takes no operands: ~e" operands))
+  '(#x99))
+
 (define (encode-ret operands)
   (unless (null? operands) (error 'encode-ret "ret takes no operands: ~e" operands))
   '(#xc3))
@@ -544,6 +677,22 @@
    'call-near  (insn-def 1 encode-call-near)
    'call-indirect (insn-def 1 (lambda (ops) (encode-indirect 2 ops 'call-indirect)))
    'jmp-indirect  (insn-def 1 (lambda (ops) (encode-indirect 4 ops 'jmp-indirect)))
+   'test       (insn-def 2 encode-test)
+   'inc        (insn-def 1 (lambda (ops) (encode-unary 'inc ops)))
+   'dec        (insn-def 1 (lambda (ops) (encode-unary 'dec ops)))
+   'not        (insn-def 1 (lambda (ops) (encode-unary 'not ops)))
+   'neg        (insn-def 1 (lambda (ops) (encode-unary 'neg ops)))
+   'shl        (insn-def 2 (lambda (ops) (encode-shift 'shl ops)))
+   'shr        (insn-def 2 (lambda (ops) (encode-shift 'shr ops)))
+   'sar        (insn-def 2 (lambda (ops) (encode-shift 'sar ops)))
+   'imul       (insn-def 2 encode-imul)
+   'div        (insn-def 1 (lambda (ops) (encode-divide 'div ops)))
+   'idiv       (insn-def 1 (lambda (ops) (encode-divide 'idiv ops)))
+   'movzx      (insn-def 2 (lambda (ops) (encode-movx #f ops)))
+   'movsx      (insn-def 2 (lambda (ops) (encode-movx #t ops)))
+   'setcc      (insn-def 2 encode-setcc)
+   'cqo        (insn-def 0 encode-cqo)
+   'cdq        (insn-def 0 encode-cdq)
    'ret        (insn-def 0 encode-ret)
    'nop        (insn-def 0 encode-nop)
    'ud2        (insn-def 0 encode-ud2)))
@@ -566,9 +715,13 @@
 ;; 这个选择固定到操作数里。等 layout/normalize 接上后再补。
 (define (size-safe-operand op)
   (cond
+    [(mem-form? op) (size-safe-operand (parse-mem op))]
     [(and (mem? op) (not (exact-integer? (mem-disp op))))
-     (error 'instruction-size
-            "memory displacement must be resolved before sizing: ~e" op)]
+     (case (mem-disp-width op)
+       [(32) (struct-copy mem op [disp #x1000])]
+       [else
+        (error 'instruction-size
+               "memory displacement must be resolved before sizing: ~e" op)])]
     [else op]))
 
 (define (size-branch-operands name operands)

@@ -30,14 +30,17 @@
 ## 3. 当前支持的 form
 
 ```text
-mov
-add sub and or xor cmp
-lea
+mov movzx movsx lea
+add sub and or xor cmp test
+inc dec neg not
+shl shr sar
+imul div idiv cqo cdq
 push pop
 jmp-short jmp-near
 jcc-short jcc-near
 call-near
 call-indirect jmp-indirect
+setcc
 ret nop ud2
 ```
 
@@ -63,9 +66,10 @@ immediate
 
 ## 5. 已知缺口
 
-- 符号 displacement 还不能进 encode；`instruction-size` 也暂时拒绝未解析 displacement。
+- 单独的 `encode-instruction` 仍要求 displacement 是整数；
+  `encode-layout` 会先把符号 displacement 解析成整数。
 - `imm8/imm16/imm32/imm64` 包装目前只取数值，不强制宽度。
-- `movzx/movsx/setcc/shift/imul/idiv` 等还没实现。
+- `imul` 目前只支持两操作数形式；三操作数和单操作数形式还没实现。
 - 还不会生成 `b128` / SSE / AVX。
 - 分支 far form 和 scratch 寄存器没有实现。
 

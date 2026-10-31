@@ -19,13 +19,7 @@
 
          mem-form?
          parse-mem
-         mem?
-         mem-width
-         mem-base
-         mem-index
-         mem-scale
-         mem-disp
-         mem-seg)
+         (struct-out mem))
 
 ;; ---------------------------------------------------------------------------
 ;; 通用形状
@@ -97,7 +91,7 @@
 ;;   index 存在时 scale 1
 ;; ---------------------------------------------------------------------------
 
-(struct mem (width base index scale disp seg) #:transparent)
+(struct mem (width base index scale disp seg disp-width) #:transparent)
 
 (define mem-heads '(b8 b16 b32 b64))
 (define mem-field-keys '(base index scale disp seg))
@@ -148,4 +142,5 @@
     (error 'parse-mem "bad displacement expression: ~e" disp))
   (when (and (not index) (not (= scale 1)))
     (error 'parse-mem "scale requires an index register: ~e" x))
-  (mem width base index scale disp seg))
+  (mem width base index scale disp seg
+       (if (exact-integer? disp) 'auto 32)))

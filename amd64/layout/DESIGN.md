@@ -37,7 +37,7 @@
 ## 已知限制
 
 - 还是扁平 item，没有 analyze/dce 的 blocks。
-- 符号内存 displacement 还不能进 `instruction-size`。
+- 符号内存 displacement 在 `mem` 里标记成固定 disp32，`instruction-size` 用占位值量尺寸。
 - `place` 只支持精确链锚点，没有 region / 通配。
 - 越界的 short branch 产生 `needs-near` request，由 relax 消费。
 - 越界的 near branch 产生 `needs-far` problem；far form 还没实现。

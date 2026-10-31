@@ -46,3 +46,22 @@
                 (bytes #"\x34\x12\x00\x00\x00\x00\x00\x00")))
 
 (displayln "amd64 end-to-end tests: ok")
+
+;; symbolic memory displacements become fixed disp32 and are resolved at encode
+(define sym-items
+  '((label text)
+    (mov rax (b64 (base rip) (disp (data))))
+    (mov rbx (b64 (disp (data))))
+    (ret)
+    (label data)
+    (value 8 #x1234)))
+(define sym-measured (layout-items sym-items spec))
+(check-equal? (cdr (assq 'requests sym-measured)) '())
+(check-equal? (cdr (assq 'problems sym-measured)) '())
+(define sym-bound (bind-labels sym-measured))
+(define sym-build (encode-layout target-amd64 sym-bound))
+(check-equal? (cddr (car (cdr sym-build)))
+              '((kind code)
+                (start #x200000)
+                (size 16)
+                (bytes #"H\x8b\x05\xf9\xff\x0f\x00H\x8b\x1c%\x00\x00\x30\x00\xc3")))
