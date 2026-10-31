@@ -52,6 +52,9 @@
   (cond
     [(mem? op) (resolve-mem op here size symbols)]
     [(mem-form? op) (resolve-mem (parse-mem op) here size symbols)]
+    ;; Symbolic immediate: size was measured as imm32; resolve to that form.
+    [(and (address-expr? op) (not (exact-integer? op)))
+     (list 'imm32 (resolve-address symbols op here))]
     [else op]))
 
 (define (encode-code name operands here symbols)

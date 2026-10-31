@@ -69,8 +69,9 @@
   (define seg (mem-seg m))
   (unless (exact-integer? disp)
     (error 'encode-mem-rm "memory displacement must be resolved to an integer: ~e" disp))
-  (when (and index (memq (reg-name index) '(rsp r12)))
-    (error 'encode-mem-rm "rsp/r12 cannot be used as an index register: ~e" index-name))
+  ;; rsp cannot be a SIB index.  r12 is encoded as index 4 with REX.X=1.
+  (when (and index (eq? (reg-name index) 'rsp))
+    (error 'encode-mem-rm "rsp cannot be used as an index register: ~e" index-name))
   (define seg-prefix
     (case seg
       [(fs) #x64]
@@ -1398,6 +1399,11 @@
        [else
         (error 'instruction-size
                "memory displacement must be resolved before sizing: ~e" op)])]
+    ;; Unresolved address expression used as an immediate.  The address space
+    ;; is below 2^31 for the images this backend produces, so size it as the
+    ;; full-width imm32 form and let encode reject out-of-range values.
+    [(and (address-expr? op) (not (exact-integer? op)))
+     (list 'imm32 0)]
     [else op]))
 
 (define (size-branch-operands name operands)

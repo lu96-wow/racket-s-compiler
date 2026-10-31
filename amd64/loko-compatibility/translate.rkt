@@ -331,7 +331,7 @@
        (cond
          [(and (eq? base 'rip) index)
           (problem 'rip-with-index (cons 'mem+ terms))]
-         [(and index (memq index '(rsp r12)))
+         [(and index (eq? index 'rsp))
           (problem 'bad-index-register index)]
          [(and base index
                (not (eq? base 'rip))
@@ -447,8 +447,9 @@
 (define (const-op-value op vals)
   (case op
     [(* ) (apply * vals)]
-    [(<< asl) (apply arithmetic-shift vals)]
-    [(>> asr) (apply arithmetic-shift (list (car vals) (- (cadr vals))))]
+    [(<< asl bitwise-arithmetic-shift-left) (apply arithmetic-shift vals)]
+    [(>> asr bitwise-arithmetic-shift-right)
+     (apply arithmetic-shift (list (car vals) (- (cadr vals))))]
     [(ash) (apply arithmetic-shift vals)]
     [(bitwise-and) (apply bitwise-and vals)]
     [(bitwise-ior) (apply bitwise-ior vals)]
@@ -468,11 +469,11 @@
      ;; Symbolic operands: keep the operation for layout/bind/encode.
      (case (car expr)
        [(* ) (problem 'unsupported-symbolic-expression expr)]
-       [(<< asl)
+       [(<< asl bitwise-arithmetic-shift-left)
         (match vals
           [(list a b) (list 'ash a b)]
           [_ (problem 'bad-shift expr)])]
-       [(>> asr)
+       [(>> asr bitwise-arithmetic-shift-right)
         (match vals
           [(list a b) (list 'ash a (list '- 0 b))]
           [_ (problem 'bad-shift expr)])]
@@ -496,7 +497,8 @@
        [($) '$]
        [(+) (translate-sum ctx (cdr expr) resolving)]
        [(-) (translate-diff ctx (cdr expr) resolving)]
-       [(<< >> ash asr asl * bitwise-and bitwise-ior bitwise-bit-field)
+       [(<< >> ash asr asl * bitwise-and bitwise-ior bitwise-bit-field
+        bitwise-arithmetic-shift-left bitwise-arithmetic-shift-right)
         (translate-const-op ctx expr resolving)]
        [else
         (if (path? expr)
