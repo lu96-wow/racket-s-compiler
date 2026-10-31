@@ -236,18 +236,26 @@
   (define rex (make-rex (= width 64) regs rex-r rex-x rex-b))
   (append p (if rex (list rex) '())))
 
-(define (emit-rm width regs rm-enc opcode [imm '()])
+;; `extra-prefixes` are mandatory legacy prefixes such as F3 for POPCNT.
+;; They go after 0x66 and before REX.
+(define (emit-rm/base width regs rm-enc opcode imm extra-prefixes)
   (append
    (if (rm-encoding-seg rm-enc) (list (rm-encoding-seg rm-enc)) '())
-   (prefixes width regs
-             (rm-encoding-rex-r rm-enc)
-             (rm-encoding-rex-x rm-enc)
-             (rm-encoding-rex-b rm-enc))
+   (if (= width 16) (list #x66) '())
+   extra-prefixes
+   (let ([rex (make-rex (= width 64) regs
+                        (rm-encoding-rex-r rm-enc)
+                        (rm-encoding-rex-x rm-enc)
+                        (rm-encoding-rex-b rm-enc))])
+     (if rex (list rex) '()))
    opcode
    (list (rm-encoding-modrm rm-enc))
    (if (rm-encoding-sib rm-enc) (list (rm-encoding-sib rm-enc)) '())
    (rm-encoding-disp rm-enc)
    imm))
+
+(define (emit-rm width regs rm-enc opcode [imm '()])
+  (emit-rm/base width regs rm-enc opcode imm '()))
 
 (define (rm-width op)
   (cond
@@ -449,28 +457,57 @@
 (define (encode-push operands)
   (match operands
     [(list src)
-     (define r (parse-reg src))
-     (define width (reg-width r))
-     (unless (memq width '(16 64))
-       (error 'encode-push "push register must be 16 or 64 bits: ~e" src))
-     (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
-     (append (if (= width 16) (list #x66) '())
-             (if rex (list rex) '())
-             (u8 (+ #x50 (bitwise-and (reg-index r) #b111))))]
-    [_ (error 'encode-push "push takes one register: ~e" operands)]))
+     (cond
+       [(or (reg? src) (and (symbol? src) (lookup-register src #f)))
+        (define r (parse-reg src))
+        (define width (reg-width r))
+        (unless (memq width '(16 64))
+          (error 'encode-push "push register must be 16 or 64 bits: ~e" src))
+        (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
+        (append (if (= width 16) (list #x66) '())
+                (if rex (list rex) '())
+                (u8 (+ #x50 (bitwise-and (reg-index r) #b111))))]
+       [(imm-value src)
+        (define v (imm-value src))
+        (cond
+          [(<= -128 v 127) (bytes* '(#x6a) (u8 v))]
+          [else
+           (check-imm32/signed v 'encode-push)
+           (bytes* '(#x68) (u32 v))])]
+       [(or (mem? src) (mem-form? src))
+        (define m (parse-rm src))
+        (unless (mem? m) (error 'encode-push "bad push operand: ~e" src))
+        (define width (mem-width m))
+        (unless (memq width '(16 64))
+          (error 'encode-push "push memory must be b16 or b64: ~e" src))
+        ;; 64-bit push/pop has a 64-bit default operand size; do not emit
+        ;; a redundant REX.W (GNU as and Loko's assembler both omit it).
+        (emit-rm (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 6) '(#xff))]
+       [else (error 'encode-push "unsupported push operand: ~e" src)])]
+    [_ (error 'encode-push "push takes one operand: ~e" operands)]))
 
 (define (encode-pop operands)
   (match operands
     [(list dst)
-     (define r (parse-reg dst))
-     (define width (reg-width r))
-     (unless (memq width '(16 64))
-       (error 'encode-pop "pop register must be 16 or 64 bits: ~e" dst))
-     (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
-     (append (if (= width 16) (list #x66) '())
-             (if rex (list rex) '())
-             (u8 (+ #x58 (bitwise-and (reg-index r) #b111))))]
-    [_ (error 'encode-pop "pop takes one register: ~e" operands)]))
+     (cond
+       [(or (reg? dst) (and (symbol? dst) (lookup-register dst #f)))
+        (define r (parse-reg dst))
+        (define width (reg-width r))
+        (unless (memq width '(16 64))
+          (error 'encode-pop "pop register must be 16 or 64 bits: ~e" dst))
+        (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
+        (append (if (= width 16) (list #x66) '())
+                (if rex (list rex) '())
+                (u8 (+ #x58 (bitwise-and (reg-index r) #b111))))]
+       [(or (mem? dst) (mem-form? dst))
+        (define m (parse-rm dst))
+        (unless (mem? m) (error 'encode-pop "bad pop operand: ~e" dst))
+        (define width (mem-width m))
+        (unless (memq width '(16 64))
+          (error 'encode-pop "pop memory must be b16 or b64: ~e" dst))
+        (emit-rm (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 0) '(#x8f))]
+       [else (error 'encode-pop "unsupported pop operand: ~e" dst)])]
+    [_ (error 'encode-pop "pop takes one operand: ~e" operands)]))
 
 (define (encode-jmp-short operands)
   (match operands
@@ -568,19 +605,31 @@
     [(list rm count)
      (define rm* (parse-rm rm))
      (define width (rm-width rm*))
-     (define value (or (imm-value count)
-                       (error 'encode-shift "shift count must be an immediate: ~e" count)))
-     (check-imm8 value 'encode-shift)
      (define digit (case name [(shl) 4] [(shr) 5] [(sar) 7]
                           [else (error 'encode-shift "unknown shift: ~e" name)]))
-     (emit-rm width (regs-in-op rm*)
-              (encode-rm rm* digit)
-              (list (if (= width 8) #xc0 #xc1))
-              (u8 value))]
+     (cond
+       [(eq? count 'cl)
+        (emit-rm width (regs-in-op rm*)
+                 (encode-rm rm* digit)
+                 (list (if (= width 8) #xd2 #xd3)))]
+       [(imm-value count)
+        (define value (imm-value count))
+        (check-imm8 value 'encode-shift)
+        (emit-rm width (regs-in-op rm*)
+                 (encode-rm rm* digit)
+                 (list (if (= width 8) #xc0 #xc1))
+                 (u8 value))]
+       [else (error 'encode-shift "shift count must be imm8 or cl: ~e" count)])]
     [_ (error 'encode-shift "~a takes two operands: ~e" name operands)]))
 
 (define (encode-imul operands)
   (match operands
+    [(list src)
+     (define src* (parse-rm src))
+     (define width (rm-width src*))
+     (emit-rm width (regs-in-op src*)
+              (encode-rm src* 5)
+              (list (if (= width 8) #xf6 #xf7)))]
     [(list dst src)
      (define dst* (parse-reg dst))
      (define src* (parse-rm src))
@@ -588,7 +637,31 @@
      (unless (= width (rm-width src*))
        (error 'encode-imul "operand widths do not match: ~e ~e" dst src))
      (emit-rm width (list dst*) (encode-rm src* dst*) '(#x0f #xaf))]
-    [_ (error 'encode-imul "imul takes two operands: ~e" operands)]))
+    [(list dst src imm)
+     (define dst* (parse-reg dst))
+     (define src* (parse-rm src))
+     (define width (reg-width dst*))
+     (unless (= width (rm-width src*))
+       (error 'encode-imul "operand widths do not match: ~e ~e" dst src))
+     (unless (memq width '(16 32 64))
+       (error 'encode-imul "three-operand imul needs 16/32/64-bit operands: ~e" operands))
+     (define value (or (imm-value imm)
+                       (error 'encode-imul "imul immediate must be an integer: ~e" imm)))
+     (cond
+       [(<= -128 value 127)
+        (emit-rm width (list dst*) (encode-rm src* dst*) '(#x6b) (u8 value))]
+       [else
+        (case width
+          [(16)
+           (check-imm16 value 'encode-imul)
+           (emit-rm 16 (list dst*) (encode-rm src* dst*) '(#x69) (u16 value))]
+          [(32)
+           (check-imm32 value 'encode-imul)
+           (emit-rm 32 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))]
+          [(64)
+           (check-imm32/signed value 'encode-imul)
+           (emit-rm 64 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))])])]
+    [_ (error 'encode-imul "imul takes 1, 2 or 3 operands: ~e" operands)]))
 
 (define (encode-divide name operands)
   (match operands
@@ -666,10 +739,262 @@
   (unless (null? operands) (error 'encode-ud2 "ud2 takes no operands: ~e" operands))
   '(#x0f #x0b))
 
+
+;; ---------------------------------------------------------------------------
+;; 系统 / 整数扩展
+;; ---------------------------------------------------------------------------
+
+(define (encode-cdqe operands)
+  (unless (null? operands)
+    (error 'encode-cdqe "cdqe takes no operands: ~e" operands))
+  '(#x48 #x98))
+
+(define (encode-bswap operands)
+  (match operands
+    [(list reg)
+     (define r (parse-reg reg))
+     (define width (reg-width r))
+     (unless (memq width '(32 64))
+       (error 'encode-bswap "bswap needs a 32/64-bit register: ~e" reg))
+     (define rex (make-rex (= width 64) (list r) 0 0
+                           (if (>= (reg-index r) 8) 1 0)))
+     (append (if rex (list rex) '())
+             (list #x0f (+ #xc8 (bitwise-and (reg-index r) #b111))))]
+    [_ (error 'encode-bswap "bswap takes one register: ~e" operands)]))
+
+(define (encode-xchg operands)
+  (match operands
+    [(list a b)
+     (define a* (parse-rm a))
+     (define b* (parse-rm b))
+     (define regs (append (regs-in-op a*) (regs-in-op b*)))
+     (cond
+       [(and (reg? a*) (reg? b*))
+        (define width (reg-width a*))
+        (unless (= width (reg-width b*))
+          (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
+        (emit-rm width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
+       [(and (reg? a*) (mem? b*))
+        (define width (reg-width a*))
+        (unless (= width (mem-width b*))
+          (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
+        (emit-rm width regs (encode-rm b* a*) (list (if (= width 8) #x86 #x87)))]
+       [(and (mem? a*) (reg? b*))
+        (define width (reg-width b*))
+        (unless (= width (mem-width a*))
+          (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
+        (emit-rm width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
+       [else (error 'encode-xchg "unsupported xchg operands: ~e" operands)])]
+    [_ (error 'encode-xchg "xchg takes two operands: ~e" operands)]))
+
+(define (encode-bit-scan name operands)
+  (match operands
+    [(list dst src)
+     (define d (parse-reg dst))
+     (define s (parse-rm src))
+     (define width (reg-width d))
+     (unless (memq width '(16 32 64))
+       (error name "~a needs a 16/32/64-bit destination: ~e" name dst))
+     (unless (= width (rm-width s))
+       (error name "operand widths do not match: ~e ~e" dst src))
+     (case name
+       [(bsf) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbc))]
+       [(bsr) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbd))]
+       [(popcnt) (emit-rm/base width (list d) (encode-rm s d)
+                               '(#x0f #xb8) '() (list #xf3))]
+       [else (error name "unknown bit-scan instruction: ~e" name)])]
+    [_ (error name "~a takes two operands: ~e" name operands)]))
+
+(define (encode-shrd operands)
+  (match operands
+    [(list dst src count)
+     (define d (parse-rm dst))
+     (define s (parse-reg src))
+     (define width (rm-width d))
+     (unless (memq width '(16 32 64))
+       (error 'encode-shrd "shrd needs a 16/32/64-bit destination: ~e" dst))
+     (unless (= width (reg-width s))
+       (error 'encode-shrd "operand widths do not match: ~e ~e" dst src))
+     (define regs (append (regs-in-op d) (list s)))
+     (cond
+       [(eq? count 'cl) (emit-rm width regs (encode-rm d s) '(#x0f #xad))]
+       [(imm-value count)
+        (define v (imm-value count))
+        (check-imm8 v 'encode-shrd)
+        (emit-rm width regs (encode-rm d s) '(#x0f #xac) (u8 v))]
+       [else (error 'encode-shrd "shrd count must be imm8 or cl: ~e" count)])]
+    [_ (error 'encode-shrd "shrd takes dst, src, count: ~e" operands)]))
+
+(define (encode-binary-atomic name eight-op wide-op operands)
+  (match operands
+    [(list dst src)
+     (define d (parse-rm dst))
+     (define s (parse-reg src))
+     (define width (if (mem? d) (mem-width d) (reg-width d)))
+     (unless (= width (reg-width s))
+       (error name "operand widths do not match: ~e ~e" dst src))
+     (emit-rm width (append (regs-in-op d) (list s))
+              (encode-rm d s)
+              (if (= width 8) eight-op wide-op))]
+    [_ (error name "~a takes dst, src: ~e" name operands)]))
+
+(define (encode-rdrand digit name operands)
+  (match operands
+    [(list rm)
+     (define r (parse-rm rm))
+     (define width (rm-width r))
+     (unless (memq width '(16 32 64))
+       (error name "~a needs a 16/32/64-bit operand: ~e" name rm))
+     (emit-rm width (regs-in-op r) (encode-rm r digit) '(#x0f #xc7))]
+    [_ (error name "~a takes one operand: ~e" name operands)]))
+
+(define (encode-clflush operands)
+  (match operands
+    [(list m)
+     (define m* (parse-rm m))
+     (unless (mem? m*) (error 'encode-clflush "clflush needs a memory operand: ~e" m))
+     (emit-rm 8 (regs-in-op m*) (encode-rm m* 7) '(#x0f #xae))]
+    [_ (error 'encode-clflush "clflush takes one memory operand: ~e" operands)]))
+
+(define (port-reg? x)
+  (and (symbol? x) (eq? x 'dx)))
+
+(define (io-register x who)
+  (define r (parse-reg x))
+  (unless (and (= 0 (reg-index r)) (memq (reg-width r) '(8 16 32)))
+    (error who "port I/O register must be al/ax/eax: ~e" x))
+  r)
+
+(define (encode-in operands)
+  (match operands
+    [(list dst port)
+     (define d (io-register dst 'encode-in))
+     (define width (reg-width d))
+     (define p (if (= width 16) (list #x66) '()))
+     (cond
+       [(port-reg? port) (append p (list (if (= width 8) #xec #xed)))]
+       [(imm-value port)
+        (define v (imm-value port))
+        (unless (<= 0 v 255) (error 'encode-in "port immediate out of range: ~e" port))
+        (append p (list (if (= width 8) #xe4 #xe5)) (u8 v))]
+       [else (error 'encode-in "port must be dx or imm8: ~e" port)])]
+    [_ (error 'encode-in "in takes dst, port: ~e" operands)]))
+
+(define (encode-out operands)
+  (match operands
+    [(list port src)
+     (define s (io-register src 'encode-out))
+     (define width (reg-width s))
+     (define p (if (= width 16) (list #x66) '()))
+     (cond
+       [(port-reg? port) (append p (list (if (= width 8) #xee #xef)))]
+       [(imm-value port)
+        (define v (imm-value port))
+        (unless (<= 0 v 255) (error 'encode-out "port immediate out of range: ~e" port))
+        (append p (list (if (= width 8) #xe6 #xe7)) (u8 v))]
+       [else (error 'encode-out "port must be dx or imm8: ~e" port)])]
+    [_ (error 'encode-out "out takes port, src: ~e" operands)]))
+
+(define (fixed-instruction name bytes)
+  (lambda (operands)
+    (unless (null? operands)
+      (error name "~a takes no operands: ~e" name operands))
+    bytes))
+
+
+;; ---------------------------------------------------------------------------
+;; 前缀 / 字符串指令
+;;
+;; 前缀是一个独立的 form：
+;;   (prefix lock (xadd ...))
+;;   (prefix rep  (movs ...))
+;; 它只加一个 legacy prefix 字节，真正的编码仍由内部指令决定。
+;; ---------------------------------------------------------------------------
+
+(define (prefix-byte pname)
+  (case pname
+    [(lock) #xf0]
+    [(rep repz) #xf3]
+    [(repne repnz) #xf2]
+    [else (error 'encode-prefix "unknown instruction prefix: ~e" pname)]))
+
+(define (encode-prefix operands)
+  (match operands
+    [(list pname inner)
+     (unless (form? inner)
+       (error 'encode-prefix "prefix body must be an instruction form: ~e" inner))
+     (append (list (prefix-byte pname))
+             (bytes->list (encode-instruction (car inner) (cdr inner))))]
+    [_ (error 'encode-prefix "prefix takes name and instruction: ~e" operands)]))
+
+(define (string-memory-width op who)
+  (define m (parse-rm op))
+  (unless (mem? m) (error who "string instruction needs a memory operand: ~e" op))
+  (mem-width m))
+
+(define (encode-movs operands)
+  (match operands
+    [(list dst src)
+     (define w (string-memory-width dst 'encode-movs))
+     (unless (= w (string-memory-width src 'encode-movs))
+       (error 'encode-movs "operand widths do not match: ~e ~e" dst src))
+     (case w
+       [(8) '(#xa4)]
+       [(16) '(#x66 #xa5)]
+       [(32) '(#xa5)]
+       [(64) '(#x48 #xa5)]
+       [else (error 'encode-movs "unsupported movs width: ~e" w)])]
+    [_ (error 'encode-movs "movs takes dst, src: ~e" operands)]))
+
+(define (encode-stos operands)
+  (match operands
+    [(list dst src)
+     (define w (string-memory-width dst 'encode-stos))
+     (define s (parse-reg src))
+     (unless (= w (reg-width s))
+       (error 'encode-stos "operand widths do not match: ~e ~e" dst src))
+     (case w
+       [(8) '(#xaa)]
+       [(16) '(#x66 #xab)]
+       [(32) '(#xab)]
+       [(64) '(#x48 #xab)]
+       [else (error 'encode-stos "unsupported stos width: ~e" w)])]
+    [_ (error 'encode-stos "stos takes dst, src: ~e" operands)]))
+
+(define (string-port? x)
+  (and (symbol? x) (eq? x 'dx)))
+
+(define (encode-ins operands)
+  (match operands
+    [(list dst port)
+     (unless (string-port? port)
+       (error 'encode-ins "ins port must be dx: ~e" port))
+     (define w (string-memory-width dst 'encode-ins))
+     (case w
+       [(8) '(#x6c)]
+       [(16) '(#x66 #x6d)]
+       [(32) '(#x6d)]
+       [else (error 'encode-ins "ins supports only b8/b16/b32: ~e" w)])]
+    [_ (error 'encode-ins "ins takes dst, dx: ~e" operands)]))
+
+(define (encode-outs operands)
+  (match operands
+    [(list port src)
+     (unless (string-port? port)
+       (error 'encode-outs "outs port must be dx: ~e" port))
+     (define w (string-memory-width src 'encode-outs))
+     (case w
+       [(8) '(#x6e)]
+       [(16) '(#x66 #x6f)]
+       [(32) '(#x6f)]
+       [else (error 'encode-outs "outs supports only b8/b16/b32: ~e" w)])]
+    [_ (error 'encode-outs "outs takes dx, src: ~e" operands)]))
+
 ;; ---------------------------------------------------------------------------
 ;; 表
 ;; ---------------------------------------------------------------------------
 
+;; arity 是固定操作数个数；#f 表示可变元数（例如 imul 的 1/2/3 形式）。
 (struct insn-def (arity encode) #:transparent)
 
 (define instruction-table
@@ -699,13 +1024,51 @@
    'shl        (insn-def 2 (lambda (ops) (encode-shift 'shl ops)))
    'shr        (insn-def 2 (lambda (ops) (encode-shift 'shr ops)))
    'sar        (insn-def 2 (lambda (ops) (encode-shift 'sar ops)))
-   'imul       (insn-def 2 encode-imul)
+   'imul       (insn-def #f encode-imul)
    'div        (insn-def 1 (lambda (ops) (encode-divide 'div ops)))
    'idiv       (insn-def 1 (lambda (ops) (encode-divide 'idiv ops)))
    'movzx      (insn-def 2 (lambda (ops) (encode-movx #f ops)))
    'movsx      (insn-def 2 (lambda (ops) (encode-movx #t ops)))
    'setcc      (insn-def 2 encode-setcc)
    'cmovcc     (insn-def 3 encode-cmovcc)
+   'xchg       (insn-def 2 encode-xchg)
+   'bswap      (insn-def 1 encode-bswap)
+   'bsf        (insn-def 2 (lambda (ops) (encode-bit-scan 'bsf ops)))
+   'bsr        (insn-def 2 (lambda (ops) (encode-bit-scan 'bsr ops)))
+   'popcnt     (insn-def 2 (lambda (ops) (encode-bit-scan 'popcnt ops)))
+   'shrd       (insn-def 3 encode-shrd)
+   'cmpxchg    (insn-def 2 (lambda (ops)
+                             (encode-binary-atomic 'cmpxchg
+                                                   '(#x0f #xb0) '(#x0f #xb1) ops)))
+   'xadd       (insn-def 2 (lambda (ops)
+                             (encode-binary-atomic 'xadd
+                                                   '(#x0f #xc0) '(#x0f #xc1) ops)))
+   'rdrand     (insn-def 1 (lambda (ops) (encode-rdrand 6 'rdrand ops)))
+   'rdseed     (insn-def 1 (lambda (ops) (encode-rdrand 7 'rdseed ops)))
+   'clflush    (insn-def 1 encode-clflush)
+   'in         (insn-def 2 encode-in)
+   'out        (insn-def 2 encode-out)
+   'prefix     (insn-def 2 encode-prefix)
+   'movs       (insn-def 2 encode-movs)
+   'stos       (insn-def 2 encode-stos)
+   'ins        (insn-def 2 encode-ins)
+   'outs       (insn-def 2 encode-outs)
+   'cdqe       (insn-def 0 (fixed-instruction 'cdqe '(#x48 #x98)))
+   'cpuid      (insn-def 0 (fixed-instruction 'cpuid '(#x0f #xa2)))
+   'rdtsc      (insn-def 0 (fixed-instruction 'rdtsc '(#x0f #x31)))
+   'rdtscp     (insn-def 0 (fixed-instruction 'rdtscp '(#x0f #x01 #xf9)))
+   'syscall    (insn-def 0 (fixed-instruction 'syscall '(#x0f #x05)))
+   'clc        (insn-def 0 (fixed-instruction 'clc '(#xf8)))
+   'stc        (insn-def 0 (fixed-instruction 'stc '(#xf9)))
+   'cli        (insn-def 0 (fixed-instruction 'cli '(#xfa)))
+   'sti        (insn-def 0 (fixed-instruction 'sti '(#xfb)))
+   'hlt        (insn-def 0 (fixed-instruction 'hlt '(#xf4)))
+   'pause      (insn-def 0 (fixed-instruction 'pause '(#xf3 #x90)))
+   'pushfq     (insn-def 0 (fixed-instruction 'pushfq '(#x9c)))
+   'popfq      (insn-def 0 (fixed-instruction 'popfq '(#x9d)))
+   'mfence     (insn-def 0 (fixed-instruction 'mfence '(#x0f #xae #xf0)))
+   'lfence     (insn-def 0 (fixed-instruction 'lfence '(#x0f #xae #xe8)))
+   'sfence     (insn-def 0 (fixed-instruction 'sfence '(#x0f #xae #xf8)))
    'cqo        (insn-def 0 encode-cqo)
    'cdq        (insn-def 0 encode-cdq)
    'ret        (insn-def 0 encode-ret)
@@ -721,9 +1084,10 @@
 (define (encode-instruction name operands)
   (define d (hash-ref instruction-table name #f))
   (unless d (error 'encode-instruction "unknown amd64 instruction: ~e" name))
-  (unless (= (length operands) (insn-def-arity d))
+  (define arity (insn-def-arity d))
+  (when (and arity (not (= (length operands) arity)))
     (error 'encode-instruction "~a expects ~a operand(s), got ~a: ~e"
-           name (insn-def-arity d) (length operands) operands))
+           name arity (length operands) operands))
   (list->bytevector ((insn-def-encode d) operands)))
 
 ;; 布局阶段用的尺寸。符号 displacement 暂时拒绝: 还没有把"必须 disp32"
@@ -748,10 +1112,19 @@
     [else operands]))
 
 (define (instruction-size name operands)
-  (define branch? (memq name '(jmp-short jmp-near
-                               jcc-short jcc-near
-                               call-near)))
-  (define ops (if branch?
-                  (size-branch-operands name operands)
-                  (map size-safe-operand operands)))
-  (bytes-length (encode-instruction name ops)))
+  (cond
+    [(eq? name 'prefix)
+     (match operands
+       [(list pname inner)
+        (unless (form? inner)
+          (error 'instruction-size "prefix body must be an instruction form: ~e" inner))
+        (+ 1 (instruction-size (car inner) (cdr inner)))]
+       [_ (error 'instruction-size "prefix takes name and instruction: ~e" operands)])]
+    [else
+     (define branch? (memq name '(jmp-short jmp-near
+                                  jcc-short jcc-near
+                                  call-near)))
+     (define ops (if branch?
+                     (size-branch-operands name operands)
+                     (map size-safe-operand operands)))
+     (bytes-length (encode-instruction name ops))]))

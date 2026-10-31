@@ -241,9 +241,44 @@ register
 (pop rax)
 (setcc e al)
 (cmovcc e rax rbx)
+(bswap rax)
+(bsf rax rbx)
+(shrd rax rdx 5)
+(imul rax rbx 5)
+(push 0)
+(push (b64 (base rbp) (disp -8)))
+(in eax dx)
+(out 128 al)
+(mfence)
+(pushfq)
 (nop)
 (ud2)
 ```
+
+### 6.1 前缀
+
+前缀是显式 form，不是助记符的一部分：
+
+```scheme
+(prefix lock (xadd (b64 (base rax)) rbx))
+(prefix rep  (movs (b64 (base rdi) (disp 0))
+                   (b64 (base rsi) (disp 0))))
+```
+
+`lock` -> `F0`，`rep` / `repz` -> `F3`，`repne` / `repnz` -> `F2`。
+尺寸是 `1 + 内部指令尺寸`。
+
+### 6.2 字符串指令
+
+```scheme
+(movs dst src)
+(stos dst src)
+(ins  dst dx)
+(outs dx src)
+```
+
+地址是隐式的（`rSI` / `rDI` / `DX`），操作数只用于选择宽度。
+`ins` / `outs` 没有 64 位形式。
 
 第一版指令集合：
 
@@ -255,20 +290,27 @@ shl shr sar
 imul div idiv cqo cdq
 push pop
 setcc cmovcc
+xchg bswap bsf bsr popcnt shrd
+cmpxchg xadd rdrand rdseed
+cpuid rdtsc rdtscp syscall
+in out
+clc stc cli sti hlt pause
+pushfq popfq
+clflush mfence lfence sfence
+movs stos ins outs
+prefix
 nop ud2
 ```
 
-`imul` 当前只支持两操作数 `(imul dst src)`。
-
+`imul` 支持 `(imul src)`、`(imul dst src)`、`(imul dst src imm)`；
+`shl/shr/sar` 支持立即数或 `cl`；`push/pop` 支持寄存器、内存和 `push` 立即数。
 
 建议后续再逐步加：
 
 ```text
 adc sbb
-mul div
-bsf bsr
-popcnt
 SSE/AVX
+PC 控制/调试寄存器
 ```
 
 ## 7. 尺寸类别

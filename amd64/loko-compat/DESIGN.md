@@ -50,6 +50,7 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 | `movsxd` | `movsx` | 32 → 64 符号扩展 |
 | `sete` / `setc` / `setnp` … | `(setcc cc rm)` | 条件码别名 |
 | `cmovnc` / `cmovz` … | `(cmovcc cc dst src)` | 条件码别名 |
+| `lock.xadd` / `rep.movs` … | `(prefix lock (xadd …))` / `(prefix rep (movs …))` | 前缀变成显式 form |
 | `(call (mem...))` | `(call-indirect mem)` | 直接调用留给 expand-pseudo |
 | `(jmp (mem...))` | `(jmp-indirect mem)` | 直接跳转留给 expand-pseudo |
 

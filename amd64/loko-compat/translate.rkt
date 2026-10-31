@@ -423,6 +423,9 @@
   (define ops (cdr item))
   (cond
     [(memq h '(push pop call jmp)) 64]
+    ;; IN/OUT string forms are 16/32-bit only; Loko writes mem+ and expects
+    ;; the 32-bit form in 64-bit mode.
+    [(memq h '(ins outs)) 32]
     [(set-head? h) 8]
     [(memq h '(movzx movsx)) 'ambiguous]
     [else
@@ -549,10 +552,32 @@
   (define tail (head-tail h "cmov"))
   (and tail (hash-ref cc-alias tail #f)))
 
+;; Loko writes lock.xadd / rep.movs as one mnemonic.  Turn the prefix into
+;; an explicit form so the encoder sees a normal instruction inside.
+(define (prefix-head h)
+  (cond
+    [(head-tail h "lock.") => (lambda (inner) (cons 'lock inner))]
+    [(head-tail h "rep.") => (lambda (inner) (cons 'rep inner))]
+    [else #f]))
+
 (define (translate-instruction ctx item)
   (define h (car item))
   (define default-width (memory-default-width item))
   (cond
+    [(prefix-head h)
+     (define p (prefix-head h))
+     (define inner-out
+       (translate-instruction ctx (cons (cdr p) (cdr item))))
+     (cond
+       [(and (= 1 (length inner-out))
+             (form? (car inner-out))
+             (eq? (caar inner-out) 'comment)
+             (form? (cadar inner-out))
+             (eq? (caadar inner-out) 'loko-compat-problem))
+        inner-out]
+       [else
+        (list (list 'prefix (car p) (car inner-out)))])]
+
     [(eq? h 'jmpf)
      (problem-item ctx (problem 'far-jump-not-supported item))]
 

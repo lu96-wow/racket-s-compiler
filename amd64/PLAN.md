@@ -44,6 +44,11 @@
 - [x] `li` 整数 -> mov，地址表达式 -> RIP-relative lea
 - [x] `loko-compat`：Loko 旧汇编写法 -> 核心 item 的纯变换
 - [x] `comment` 零尺寸 item、`cmovcc`、`b128` 内存宽度事实
+- [x] 整数扩展：`imul` 1/2/3、shift by `cl`、`push/pop` 内存/立即数、`xchg/bswap/bsf/bsr/popcnt/shrd`
+- [x] 系统/原子/端口/屏障指令：`cdqe cpuid rdtsc rdtscp syscall in out cmpxchg xadd rdrand rdseed clflush fences`
+- [x] 前缀与字符串指令：`(prefix lock/rep …)`、`movs/stos/ins/outs`
+- [ ] SSE/xmm、`adc/sbb`
+- [ ] PC 控制面：control/debug registers、`lgdt/lidt/lldt/ltr`、`wrmsr/rdmsr`、`swapgs/sysretq/iretq/jmpf`、16/32 模式
 - [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - [ ] `place` region / 通配、外部 reloc
 

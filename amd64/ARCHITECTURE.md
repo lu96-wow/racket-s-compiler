@@ -2,6 +2,8 @@
 
 > 本文记录跨层规则和当前实现事实。每层细节见各自的 `DESIGN.md`。
 
+> 指令类别、前缀和字符串指令的模型见 [`INSTRUCTIONS.md`](INSTRUCTIONS.md)。
+
 ## 1. 共享事实层
 
 这些模块不是 stage，任何层都可以依赖，但只能提供“事实”，不能包含某层策略：
@@ -10,7 +12,7 @@
 | --- | --- |
 | `sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
 | `item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
-| `insn.rkt` | 真实指令表、`instruction-size`、`encode-instruction` |
+| `insn.rkt` | 真实指令表、前缀/字符串指令、`instruction-size`、`encode-instruction` |
 | `registers.rkt` | 寄存器名、宽度、编号、REX 属性 |
 | `target.rkt` | `target-amd64`、端序字节、填充策略 |
 

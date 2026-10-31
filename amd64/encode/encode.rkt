@@ -52,17 +52,33 @@
     [else op]))
 
 (define (encode-code name operands here symbols)
-  (if (memq name branch-forms)
-      (let* ([target (last operands)]
-             [size (instruction-size name operands)]
-             [address (resolve-symbol symbols target)]
-             [offset (- address (+ here size))]
-             [ops (append (drop-right operands 1) (list offset))])
-        (encode-instruction name ops))
-      (let* ([size (instruction-size name operands)]
-             [ops (map (lambda (op) (resolve-operand op here size symbols))
-                       operands)])
-        (encode-instruction name ops))))
+  (cond
+    [(eq? name 'prefix)
+     (unless (and (= 2 (length operands)) (form? (cadr operands)))
+       (error 'encode "bad prefix form: ~e" (cons name operands)))
+     (define pname (car operands))
+     (define inner (cadr operands))
+     ;; The prefix byte shifts the inner instruction by one byte, so
+     ;; RIP-relative operands inside it use here+1 and the inner size.
+     (define inner-size (instruction-size (car inner) (cdr inner)))
+     (define inner* (cons (car inner)
+                          (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbols))
+                               (cdr inner))))
+     (encode-instruction 'prefix (list pname inner*))]
+
+    [(memq name branch-forms)
+     (let* ([target (last operands)]
+            [size (instruction-size name operands)]
+            [address (resolve-symbol symbols target)]
+            [offset (- address (+ here size))]
+            [ops (append (drop-right operands 1) (list offset))])
+       (encode-instruction name ops))]
+
+    [else
+     (let* ([size (instruction-size name operands)]
+            [ops (map (lambda (op) (resolve-operand op here size symbols))
+                      operands)])
+       (encode-instruction name ops))]))
 
 (define (encode-segment target seg symbols)
   (define name (segment-field seg 'name))

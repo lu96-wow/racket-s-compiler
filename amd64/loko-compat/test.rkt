@@ -151,3 +151,23 @@
    '(loko-source (text (call rax) (jmp rbx)) (data))))
 (check-equal? (field 'program-items indirect-reg)
               '((call-indirect rax) (jmp-indirect rbx)))
+
+;; Loko's lock.* / rep.* spellings become explicit prefix forms
+(define prefixed
+  (translate-loko-source
+   '(loko-source
+     (text
+      (lock.xadd (mem+ cpu-counter) ebx)
+      (rep.movs (mem64+ rdi) (mem64+ rsi))
+      (rep.stos (mem64+ rdi) rax)
+      (rep.ins (mem+ rdi) dx)
+      (rep.outs dx (mem+ rsi)))
+     (data))))
+(check-equal? (field 'problems prefixed) '())
+(check-equal? (field 'program-items prefixed)
+              '((prefix lock (xadd (b32 (disp (cpu-counter))) ebx))
+                (prefix rep (movs (b64 (base rdi) (disp 0))
+                                  (b64 (base rsi) (disp 0))))
+                (prefix rep (stos (b64 (base rdi) (disp 0)) rax))
+                (prefix rep (ins (b32 (base rdi) (disp 0)) dx))
+                (prefix rep (outs dx (b32 (base rsi) (disp 0))))))

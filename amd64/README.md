@@ -9,6 +9,7 @@
 | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层、依赖规则、不变量、错误模型 |
 | [`SEXP.md`](SEXP.md) | 程序/数据/内存/控制转移的 s-expression 形式 |
+| [`INSTRUCTIONS.md`](INSTRUCTIONS.md) | 指令类别、前缀、字符串指令、扩展顺序 |
 | [`PLAN.md`](PLAN.md) | 目标、阶段计划和进度 |
 | [`loko-compat/DESIGN.md`](loko-compat/DESIGN.md) | Loko 旧汇编写法到核心 item 的纯变换 |
 | `*/DESIGN.md` | 每层的职责、输入输出、边界 |
@@ -83,6 +84,10 @@ amd64/
 - 符号内存 displacement（固定 disp32，encode 时解析）
 - 整数 `li` -> `mov`，地址表达式 `li` -> RIP-relative `lea`
 - 基本整数/控制流/内存指令编码
+- 整数扩展：`imul` 1/2/3、shift by `cl`、`push/pop` 内存/立即数、`xchg/bswap/bsf/bsr/popcnt/shrd`
+- 系统指令：`cdqe/cpuid/rdtsc/rdtscp/syscall/in/out/clc/stc/cli/sti/hlt/pushfq/popfq`
+- 原子/缓存/屏障：`cmpxchg/xadd/rdrand/rdseed/clflush/mfence/lfence/sfence`
+- 前缀和字符串指令：`(prefix lock …)`、`(prefix rep …)`、`movs/stos/ins/outs`
 - `comment` 零尺寸 item、`cmovcc`、`b128` 内存宽度事实
 
 未实现：
@@ -92,7 +97,9 @@ amd64/
 - `needs-far` / far form / trampoline / scratch 寄存器
 - image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - 外部符号 / reloc / loader
-- `imul` 三操作数、`shift by cl`、`adc/sbb`、SSE/AVX
+- `adc/sbb`、SSE/AVX、XMM 寄存器类
+- PC 控制/调试寄存器、`lgdt/lidt/lldt/ltr`、`wrmsr/rdmsr`、`swapgs/sysretq/iretq/jmpf`
+- 16/32 位模式
 - `li` 超出 RIP-relative ±2GiB 的地址
 
 ## 测试

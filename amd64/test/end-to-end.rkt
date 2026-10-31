@@ -76,3 +76,21 @@
               '((kind code) (start #x200000) (size 0) (bytes #"")))
 (check-equal? (cddr (cadr (cdr byte-build)))
               '((kind data) (start #x300000) (size 1) (bytes #"\xff")))
+
+;; prefix forms must resolve symbolic memory operands inside the inner instruction
+(define prefix-items
+  '((label text)
+    (prefix lock (xadd (b64 (disp (data))) rbx))
+    (ret)
+    (label data)
+    (value 8 0)))
+(define prefix-measured (layout-items target-amd64 prefix-items spec))
+(check-equal? (cdr (assq 'problems prefix-measured)) '())
+(define prefix-bound (bind-labels prefix-measured))
+(check-equal? (cdr (assq 'problems prefix-bound)) '())
+(define prefix-build (encode-layout target-amd64 prefix-bound))
+(check-equal? (cddr (car (cdr prefix-build)))
+              '((kind code)
+                (start #x200000)
+                (size 11)
+                (bytes #"\xf0H\x0f\xc1\x1c%\x00\x00\x30\x00\xc3")))
