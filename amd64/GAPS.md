@@ -27,6 +27,7 @@
 - 干涉图 + 图着色分配（`allocate.rkt`）
 - 组合入口与未分配/未着色报告（`lower.rkt`）
 - 调用点 save/restore 注记展开（`calls.rkt`）
+- `lower/ir.rkt`：`loko-ir` code section 的 lower，已接入 flow
 - `%init-bss` 的 64 位显式展开（`translate.rkt`）
 
 还缺：
@@ -39,12 +40,19 @@
 
 ### `loko-compatibility/image/`
 
-- 消费 `loko-ir` 的 `origin` / `sections` / `modes`
-- `%origin` -> segment start
-- 把 `sections`/`comms` 转成带 bss segment 的 `layout-spec`
-- `%comm` -> BSS/NOBITS
+已完成：
+
+- `layout-spec.rkt`：`loko-ir` 的 sections/origin/modes/comms -> 带 bss segment 的
+  粗布局 `layout-spec`
+- section 起始 synthetic label、place 规则、空 section、data section 边界
+- code section 非 64 位 -> `mode-unsupported`
+
+还缺：
+
+- 精确尺寸（当前用 near 分支上界，DCE 后可能留 gap）
 - `%call` -> 声明式 strtab/symtab，替代宿主回调
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
+- BSS/NOBITS 的 ELF 表示
 - ELF header / segment table / section table / strtab / symtab
 
 ### `amd64-asm/` 通用能力

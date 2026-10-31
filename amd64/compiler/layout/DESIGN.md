@@ -49,7 +49,7 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
   `segment-item-kind-mismatch`。
 - `bss` 段只接受 `label` / `comment` / `align` / `reserve`；`reserve` 不得出现在
   非 bss 段。
-- 段起始对齐、段重叠、段容量都在本层检查。
+- 段起始对齐、段重叠、段容量都在本层检查；空段允许 `start == end`。
 
 ## 校验
 

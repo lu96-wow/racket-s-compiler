@@ -54,7 +54,8 @@
   (unless (= (length names) (length (remove-duplicates names)))
     (problem! (list 'segment-name-duplicated names)))
   (for ([s (in-list segments)])
-    (unless (< (segment-start s) (segment-end s))
+    ;; Empty sections (e.g. an unused bss) are valid: start may equal end.
+    (unless (<= (segment-start s) (segment-end s))
       (problem! (list 'segment-bad-range (segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
       (problem! (list 'segment-misaligned

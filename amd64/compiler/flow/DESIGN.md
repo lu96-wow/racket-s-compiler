@@ -27,6 +27,8 @@
 | stage | requires | provides |
 | --- | --- | --- |
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
+| `loko-lower` | `loko-ir` | `loko-ir` |
+| `loko-image` | `loko-ir` | `program-items` `data-items` `layout-spec` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -45,13 +47,21 @@
   '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
   ```
 
-- Loko 兼容流：
+- Loko 自动流：
 
   ```racket
-  '(loko-compat expand-pseudo analyze dce relax bind-labels encode)
+  '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode)
   ```
 
   对应阶段组是 `'loko`。
+
+- Loko 手动 layout-spec 流：
+
+  ```racket
+  '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode)
+  ```
+
+  对应阶段组是 `'loko-manual`。
 
 - `layout` 与 `relax` 平层：`relax` 自己反复驱动 `layout`。
 - `layout` 直接消费 `program` 的 blocks + flows 和 data runs。
@@ -68,5 +78,6 @@
 - 不替层隐藏依赖；缺 requires 直接报错并列出 providers。
 - `loko-compat` 采集 `%section` / `%origin` / `%mode` / `%comm` 到 `loko-ir`；
   当前只有 `%call` 仍作为问题报错。
-- 还没有 `loko-lower` / `loko-image` stage；`'loko` 组暂时只覆盖
-translate + compiler 后半段。
+- `loko-lower` 已把 `loko-ir` 的 code section 从 `(reg N)` 降到物理寄存器。
+- `loko-image` 已把 `loko-ir` 自动转成粗布局 `layout-spec`；
+  需要自己提供 layout-spec 时用 `'loko-manual`。

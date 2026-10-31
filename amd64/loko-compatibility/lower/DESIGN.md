@@ -29,7 +29,8 @@ uses.rkt        一条指令读/写哪些伪寄存器
 liveness.rkt    基本块 + 每条指令之后的 live-out
 calls.rkt       调用点 save/restore 注记 -> 显式伪寄存器搬运
 allocate.rkt    干涉图 -> 物理寄存器
-lower.rkt       组合入口
+lower.rkt       组合入口（扁平 program-items）
+ir.rkt          对 loko-ir 的 code section 执行 lower
 ```
 
 ## 2. 相关 s-exp
@@ -39,6 +40,9 @@ lower.rkt       组合入口
 ```scheme
 (program-items item ...)
 ```
+
+flow 里还有 `ir.rkt` 的 `lower-loko-ir` 入口，对 `loko-ir` 的每个 code
+section 调用本层。
 
 item 是 `loko-compat` / `expand-pseudo` 之后的普通程序 item。伪寄存器只以
 `(reg N)` 出现，`N` 是非负整数。
@@ -184,8 +188,9 @@ ELF / BSS / symbol table
 ```text
 loko-source
   -> loko-compat
-  -> expand-pseudo       ; 先把 jmp/jcc/call 规范化，CFG 才准确
   -> loko-lower          ; 本层
+  -> loko-image          ; loko-ir -> layout-spec
+  -> expand-pseudo
   -> analyze
   -> dce
   -> relax
@@ -194,6 +199,8 @@ loko-source
 ```
 
 `lower` 内部为了活性会临时调用 `analyze`，但不把 program 结构泄漏给调用方。
+由于它现在位于 `expand-pseudo` 之前，分析前会先用 `rewrite-program` 规范化
+`jmp`/`jcc`/`call`/`li`，避免 CFG 把伪分支当普通 fallthrough。
 
 ## 7. 测试
 
@@ -216,5 +223,4 @@ racket amd64/loko-compatibility/lower/test.rkt
 1. 把 `call-crossing-pseudos` 的值分配到 preserved 寄存器，或者 spill 到栈。
 2. 处理 `%comment allocate-frame` / `frame-size` / `LOCALS`，为 spill 提供槽位。
 3. 支持 coalescing，减少 `mov` 复制。
-4. 把 `lower` 注册成 flow 的可选 stage，输入/输出仍是 `program-items`。
-5. 用真实 Loko codegen 输出做 golden test。
+4. 用真实 Loko codegen 输出做 golden test。

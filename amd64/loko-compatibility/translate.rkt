@@ -44,7 +44,8 @@
 (require racket/match
          "../amd64-asm/sexp.rkt"
          "../amd64-asm/registers.rkt"
-         "../compiler/item.rkt")
+         "../compiler/item.rkt"
+         "ir.rkt")
 
 (provide translate-loko-source
          translate-loko-text-only
@@ -157,12 +158,11 @@
   (unless (and (pair? modes) (eqv? (cadr (car modes)) mode))
     (set-section-state-modes! s (cons (list index mode) modes))))
 
-(define (section->sexp s)
-  (list 'section
-        (list 'name (section-state-name s))
-        (list 'kind (section-state-kind s))
-        (cons 'modes (reverse (section-state-modes s)))
-        (cons 'items (reverse (section-state-items s)))))
+(define (section-state->sexp s)
+  (make-section (section-state-name s)
+                (section-state-kind s)
+                (reverse (section-state-modes s))
+                (reverse (section-state-items s))))
 
 ;; ---------------------------------------------------------------------------
 ;; 来源
@@ -937,5 +937,5 @@
           (cons 'symbols (reverse (ctx-symbols ctx)))
           (cons 'comms (reverse (ctx-comms ctx)))
           (list 'origin (ctx-origin ctx))
-          (cons 'sections (map section->sexp sections))
+          (cons 'sections (map section-state->sexp sections))
           (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))

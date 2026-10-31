@@ -22,6 +22,9 @@
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
 (require (only-in "../../loko-compatibility/translate.rkt" translate-loko-source)
+         (only-in "../../loko-compatibility/ir.rkt" make-loko-ir)
+         (only-in "../../loko-compatibility/lower/ir.rkt" lower-loko-ir)
+         (only-in "../../loko-compatibility/image/layout-spec.rkt" build-layout-spec)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program pseudo-leftover?)
@@ -78,12 +81,34 @@
             (hash 'program-items (cdr (assq 'program-items fields))
                   'data-items (cdr (assq 'data-items fields))
                   'loko-aliases (cdr (assq 'aliases fields))
-                  'loko-ir (list 'loko-ir
-                                 (assq 'origin fields)
-                                 (assq 'symbols fields)
-                                 (assq 'comms fields)
-                                 (assq 'sections fields))))
+                  'loko-ir (make-loko-ir (cadr (assq 'origin fields))
+                                         (cdr (assq 'symbols fields))
+                                         (cdr (assq 'comms fields))
+                                         (cdr (assq 'sections fields)))))
           "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols/comms）")
+
+   'loko-lower
+   (stage 'loko-lower '(loko-ir) '(loko-ir)
+          (lambda (_target in)
+            (define-values (ir problems)
+              (lower-loko-ir (hash-ref in 'loko-ir)))
+            (when (pair? problems)
+              (error 'loko-lower "~e" problems))
+            (hash 'loko-ir ir))
+          "loko-ir: code section 的 (reg N) -> 物理寄存器")
+
+   'loko-image
+   (stage 'loko-image '(loko-ir)
+          '(program-items data-items layout-spec)
+          (lambda (_target in)
+            (define-values (spec program-items data-items problems)
+              (build-layout-spec (hash-ref in 'loko-ir)))
+            (when (pair? problems)
+              (error 'loko-image "~e" problems))
+            (hash 'program-items program-items
+                  'data-items data-items
+                  'layout-spec spec))
+          "loko-ir -> layout-spec + 扁平 items")
 
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
@@ -180,7 +205,8 @@
 ;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
 (define stage-groups
   (hash
-   'loko     '(loko-compat expand-pseudo analyze dce relax bind-labels encode)
+   'loko        '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode)
+   'loko-manual '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode)
    'frontend '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
    'backend  '(relax bind-labels encode)

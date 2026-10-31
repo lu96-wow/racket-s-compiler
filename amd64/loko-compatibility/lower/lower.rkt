@@ -21,7 +21,8 @@
 ;;; 这些都属于后续层；未着色的伪寄存器会以 problem 形式保留下来，
 ;;; 不会被静默丢掉。
 
-(require "pseudo.rkt"
+(require "../../compiler/expand-pseudo/rewrite.rkt"
+         "pseudo.rkt"
          "liveness.rkt"
          "allocate.rkt")
 
@@ -54,8 +55,13 @@
     (cond
       [allocation (values (allocation->hash allocation) '())]
       [else
-       (define lv (compute-liveness items))
-       (define result (allocate-pseudo-registers lv items #:available available))
+       ;; Normalize pseudo branches before CFG/liveness; the returned
+       ;; items still keep their original spellings for later stages.
+       (define analysis-items
+         (rewrite-program items #:short-transfers? #t))
+       (define lv (compute-liveness analysis-items))
+       (define result
+         (allocate-pseudo-registers lv analysis-items #:available available))
        (values (allocation-result-allocation result)
                (allocation-result-uncolored result))]))
 

@@ -85,10 +85,11 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - encode 最终尺寸断言
 - Loko 旧汇编写法兼容层（`$`、符号位运算）
 - lower 第一版：伪寄存器、liveness、图着色分配、调用点 save/restore 展开
-  （不含 spill/frame allocation）
+  （不含 spill/frame allocation）；`loko-lower` 已接入 flow
 - 通用 `reserve` / `kind bss` 段；BSS 不生成文件字节
 - Loko `%init-bss` 的 64 位显式展开（opt-in）
 - Loko `%comm` 收集与 bss section 展开
+- `loko-ir` -> 自动 `layout-spec`（sections/origin/bss，粗布局上界）
 
 未实现：
 
@@ -112,5 +113,6 @@ racket amd64/compiler/relax/test.rkt
 racket amd64/compiler/test/end-to-end.rkt
 racket amd64/compiler/test/flow-test.rkt
 racket amd64/loko-compatibility/test.rkt
+racket amd64/loko-compatibility/image/test.rkt
 racket amd64/loko-compatibility/lower/test.rkt
 ```

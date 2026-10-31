@@ -147,17 +147,19 @@ push/pop 或改用自定义指令序列。
 
 ```sh
 racket amd64/loko-compatibility/test.rkt
+racket amd64/loko-compatibility/image/test.rkt
 ```
 
 ## 8. 后续结构
 
-`loko-compatibility/` 现在有语法适配器和第一版 lower：
+`loko-compatibility/` 现在有语法适配器、第一版 image layout 和 lower：
 
 ```text
 loko-compatibility/
   translate.rkt        ; 已有：旧写法 -> 核心 item + 符号元数据
   lower/               ; 已有：伪寄存器 / liveness / 图着色 / call save；见 lower/DESIGN.md
-  image/               ; 计划：loko-ir -> layout-spec、%call、ELF/symtab
+  image/layout-spec.rkt ; 已有：loko-ir -> layout-spec；见 image/DESIGN.md
+  image/               ; 计划：%call、ELF/symtab
 ```
 
 lower 目前还缺 spill 和 frame allocation；详细缺口见

@@ -21,8 +21,10 @@
 ## 2. 流水线
 
 ```text
-loko-source -> loko-compat -> program-items / data-items + loko-ir
-  -> expand-pseudo -> loko-lower -> analyze -> dce
+loko-source -> loko-compat -> loko-ir
+  -> loko-lower (可选)
+  -> loko-image -> program-items / data-items / layout-spec
+  -> expand-pseudo -> analyze -> dce
   -> relax (内部反复 layout) -> bind-labels -> encode
 
 rich data -> expand-data -> flatten -> program-items / data-items
@@ -31,7 +33,9 @@ rich data -> expand-data -> flatten -> program-items / data-items
 
 `layout` 是可单独选择的 stage；默认流不直接写 `layout`。
 `loko-compat`（目录 `loko-compatibility/`）把旧写法变换成核心 item，并采集
-`loko-ir`（sections / origin / mode / symbols）；image 计划仍属于后续层。
+`loko-ir`（sections / origin / mode / symbols / comms）。
+`loko-image`（目录 `loko-compatibility/image/`）把 `loko-ir` 转成自动
+`layout-spec` 和扁平 items。
 `loko-lower`（目录 `loko-compatibility/lower/`）消除 `(reg N)`；目前还是可选层，
 尚未注册进 `flow` 的默认 stage 表。
 
@@ -40,7 +44,8 @@ rich data -> expand-data -> flatten -> program-items / data-items
 | stage | requires | provides |
 | --- | --- | --- |
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
-| `loko-lower`（可选） | `program-items` | `program-items` |
+| `loko-image`（可选） | `loko-ir` | `program-items` `data-items` `layout-spec` |
+| `loko-lower` | `loko-ir` | `loko-ir` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |

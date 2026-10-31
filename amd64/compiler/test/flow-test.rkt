@@ -56,7 +56,7 @@
                   (reserve 32)
                   (%label bss-end))))
          (cons 'layout-spec bss-spec))
-   'loko))
+   'loko-manual))
 (check-equal? (cddr (cadr (cdr bss-build)))
               '((kind bss) (start #x300000) (size 32) (bytes #"")))
 
@@ -83,9 +83,76 @@
                   (%section bss)
                   (%label bss-end))))
          (cons 'layout-spec comm-spec))
-   'loko))
+   'loko-manual))
 (check-equal? (cddr (cadr (cdr comm-build)))
               '((kind bss) (start #x300000) (size 8192) (bytes #"")))
+
+;; automatic loko-ir -> layout-spec (no layout-spec seed)
+(define auto-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%origin #x200000)
+                  (%mode 64)
+                  (%section text)
+                  (%label text)
+                  (ret))
+                 (data
+                  (%label data)
+                  (%u64 #x1234)))))
+   'loko))
+(check-equal? auto-build
+              '(build
+                (segment (name text) (kind code) (start #x200000) (size 1)
+                         (bytes #"\xc3"))
+                (segment (name data) (kind data) (start #x200001) (size 8)
+                         (bytes #"\x34\x12\x00\x00\x00\x00\x00\x00"))))
+
+;; automatic layout keeps an empty data section and a real bss segment
+(define auto-bss-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%origin #x200000)
+                  (%mode 64)
+                  (%section text)
+                  (%label text)
+                  (%init-bss)
+                  (ret))
+                 (data
+                  (%label bss)
+                  (%section bss)
+                  (reserve 32)
+                  (%label bss-end)))))
+   'loko))
+(check-equal? (cddr (cadddr auto-bss-build))
+              '((kind bss) (start #x200017) (size 32) (bytes #"")))
+
+;; loko-lower is part of the automatic loko flow
+(define reg-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%origin #x200000)
+                  (%mode 64)
+                  (%section text)
+                  (%label text)
+                  (mov (reg 0) 1)
+                  (add (reg 0) 1)
+                  (ret))
+                 (data))))
+   'loko))
+(check-equal? (cddr (car (cdr reg-build)))
+              '((kind code)
+                (start #x200000)
+                (size 12)
+                (bytes #"H\xc7\xc0\x01\x00\x00\x00H\x83\xc0\x01\xc3")))
 
 (displayln "amd64 flow tests: ok")
 
@@ -140,7 +207,7 @@
                   (%label data)
                   (%u64 #x1234))))
          (cons 'layout-spec spec))
-   'loko))
+   'loko-manual))
 
 (check-equal? loko-build
               '(build
