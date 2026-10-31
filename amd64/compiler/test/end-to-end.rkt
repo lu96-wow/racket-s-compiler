@@ -150,6 +150,31 @@
                 (size 16)
                 (bytes #"\x01\x00\x30\x00\x00\x00\x00\x00\x00\x00\x60\x00\x00\x00\x00\x00")))
 
+;; bss: layout assigns addresses, encode emits no file bytes
+(define bss-spec
+  '((segments
+     (segment (name text) (kind code) (start #x200000) (end #x200100) (align 16))
+     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+    (place text (text))
+    (place bss (bss) (common))))
+(define bss-items
+  '((label text) (ret)
+    (label bss) (reserve 3) (align 16)
+    (label common) (reserve 32)))
+(define bss-measured (layout-flat-items target-amd64 bss-items bss-spec))
+(check-equal? (cdr (assq 'problems bss-measured)) '())
+(define bss-bound (bind-labels bss-measured))
+(check-equal? (cdr (assq 'symbols bss-bound))
+              '((symbol (text) text 0 #x200000)
+                (symbol (bss) bss 0 #x300000)
+                (symbol (common) bss 16 #x300010)))
+(define bss-build (encode-layout target-amd64 bss-bound))
+(check-equal? (cddr (cadr (cdr bss-build)))
+              '((kind bss)
+                (start #x300000)
+                (size 48)
+                (bytes #"")))
+
 ;; bind-labels is the final value-width check
 (define bad-value-items '((label data) (value 1 300)))
 (define bad-value-measured (layout-flat-items target-amd64 bad-value-items spec))

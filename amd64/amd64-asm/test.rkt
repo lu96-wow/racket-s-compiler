@@ -134,6 +134,7 @@
 (check-equal? (enc 'rdtscp) (bytes #x0f #x01 #xf9))
 (check-equal? (enc 'syscall) (bytes #x0f #x05))
 (check-equal? (enc 'clc) (bytes #xf8))
+(check-equal? (enc 'cld) (bytes #xfc))
 (check-equal? (enc 'stc) (bytes #xf9))
 (check-equal? (enc 'cli) (bytes #xfa))
 (check-equal? (enc 'sti) (bytes #xfb))

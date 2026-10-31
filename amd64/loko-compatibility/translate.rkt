@@ -57,7 +57,17 @@
 ;; aliases:     已解析的 %equiv 值
 ;; problems:    本次变换发现的问题（逆序）
 ;; counter:     匿名标签编号
-(struct ctx (labels raw-aliases aliases problems counter) #:mutable)
+;; section:     当前 section 名字
+;; symbols:     Loko 符号元数据（逆序）
+;; sections:    section 名字 -> section-state
+;; section-order: section-state 的逆序创建顺序
+;; current-section: 当前 section-state
+;; origin:      %origin 设置的整体起址
+;; mode:        当前 %mode（16/32/64，未设置时 #f）
+(struct ctx (labels raw-aliases aliases problems counter section symbols
+                sections section-order current-section origin mode) #:mutable)
+
+(struct section-state (name kind items modes) #:mutable)
 
 ;; Internal problems are records so they cannot collide with a label path
 ;; whose name happens to be `problem`.  They become tagged lists only at the
@@ -82,6 +92,58 @@
 
 (define (problem->comment-form p)
   (list 'comment (cons 'loko-compat-problem (cdr (problem->sexp p)))))
+
+(define (record-symbol! ctx start end misc)
+  (set-ctx-symbols! ctx
+                    (cons (list 'symbol start end (ctx-section ctx) misc)
+                          (ctx-symbols ctx))))
+
+;; ---------------------------------------------------------------------------
+;; sections / origin / mode
+;; ---------------------------------------------------------------------------
+
+(define (section-kind name)
+  (case name
+    [(text) 'code]
+    [(data elf) 'data]
+    [(bss) 'bss]
+    [else 'data]))
+
+(define (ensure-section! ctx name)
+  (define table (ctx-sections ctx))
+  (or (hash-ref table name #f)
+      (let ([s (section-state name (section-kind name) '() '())])
+        (hash-set! table name s)
+        (set-ctx-section-order! ctx (cons s (ctx-section-order ctx)))
+        s)))
+
+(define (select-section! ctx name)
+  (set-ctx-section! ctx name)
+  (set-ctx-current-section! ctx (ensure-section! ctx name)))
+
+(define (current-section! ctx)
+  (or (ctx-current-section ctx)
+      (select-section! ctx (ctx-section ctx))))
+
+(define (add-section-items! ctx items)
+  (when (pair? items)
+    (define s (current-section! ctx))
+    (set-section-state-items! s
+                              (append (reverse items) (section-state-items s)))))
+
+(define (add-mode! ctx mode)
+  (define s (current-section! ctx))
+  (define index (length (section-state-items s)))
+  (define modes (section-state-modes s))
+  (unless (and (pair? modes) (eqv? (cadr (car modes)) mode))
+    (set-section-state-modes! s (cons (list index mode) modes))))
+
+(define (section->sexp s)
+  (list 'section
+        (list 'name (section-state-name s))
+        (list 'kind (section-state-kind s))
+        (cons 'modes (reverse (section-state-modes s)))
+        (cons 'items (reverse (section-state-items s)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 来源
@@ -455,12 +517,20 @@
        [else #f])]))
 
 (define (translate-label ctx item)
-  (define args (cdr item))
-  (cond
-    [(null? args) (record-problem-comment! ctx (problem 'empty-label item))]
-    [else
-     (list (cons 'label
-                 (append* (for/list ([a (in-list args)]) (label-path ctx a)))))])) 
+  (match (cdr item)
+    [(list)
+     (record-problem-comment! ctx (problem 'empty-label item))]
+    [(list start)
+     (define start* (label-path ctx start))
+     (record-symbol! ctx start* start* '())
+     (list (cons 'label start*))]
+    [(cons start (cons end misc))
+     ;; Loko: (%label start end . misc).  END is the symbol's end label,
+     ;; not an alias at this address.  It is defined by its own %label.
+     (define start* (label-path ctx start))
+     (define end* (label-path ctx end))
+     (record-symbol! ctx start* end* misc)
+     (list (cons 'label start*))]))
 
 (define (translate-align ctx item)
   (match (cdr item)
@@ -660,6 +730,41 @@
        [(eq? h 'movsxd) (list (cons 'movsx ops))]
        [else (list (cons h ops))])]))
 
+(define (init-bss-target ctx x)
+  (cond
+    [(path? x) x]
+    [(name? x) (label-path ctx x)]
+    [else #f]))
+
+(define (translate-init-bss ctx item)
+  (define (expand start end)
+    (define start* (init-bss-target ctx start))
+    (define end* (init-bss-target ctx end))
+    (define mode (ctx-mode ctx))
+    (define section-kind* (section-state-kind (current-section! ctx)))
+    (cond
+      [(not (eq? section-kind* 'code))
+       (record-problem-comment! ctx (problem 'init-bss-not-in-code item))]
+      [(not start*) (record-problem-comment! ctx (problem 'bad-init-bss-label start))]
+      [(not end*) (record-problem-comment! ctx (problem 'bad-init-bss-label end))]
+      [(not mode) (record-problem-comment! ctx (problem 'init-bss-mode-not-set item))]
+      [(not (= mode 64))
+       (record-problem-comment! ctx (problem 'init-bss-mode-unsupported item mode))]
+      [else
+       (list '(cld)
+             (list 'li 'rdi start*)
+             (list 'li 'rcx end*)
+             '(sub rcx rdi)
+             '(xor eax eax)
+             (list 'prefix 'rep
+                   (list 'stos
+                         (list 'b8 (list 'base 'rdi) (list 'disp 0))
+                         'al)))]))
+  (match (cdr item)
+    [(list) (expand 'bss 'bss-end)]
+    [(list start end) (expand start end)]
+    [_ (record-problem-comment! ctx (problem 'bad-init-bss item))]))
+
 (define (translate-item ctx item)
   (cond
     [(not (form? item)) (list item)]
@@ -673,13 +778,39 @@
        [(%vu8) (translate-vu8 ctx item)]
        [(%utf8z) (translate-utf8z ctx item)]
        [(%equiv) '()]
-       [(%section %origin %comm %mode %call)
+       [(%section)
+        (match (cdr item)
+          [(list name)
+           (if (name? name)
+               (begin (select-section! ctx name) '())
+               (record-problem-comment! ctx (problem 'bad-section item)))]
+          [_ (record-problem-comment! ctx (problem 'bad-section item))])]
+       [(%origin)
+        (match (cdr item)
+          [(list n)
+           (if (exact-integer? n)
+               (begin (set-ctx-origin! ctx n) '())
+               (record-problem-comment! ctx (problem 'bad-origin item)))]
+          [_ (record-problem-comment! ctx (problem 'bad-origin item))])]
+       [(%mode)
+        (match (cdr item)
+          [(list n)
+           (if (memv n '(16 32 64))
+               (begin
+                 (set-ctx-mode! ctx n)
+                 (add-mode! ctx n)
+                 '())
+               (record-problem-comment! ctx (problem 'bad-mode item)))]
+          [_ (record-problem-comment! ctx (problem 'bad-mode item))])]
+       [(%init-bss) (translate-init-bss ctx item)]
+       [(%comm %call)
         (record-problem-comment! ctx (problem 'directive-needs-image-layer item))]
        [else (translate-instruction ctx item)])]))
 
 (define loko-directive?
   (let ([hs '(%label %comment %align %u8 %u16 %u32 %u64 %u128
-               %vu8 %utf8z %equiv %section %origin %comm %mode %call)])
+               %vu8 %utf8z %equiv %section %origin %comm %mode %call
+               %init-bss)])
     (lambda (x)
       (and (form? x) (memq (car x) hs) #t))))
 
@@ -687,9 +818,17 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
+(define (translate-half ctx items)
+  (append*
+   (for/list ([it (in-list items)])
+     (define out (translate-item ctx it))
+     (add-section-items! ctx out)
+     out)))
+
 (define (translate-loko-source src)
   (define-values (text data) (loko-source-parts src))
-  (let ([ctx (ctx (make-hash) (make-hash) (make-hash) '() 0)])
+  (let ([ctx (ctx (make-hash) (make-hash) (make-hash) '() 0 'text '()
+                  (make-hash) '() #f #f #f)])
 
     ;; Definitions are collected first: code may refer to an alias that is
     ;; defined in the data half (e.g. codegen's initial-pcb-length).
@@ -703,10 +842,10 @@
       (define v (resolve-alias ctx name '()))
       (when (problem? v) (record-problem! ctx v)))
 
-    (define program-items
-      (append* (for/list ([it (in-list text)]) (translate-item ctx it))))
-    (define data-items
-      (append* (for/list ([it (in-list data)]) (translate-item ctx it))))
+    (select-section! ctx 'text)
+    (define program-items (translate-half ctx text))
+    (select-section! ctx 'data)
+    (define data-items (translate-half ctx data))
 
     (define aliases
       (for/list ([name (in-list alias-names)])
@@ -717,4 +856,7 @@
           (cons 'program-items program-items)
           (cons 'data-items data-items)
           (cons 'aliases aliases)
+          (cons 'symbols (reverse (ctx-symbols ctx)))
+          (list 'origin (ctx-origin ctx))
+          (cons 'sections (map section->sexp (reverse (ctx-section-order ctx))))
           (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))

@@ -50,6 +50,8 @@
 - [x] SSE/xmm：`movss/movq/movd/movdqa`、算术/比较/转换、`ldmxcsr/stmxcsr`、`xorps/xorpd/orps`
 - [x] PC 控制面：`mov cr/dr`、`lgdt/lidt/lldt/ltr`、`rdmsr/wrmsr`、`swapgs/sysretq/iretq`
 - [x] 地址表达式支持 `$`（当前 item 地址）
+- [x] 通用 `reserve` / `kind bss` 段；encode 不生成 BSS 文件字节
+- [x] `cld` 与 64 位 `%init-bss` 展开
 - [x] 地址表达式支持符号 `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field`
 - [x] lower 第一版：伪寄存器 `(reg N)`、uses/sets、liveness、图着色分配
 - [x] lower 的调用点 save/restore 注记展开

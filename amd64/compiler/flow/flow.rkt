@@ -67,7 +67,7 @@
 (define stage-table
   (hash
    'loko-compat
-   (stage 'loko-compat '(loko-source) '(program-items data-items loko-aliases)
+   (stage 'loko-compat '(loko-source) '(program-items data-items loko-aliases loko-ir)
           (lambda (_target in)
             (define out (translate-loko-source (hash-ref in 'loko-source)))
             (define fields (cdr out))
@@ -76,8 +76,12 @@
               (error 'loko-compat "~e" problems))
             (hash 'program-items (cdr (assq 'program-items fields))
                   'data-items (cdr (assq 'data-items fields))
-                  'loko-aliases (cdr (assq 'aliases fields))))
-          "Loko 汇编写法 -> 核心 item（纯变换；不处理段/ELF/%call）")
+                  'loko-aliases (cdr (assq 'aliases fields))
+                  'loko-ir (list 'loko-ir
+                                 (assq 'origin fields)
+                                 (assq 'symbols fields)
+                                 (assq 'sections fields))))
+          "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols）")
 
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)

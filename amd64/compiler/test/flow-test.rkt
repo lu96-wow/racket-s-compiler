@@ -31,6 +31,35 @@
                 (segment (name data) (kind data) (start #x300000) (size 8)
                          (bytes #"\x34\x12\x00\x00\x00\x00\x00\x00"))))
 
+;; %init-bss + reserve/bss flows through loko-compat -> compiler
+(define bss-spec
+  '((segments
+     (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
+     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+    (place text (text))
+    (place bss (bss) (bss-end))))
+(define bss-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%origin #x200000)
+                  (%mode 64)
+                  (%section text)
+                  (%label text)
+                  (%init-bss)
+                  (ret))
+                 (data
+                  (%section bss)
+                  (%label bss)
+                  (reserve 32)
+                  (%label bss-end))))
+         (cons 'layout-spec bss-spec))
+   'loko))
+(check-equal? (cddr (cadr (cdr bss-build)))
+              '((kind bss) (start #x300000) (size 32) (bytes #"")))
+
 (displayln "amd64 flow tests: ok")
 
 ;; short branch promoted by relax when the target is out of rel8 range

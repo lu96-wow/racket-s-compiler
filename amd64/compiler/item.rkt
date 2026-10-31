@@ -2,7 +2,8 @@
 ;;; amd64/compiler/item.rkt
 ;;;
 ;;; 程序/数据 item 的共享形状。这里只有形状，不含指令编码，也不含布局策略。
-;;; item: (label …) (comment …) (bytes …) (fill …) (pad …) (align …) (value …) 或指令。
+;;; item: (label …) (comment …) (bytes …) (fill …) (pad …) (align …)
+;;;       (value …) (reserve n) 或指令。
 ;;;
 ;;; layout 和 encode 都依赖这一层，避免 layout -> encode / encode -> layout。
 
@@ -12,6 +13,7 @@
          label-form? label-chain
          comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
+         reserve-form? reserve-size
          value-width value-payload
          item-kind)
 
@@ -42,6 +44,12 @@
   (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
        (exact-nonnegative-integer? (cadr x)) (byte? (caddr x))))
 
+(define (reserve-form? x)
+  (and (form? x) (eq? (car x) 'reserve) (= 2 (length x))
+       (exact-nonnegative-integer? (cadr x))))
+
+(define (reserve-size x) (cadr x))
+
 (define (value-width x) (cadr x))
 (define (value-payload x) (caddr x))
 
@@ -53,5 +61,5 @@
   (cond
     [(or (label-form? x) (comment-form? x)) 'marker]
     [(or (align-form? x) (pad-form? x)) 'both]
-    [(or (bytes-form? x) (fill-form? x) (value-form? x)) 'data]
+    [(or (bytes-form? x) (fill-form? x) (value-form? x) (reserve-form? x)) 'data]
     [else 'code]))

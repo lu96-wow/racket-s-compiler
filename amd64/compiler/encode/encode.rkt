@@ -86,37 +86,49 @@
   (define start (segment-field seg 'start))
   (define size (segment-field seg 'size))
   (define entries (segment-items seg))
-  (define chunks '())
-  (define cursor 0)
-  (define (emit! bs)
-    (set! chunks (cons bs chunks))
-    (set! cursor (+ cursor (bytes-length bs))))
-  (for ([entry (in-list entries)])
-    (define at (cadr entry))
-    (define it (caddr entry))
-    (define here (+ start at))
-    (unless (= at cursor)
-      (error 'encode "segment ~a offset mismatch: layout ~a, encode ~a (item ~e)"
-             name at cursor it))
-    (cond
-      [(label-form? it) (void)]
-      [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (cadr it))))]
-      [(bytes-form? it) (emit! (list->bytes (cdr it)))]
-      [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
-      [(value-form? it)
-       (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
-      [else
-       (emit! (encode-code (car it) (cdr it) here symbols))]))
-  (unless (= cursor size)
-    (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
-           name size cursor))
-  (list 'segment
-        (list 'name name)
-        (list 'kind kind)
-        (list 'start start)
-        (list 'size size)
-        (list 'bytes (apply bytes-append (reverse chunks)))))
-
+  (cond
+    [(eq? kind 'bss)
+     ;; BSS has memory size but no file bytes.  The loader maps it as
+     ;; zero-filled memory; encode must not materialize the zeros.
+     (list 'segment
+           (list 'name name)
+           (list 'kind kind)
+           (list 'start start)
+           (list 'size size)
+           (list 'bytes #""))]
+    [else
+     (let ([chunks '()]
+           [cursor 0])
+       (define (emit! bs)
+         (set! chunks (cons bs chunks))
+         (set! cursor (+ cursor (bytes-length bs))))
+       (for ([entry (in-list entries)])
+         (define at (cadr entry))
+         (define it (caddr entry))
+         (define here (+ start at))
+         (unless (= at cursor)
+           (error 'encode "segment ~a offset mismatch: layout ~a, encode ~a (item ~e)"
+                  name at cursor it))
+         (cond
+           [(label-form? it) (void)]
+           [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (cadr it))))]
+           [(bytes-form? it) (emit! (list->bytes (cdr it)))]
+           [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
+           [(reserve-form? it)
+            (error 'encode "reserve is only valid in a bss segment: ~e" it)]
+           [(value-form? it)
+            (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
+           [else
+            (emit! (encode-code (car it) (cdr it) here symbols))]))
+       (unless (= cursor size)
+         (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
+                name size cursor))
+       (list 'segment
+             (list 'name name)
+             (list 'kind kind)
+             (list 'start start)
+             (list 'size size)
+             (list 'bytes (apply bytes-append (reverse chunks)))))]))
 (define (encode-layout target layout)
   (define requests (cdr (or (assq 'requests layout) '(requests))))
   (unless (null? requests)

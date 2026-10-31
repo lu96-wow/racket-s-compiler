@@ -86,6 +86,8 @@ Loko 旧汇编写法到核心 item 的纯变换，不处理 image/ELF。
 - Loko 旧汇编写法兼容层（`$`、符号位运算）
 - lower 第一版：伪寄存器、liveness、图着色分配、调用点 save/restore 展开
   （不含 spill/frame allocation）
+- 通用 `reserve` / `kind bss` 段；BSS 不生成文件字节
+- Loko `%init-bss` 的 64 位显式展开（opt-in）
 
 未实现：
 

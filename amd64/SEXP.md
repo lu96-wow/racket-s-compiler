@@ -25,6 +25,7 @@
   ```
 - 入口接受 `(quote ...)` / `(begin ...)`，出口一律 plain list
 - 段、label、`value` / `bytes` / `fill` / `pad` / `align` 的语义与 RISC-V 保持一致
+- `reserve` 是只在 `kind bss` 段里有效的“占内存、不占文件字节”item
 
 数据 item 继续使用：
 
@@ -36,6 +37,13 @@
 (fill 16 0)
 (pad 8)
 (align 16)
+(reserve 4096)          ; 仅 bss 段
+```
+
+BSS 段：
+
+```scheme
+(segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16))
 ```
 
 ## 2. 寄存器

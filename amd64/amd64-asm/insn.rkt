@@ -1356,6 +1356,7 @@
    'syscall    (insn-def 0 (make-fixed-encoder 'syscall '(#x0f #x05)))
    'clc        (insn-def 0 (make-fixed-encoder 'clc '(#xf8)))
    'stc        (insn-def 0 (make-fixed-encoder 'stc '(#xf9)))
+   'cld        (insn-def 0 (make-fixed-encoder 'cld '(#xfc)))
    'cli        (insn-def 0 (make-fixed-encoder 'cli '(#xfa)))
    'sti        (insn-def 0 (make-fixed-encoder 'sti '(#xfb)))
    'hlt        (insn-def 0 (make-fixed-encoder 'hlt '(#xf4)))

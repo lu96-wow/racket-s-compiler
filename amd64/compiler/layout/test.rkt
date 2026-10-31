@@ -9,6 +9,7 @@
 
 (check-equal? (item-size '(value 8 1)) 8)
 (check-equal? (item-size '(pad 5)) 5)
+(check-equal? (item-size '(reserve 32)) 32)
 (check-equal? (item-size '(comment liveness)) 0)
 (check-equal? (item-size '(align 16)) #f)
 (check-equal? (item-size '(mov rax rbx)) 3)
@@ -49,6 +50,28 @@
 (check-equal? (map car items) '(offset offset offset offset))
 (check-equal? (map cadr items) '(0 0 3 8))
 (check-equal? (cadr (assq 'size text-fields)) 9)
+
+;; reserve only exists in bss segments; layout keeps addresses but no bytes
+(define bss-spec
+  '((segments
+     (segment (name text) (kind code) (start #x200000) (end #x200100) (align 16))
+     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+    (place text (text))
+    (place bss (bss) (common))))
+(define bss-out
+  (layout-flat-items
+   target-amd64
+   '((label text) (ret)
+     (label bss) (reserve 3) (align 16)
+     (label common) (reserve 32))
+   bss-spec))
+(check-equal? (cdr (assq 'problems bss-out)) '())
+(check-equal? (cdr (assq 'anchors bss-out))
+              '((anchor (text) text 0)
+                (anchor (bss) bss 0)
+                (anchor (common) bss 16)))
+(define bss-seg (cadr (cdr (assq 'segments bss-out))))
+(check-equal? (cadr (assq 'size (cdr bss-seg))) 48)
 
 (displayln "amd64 layout tests: ok")
 

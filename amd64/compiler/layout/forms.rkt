@@ -11,6 +11,7 @@
          label-form? label-chain
          comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
+         reserve-form? reserve-size
          value-width value-payload
          item-kind item-size
          align-pad
@@ -25,6 +26,7 @@
     [(pad-form? x) (cadr x)]
     [(bytes-form? x) (length (cdr x))]
     [(fill-form? x) (cadr x)]
+    [(reserve-form? x) (reserve-size x)]
     [(value-form? x) (value-width x)]
     [else (instruction-size (car x) (cdr x))]))
 

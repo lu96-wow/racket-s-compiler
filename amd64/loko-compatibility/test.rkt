@@ -117,6 +117,114 @@
                 (value 8 (ash (data) 4))
                 (value 8 (ash (data) (- 0 4)))))
 
+;; %label start end: end is symbol metadata, not an alias at start's address.
+(define label-end
+  (translate-loko-source
+   '(loko-source
+     (text (%label start end 7) (mov rax 1) (%label end) (ret))
+     (data (%label d)))))
+(check-equal? (field 'problems label-end) '())
+(check-equal? (field 'program-items label-end)
+              '((label start) (mov rax 1) (label end) (ret)))
+(check-equal? (field 'symbols label-end)
+              '((symbol (start) (end) text (7))
+                (symbol (end) (end) text ())
+                (symbol (d) (d) data ())))
+
+;; %section / %origin / %mode are captured into ordered section runs.
+(define sectioned
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%origin #x200000)
+      (%mode 32)
+      (%section text)
+      (%label text)
+      (mov rax 1)
+      (%mode 64)
+      (%section data)
+      (%label d)
+      (%u64 1))
+     (data
+      (%section bss)
+      (%label b)))))
+(check-equal? (field 'problems sectioned) '())
+(check-equal? (field 'origin sectioned) '(#x200000))
+(check-equal? (field 'program-items sectioned)
+              '((label text) (mov rax 1) (label d) (value 8 1)))
+(check-equal? (field 'data-items sectioned) '((label b)))
+(check-equal? (field 'symbols sectioned)
+              '((symbol (text) (text) text ())
+                (symbol (d) (d) data ())
+                (symbol (b) (b) bss ())))
+(check-equal? (field 'sections sectioned)
+              '((section (name text) (kind code) (modes (0 32) (2 64))
+                         (items (label text) (mov rax 1)))
+                (section (name data) (kind data) (modes)
+                         (items (label d) (value 8 1)))
+                (section (name bss) (kind bss) (modes)
+                         (items (label b)))))
+
+;; %init-bss is a frontend marker: only explicit source gets zeroing code.
+(define init-bss
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%mode 64)
+      (%section text)
+      (%label text)
+      (%init-bss)
+      (ret))
+     (data))))
+(check-equal? (field 'problems init-bss) '())
+(check-equal? (field 'program-items init-bss)
+              '((label text)
+                (cld)
+                (li rdi (bss))
+                (li rcx (bss-end))
+                (sub rcx rdi)
+                (xor eax eax)
+                (prefix rep (stos (b8 (base rdi) (disp 0)) al))
+                (ret)))
+
+(define init-bss-custom
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%mode 64)
+      (%label text)
+      (%init-bss bss-start bss-stop)
+      (ret))
+     (data))))
+(check-equal? (field 'problems init-bss-custom) '())
+(check-equal? (field 'program-items init-bss-custom)
+              '((label text)
+                (cld)
+                (li rdi (bss-start))
+                (li rcx (bss-stop))
+                (sub rcx rdi)
+                (xor eax eax)
+                (prefix rep (stos (b8 (base rdi) (disp 0)) al))
+                (ret)))
+
+(define init-bss-32
+  (translate-loko-source
+   '(loko-source
+     (text (%mode 32) (%label text) (%init-bss) (ret))
+     (data))))
+(check-true
+ (for/or ([p (in-list (field 'problems init-bss-32))])
+   (eq? (cadr p) 'init-bss-mode-unsupported)))
+
+(define init-bss-data
+  (translate-loko-source
+   '(loko-source
+     (text (%mode 64) (%section data) (%init-bss) (ret))
+     (data))))
+(check-true
+ (for/or ([p (in-list (field 'problems init-bss-data))])
+   (eq? (cadr p) 'init-bss-not-in-code)))
+
 (displayln "amd64 loko-compat tests: ok")
 
 ;; value references to vector labels use the same path as %label

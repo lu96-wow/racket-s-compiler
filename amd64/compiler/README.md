@@ -21,7 +21,7 @@ rich data
 Loko 兼容入口：
 
 ```text
-loko-source -> loko-compat -> program-items + data-items -> 后半段
+loko-source -> loko-compat -> program-items + data-items + loko-ir -> 后半段
 ```
 
 ## 目录

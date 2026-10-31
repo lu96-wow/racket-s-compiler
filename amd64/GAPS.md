@@ -7,10 +7,10 @@
 
 | 位置 | 现状 | 缺口 |
 | --- | --- | --- |
-| `loko-compatibility/` | `translate.rkt` + `lower/`：伪寄存器、liveness、图着色 | lower 还缺跨调用值 spill、frame allocation；符号乘法等表达式仍未接 |
+| `loko-compatibility/` | `translate.rkt` + `lower/`：符号元数据、sections/origin/mode、伪寄存器、liveness、图着色 | lower 还缺跨调用值 spill、frame allocation；image plan 尚未消费 sections |
 | `loko-compatibility/` | 同上 | 没有 `image/`：`%origin` / `%section` / `%comm` / `%call`、BSS/NOBITS、strtab/symtab、ELF |
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
-| `amd64-asm/` | 指令编码、寄存器、target | 没有通用 `bss` 段、far form、16/32 模式、外部 reloc/loader |
+| `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/bss 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
 | 仓库根 | 分层测试脚本 | 还没有一个统一 test runner |
 
@@ -27,6 +27,7 @@
 - 干涉图 + 图着色分配（`allocate.rkt`）
 - 组合入口与未分配/未着色报告（`lower.rkt`）
 - 调用点 save/restore 注记展开（`calls.rkt`）
+- `%init-bss` 的 64 位显式展开（`translate.rkt`）
 
 还缺：
 
@@ -35,31 +36,40 @@
 - `%comment liveness-information` -> GC 注记
 - peephole
 - 固定值表达式求值
+- `%comm` 收集与 bss section 展开
 
 ### `loko-compatibility/image/`
 
+- 消费 `loko-ir` 的 `origin` / `sections` / `modes`
 - `%origin` -> segment start
-- `%section` -> section metadata
 - `%comm` -> BSS/NOBITS
 - `%call` -> 声明式 strtab/symtab，替代宿主回调
-- symbol metadata（start/end/section/misc）
+- 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
 - ELF header / segment table / section table / strtab / symtab
 
 ### `amd64-asm/` 通用能力
 
 - `jmp-far` / `jcc-far` / `call-far`
 - scratch / trampoline
-- 通用 `bss` / NOBITS 段表示
 - `%mode` 16/32/64 对应的编码模式
 - `jmpf` + far pointer
 - 外部符号 / reloc / loader（如果以后需要）
+
+已完成：
+
+- 通用 `(reserve n)` item
+- `kind bss` 段；encode 不生成文件字节
+- `cld` 编码
 
 ## 3. 表达式缺口
 
 当前核心地址表达式只有：
 
 ```text
-整数 | (链) | (+ …) | (- …)
+整数 | $ | (链)
+| (+ …) | (- …)
+| (bitwise-and …) | (bitwise-ior …)
+| (ash a n) | (bitwise-bit-field n start end)
 ```
 
 还缺：
@@ -75,8 +85,9 @@
 
 ## 5. 建议顺序
 
-1. `loko-compatibility/lower/`：先让优化后的真实寄存器代码进来
-2. `amd64-asm/` 通用 `bss` + far form + mode
-3. `loko-compatibility/image/`：BSS/ELF/symbol table
-4. `amd64-help/`：far/表达式辅助
-5. Racket ↔ Loko bridge
+1. `loko-compatibility/translate.rkt`：`%label start end` 语义、sections/origin/mode 采集已完成
+2. `loko-compatibility/lower/`：补齐 spill / frame / GC 注记
+3. `loko-compatibility/image/`：sections / origin / comm / mode / call / BSS / ELF
+4. `amd64-asm/` far form + mode
+5. `amd64-help/`：far/表达式辅助
+6. Racket ↔ Loko bridge

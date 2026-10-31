@@ -23,7 +23,8 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 ```scheme
 '((segments
    (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
-   (segment (name data) (kind data) (start #x300000) (end #x301000) (align 8)))
+   (segment (name data) (kind data) (start #x300000) (end #x301000) (align 8))
+   (segment (name bss) (kind bss) (start #x400000) (end #x401000) (align 16)))
   (place text (text))      ; 精确匹配
   (place data (data))
   (place text *))          ; 可选：未命中的块/run 落到 text
@@ -41,8 +42,11 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 
 - `align` 按**绝对地址** `start + cursor` 换算成 `(pad n)` 事实。
 - `comment` 零尺寸，不进入 items。
+- `(reserve n)` 只增加内存偏移，不产生文件字节。
 - item 尺寸来自 `layout/forms.rkt` -> `instruction-size`。
-- `code` / `data` 段不能混放；混放报 `code-data-mixed` / `data-code-mixed`。
+- `code` 段只放 code item，`data` 段只放 data item；混放报 `segment-item-kind-mismatch`。
+- `bss` 段只接受 `label` / `comment` / `align` / `reserve`；`reserve` 不得出现在
+  非 bss 段。
 - 段起始对齐、段重叠、段容量都在本层检查。
 
 ## 校验
