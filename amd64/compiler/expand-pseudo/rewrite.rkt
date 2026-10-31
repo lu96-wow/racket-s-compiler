@@ -34,6 +34,12 @@
    'jge 'ge 'jnl 'ge
    'jle 'le 'jng 'le
    'jg 'g   'jnle 'g
+   'jo 'o   'jno 'no
+   ;; Canonical condition-code spellings are accepted directly too.
+   'jb 'b   'jae 'ae 'jbe 'be 'ja 'a
+   'js 's   'jns 'ns
+   'jp 'p   'jnp 'np
+   'jl 'l   'jge 'ge 'jle 'le 'jg 'g
    'jo 'o   'jno 'no))
 
 (define (pseudo-name? h)

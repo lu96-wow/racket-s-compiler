@@ -16,7 +16,8 @@
 (provide encode-instruction
          instruction-size
          instruction-arity
-         known-instruction?)
+         known-instruction?
+         prepare-symbolic-immediates)
 
 ;; ---------------------------------------------------------------------------
 ;; 寄存器/内存编码
@@ -314,6 +315,42 @@
      (cadr op)]
     [else #f]))
 
+(define (imm-form op)
+  (and (form? op) (memq (car op) '(imm8 imm16 imm32 imm64)) (= 2 (length op))
+       (car op)))
+
+(define (symbolic-imm? op)
+  (and (address-expr? op) (not (exact-integer? op))))
+
+;; Choose one fixed immediate width for each unresolved address expression.
+;; Layout and encode must agree on the form, so the choice is made once, here,
+;; from the instruction and its operands -- never from the final value.
+(define (prepare-symbolic-immediates name operands)
+  (define (wrap op)
+    (if (symbolic-imm? op) (list 'imm32 op) op))
+  (cond
+    [(eq? name 'prefix)
+     (match operands
+       [(list pname inner)
+        (and (form? inner)
+             (list pname (cons (car inner)
+                               (prepare-symbolic-immediates (car inner) (cdr inner)))))]
+       [_ operands])]
+    [(memq name '(jmp-short jmp-near jcc-short jcc-near call-near))
+     operands]
+    [(eq? name 'mov)
+     (match operands
+       [(list dst src)
+        (cond
+          [(symbolic-imm? src)
+           (define dst* (and (rm-operand? dst) (parse-rm dst)))
+           (list dst (if (and (reg? dst*) (= 64 (reg-width dst*)))
+                         (list 'imm64 src)
+                         (list 'imm32 src)))]
+          [else operands])]
+       [_ operands])]
+    [else (map wrap operands)]))
+
 ;; ---------------------------------------------------------------------------
 ;; 条件码
 ;; ---------------------------------------------------------------------------
@@ -420,40 +457,54 @@
        [(and (reg? dst*) (imm-value src))
         (let* ([value (imm-value src)]
                [width (reg-width dst*)]
+               [forced (imm-form src)]
                [regs (list dst*)])
-          (case width
-            [(8)
-             (check-imm8 value 'encode-mov)
-             (let ([rex (make-rex #f regs 0 0 (if (>= (reg-index dst*) 8) 1 0))])
-               (append (if rex (list rex) '())
-                       (u8 (+ #xb0 (bitwise-and (reg-index dst*) #b111)))
-                       (u8 value)))]
-            [(16)
-             (check-imm16 value 'encode-mov)
-             (append (prefixes 16 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                     (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                     (u16 value))]
-            [(32)
-             (check-imm32 value 'encode-mov)
-             (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                     (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                     (u32 value))]
-            [(64)
-             (cond
-               [(<= (- (expt 2 31)) value (sub1 (expt 2 31)))
-                (check-imm32/signed value 'encode-mov)
-                (let ([rm (encode-rm dst* 0)])
-                  (emit-rm 64 regs rm '(#xc7) (u32 value)))]
-               [(<= 0 value (sub1 (expt 2 32)))
-                ;; mov r32, imm32 zero-extends to r64
-                (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                        (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                        (u32 value))]
-               [else
-                (let ([rex (make-rex #t regs 0 0 (if (>= (reg-index dst*) 8) 1 0))])
-                  (append (if rex (list rex) '())
-                          (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                          (u64 value)))])]))]
+          (define (emit-imm8)
+            (check-imm8 value 'encode-mov)
+            (append (prefixes 8 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                    (u8 (+ #xb0 (bitwise-and (reg-index dst*) #b111)))
+                    (u8 value)))
+          (define (emit-imm16)
+            (check-imm16 value 'encode-mov)
+            (append (prefixes 16 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                    (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                    (u16 value)))
+          (define (emit-imm32)
+            (check-imm32 value 'encode-mov)
+            (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                    (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                    (u32 value)))
+          (define (emit-imm64)
+            (unless (= width 64)
+              (error 'encode-mov "imm64 needs a 64-bit destination: ~e" dst))
+            (let ([rex (make-rex #t regs 0 0 (if (>= (reg-index dst*) 8) 1 0))])
+              (append (if rex (list rex) '())
+                      (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                      (u64 value))))
+          (define (emit-by-value)
+            (case width
+              [(8) (emit-imm8)]
+              [(16) (emit-imm16)]
+              [(32) (emit-imm32)]
+              [(64)
+               (cond
+                 [(<= (- (expt 2 31)) value (sub1 (expt 2 31)))
+                  (check-imm32/signed value 'encode-mov)
+                  (let ([rm (encode-rm dst* 0)])
+                    (emit-rm 64 regs rm '(#xc7) (u32 value)))]
+                 [(<= 0 value (sub1 (expt 2 32)))
+                  ;; mov r32, imm32 zero-extends to r64
+                  (emit-imm32)]
+                 [else (emit-imm64)])]))
+          (case forced
+            [(imm8)
+             (unless (= width 8)
+               (error 'encode-mov "imm8 needs an 8-bit destination: ~e" dst))
+             (emit-imm8)]
+            [(imm16) (emit-imm16)]
+            [(imm32) (emit-imm32)]
+            [(imm64) (emit-imm64)]
+            [else (emit-by-value)]))]
        [(and (mem? dst*) (imm-value src))
         (let* ([value (imm-value src)]
                [width (mem-width dst*)]
@@ -506,8 +557,19 @@
         (define value (imm-value src))
         (define width (rm-width dst*))
         (define regs (regs-in-op dst*))
+        (define forced (imm-form src))
         (define (small? x) (<= -128 x 127))
         (cond
+          [(eq? forced 'imm8)
+           (check-imm8 value 'encode-alu)
+           (emit-rm width regs (encode-rm dst* digit)
+                    (list (if (= width 8) #x80 #x83)) (u8 value))]
+          [(eq? forced 'imm16)
+           (check-imm16 value 'encode-alu)
+           (emit-rm width regs (encode-rm dst* digit) '(#x81) (u16 value))]
+          [(eq? forced 'imm32)
+           (check-imm32 value 'encode-alu) ; 64-bit uses sign-extended imm32
+           (emit-rm width regs (encode-rm dst* digit) '(#x81) (u32 value))]
           [(= width 8)
            (check-imm8 value 'encode-alu)
            (emit-rm 8 regs (encode-rm dst* digit) '(#x80) (u8 value))]
@@ -554,7 +616,8 @@
        [(imm-value src)
         (define v (imm-value src))
         (cond
-          [(<= -128 v 127) (bytes* '(#x6a) (u8 v))]
+          [(and (not (eq? (imm-form src) 'imm8)) (<= -128 v 127))
+           (bytes* '(#x6a) (u8 v))]
           [else
            (check-imm32/signed v 'encode-push)
            (bytes* '(#x68) (u32 v))])]
@@ -689,8 +752,10 @@
     [(list rm count)
      (define rm* (parse-rm rm))
      (define width (rm-width rm*))
-     (define digit (case name [(shl) 4] [(shr) 5] [(sar) 7]
-                          [else (error 'encode-shift "unknown shift: ~e" name)]))
+     (define digit (case name
+                     [(rol) 0] [(ror) 1] [(rcl) 2] [(rcr) 3]
+                     [(shl) 4] [(shr) 5] [(sar) 7]
+                     [else (error 'encode-shift "unknown shift: ~e" name)]))
      (cond
        [(eq? count 'cl)
         (emit-rm width (regs-in-op rm*)
@@ -732,7 +797,7 @@
      (define value (or (imm-value imm)
                        (error 'encode-imul "imul immediate must be an integer: ~e" imm)))
      (cond
-       [(<= -128 value 127)
+       [(and (not (eq? (imm-form imm) 'imm32)) (<= -128 value 127))
         (emit-rm width (list dst*) (encode-rm src* dst*) '(#x6b) (u8 value))]
        [else
         (case width
@@ -1291,6 +1356,10 @@
    'shl        (insn-def 2 (lambda (ops) (encode-shift 'shl ops)))
    'shr        (insn-def 2 (lambda (ops) (encode-shift 'shr ops)))
    'sar        (insn-def 2 (lambda (ops) (encode-shift 'sar ops)))
+   'rol        (insn-def 2 (lambda (ops) (encode-shift 'rol ops)))
+   'ror        (insn-def 2 (lambda (ops) (encode-shift 'ror ops)))
+   'rcl        (insn-def 2 (lambda (ops) (encode-shift 'rcl ops)))
+   'rcr        (insn-def 2 (lambda (ops) (encode-shift 'rcr ops)))
    'imul       (insn-def #f encode-imul)
    'div        (insn-def 1 (lambda (ops) (encode-divide 'div ops)))
    'idiv       (insn-def 1 (lambda (ops) (encode-divide 'idiv ops)))
@@ -1399,11 +1468,11 @@
        [else
         (error 'instruction-size
                "memory displacement must be resolved before sizing: ~e" op)])]
-    ;; Unresolved address expression used as an immediate.  The address space
-    ;; is below 2^31 for the images this backend produces, so size it as the
-    ;; full-width imm32 form and let encode reject out-of-range values.
+    ;; Prepared immediate wrapper with an unresolved payload.
+    [(and (imm-form op) (symbolic-imm? (cadr op)))
+     (list (imm-form op) #x1000)]
     [(and (address-expr? op) (not (exact-integer? op)))
-     (list 'imm32 0)]
+     (list 'imm32 #x1000)]
     [else op]))
 
 (define (size-branch-operands name operands)
@@ -1427,7 +1496,8 @@
      (define branch? (memq name '(jmp-short jmp-near
                                   jcc-short jcc-near
                                   call-near)))
+     (define prepared (prepare-symbolic-immediates name operands))
      (define ops (if branch?
-                     (size-branch-operands name operands)
-                     (map size-safe-operand operands)))
+                     (size-branch-operands name prepared)
+                     (map size-safe-operand prepared)))
      (bytes-length (encode-instruction name ops))]))

@@ -487,6 +487,7 @@
      (resolve-alias ctx expr resolving)]
     [(exact-integer? expr) expr]
     [(eq? expr 'wordsize) 8]
+    [(eq? expr '$) '$]
     [(symbol? expr)
      (cond
        [(register-name? expr) (problem 'register-in-expression expr)]

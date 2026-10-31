@@ -52,7 +52,11 @@
   (cond
     [(mem? op) (resolve-mem op here size symbols)]
     [(mem-form? op) (resolve-mem (parse-mem op) here size symbols)]
-    ;; Symbolic immediate: size was measured as imm32; resolve to that form.
+    ;; Prepared immediate wrapper whose payload is still symbolic.
+    [(and (form? op) (memq (car op) '(imm8 imm16 imm32 imm64))
+          (= 2 (length op))
+          (address-expr? (cadr op)) (not (exact-integer? (cadr op))))
+     (list (car op) (resolve-address symbols (cadr op) here))]
     [(and (address-expr? op) (not (exact-integer? op)))
      (list 'imm32 (resolve-address symbols op here))]
     [else op]))
@@ -67,9 +71,10 @@
      ;; The prefix byte shifts the inner instruction by one byte, so
      ;; RIP-relative operands inside it use here+1 and the inner size.
      (define inner-size (instruction-size (car inner) (cdr inner)))
+     (define prepared (prepare-symbolic-immediates (car inner) (cdr inner)))
      (define inner* (cons (car inner)
                           (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbols))
-                               (cdr inner))))
+                               prepared)))
      (encode-instruction 'prefix (list pname inner*))]
 
     [(memq name control-transfer-forms)
@@ -81,9 +86,10 @@
        (encode-instruction name ops))]
 
     [else
-     (let* ([size (instruction-size name operands)]
+     (let* ([prepared (prepare-symbolic-immediates name operands)]
+            [size (instruction-size name operands)]
             [ops (map (lambda (op) (resolve-operand op here size symbols))
-                      operands)])
+                      prepared)])
        (encode-instruction name ops))]))
 
 ;; (offset k ...) is an assertion: by the time we reach this item the position
@@ -148,7 +154,12 @@
         [(value-form? it)
          (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
         [else
-         (emit! (encode-code (car it) (cdr it) here symbols))]))
+         (define expect (instruction-size (car it) (cdr it)))
+         (define bs (encode-code (car it) (cdr it) here symbols))
+         (unless (= expect (bytes-length bs))
+           (eprintf "SIZE MISMATCH at ~a/~a: layout ~a encode ~a item ~e\n"
+                    name at expect (bytes-length bs) it))
+         (emit! bs)]))
     (unless (= cursor size)
       (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
              name size cursor))
