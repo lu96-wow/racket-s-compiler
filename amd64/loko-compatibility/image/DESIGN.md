@@ -9,13 +9,13 @@
 
 ```text
 layout-spec.rkt   loko-ir -> layout-spec + program-items + data-items
+elf.rkt           build + symbols -> ELF64 image
 ```
 
 后续计划：
 
 ```text
 call.rkt          %call -> declarative items / image plan
-elf.rkt           build + image-plan -> ELF/symtab/strtab
 ```
 
 ## 2. `layout-spec.rkt`
@@ -63,8 +63,45 @@ problems
 - 多个 code section 的边界目前依赖前一个 section 以 terminator 结束；
   还没有通用的 `boundary` item 来强制切断 CFG。
 
-## 3. 测试
+## 3. `elf.rkt`
+
+输入：
+
+```scheme
+(build (segment ...) ...)
+(symbol chain segment offset address) ...
+```
+
+输出：
+
+```scheme
+(elf
+  (entry 地址)
+  (size n)
+  (sections (section ...) ...)
+  (bytes #"..."))
+```
+
+当前布局：
+
+- 一个 `PT_LOAD`，覆盖最小段起点到最大段终点的连续虚拟内存；
+- 末尾的 bss 是 `p_filesz < p_memsz` 的零填充区；
+- 另加 `PT_GNU_STACK`；
+- `.text` / `.data` / `.bss` / `.symtab` / `.strtab` / `.shstrtab` section headers；
+- `.bss` 使用 `SHT_NOBITS`；
+- 符号名做简单 mangle，`st_size` 目前为 0。
+
+边界：
+
+- 不做 reloc / dynamic linking；
+- 单 PT_LOAD 当前是 RWX，只是功能版，后续可拆成 text/data 段；
+- 还没有把 `%call` 生成的 Loko ELF header 替换掉；
+- 不执行 DCE 后的精确尺寸；
+- 入口默认找 `elf-entry`，没有则回退第一个 code segment 起点。
+
+## 4. 测试
 
 ```sh
 racket amd64/loko-compatibility/image/test.rkt
+racket amd64/loko-compatibility/image/elf-test.rkt
 ```

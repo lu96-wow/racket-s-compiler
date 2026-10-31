@@ -90,6 +90,7 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - Loko `%init-bss` 的 64 位显式展开（opt-in）
 - Loko `%comm` 收集与 bss section 展开
 - `loko-ir` -> 自动 `layout-spec`（sections/origin/bss，粗布局上界）
+- `build` + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
 
 未实现：
 
@@ -114,5 +115,6 @@ racket amd64/compiler/test/end-to-end.rkt
 racket amd64/compiler/test/flow-test.rkt
 racket amd64/loko-compatibility/test.rkt
 racket amd64/loko-compatibility/image/test.rkt
+racket amd64/loko-compatibility/image/elf-test.rkt
 racket amd64/loko-compatibility/lower/test.rkt
 ```

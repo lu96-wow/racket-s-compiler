@@ -38,6 +38,7 @@
 | `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
+| `loko-elf` | `build` `bound-layout` | `image` |
 
 ## 设计思路
 
@@ -63,6 +64,14 @@
 
   对应阶段组是 `'loko-manual`。
 
+- Loko ELF 流：
+
+  ```racket
+  '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode loko-elf)
+  ```
+
+  对应阶段组是 `'elf`；手动 layout-spec 版本是 `'elf-manual`。
+
 - `layout` 与 `relax` 平层：`relax` 自己反复驱动 `layout`。
 - `layout` 直接消费 `program` 的 blocks + flows 和 data runs。
 - `layout-flat-items` 只是扁平 item 的兼容入口，不消费 flows。
@@ -81,3 +90,4 @@
 - `loko-lower` 已把 `loko-ir` 的 code section 从 `(reg N)` 降到物理寄存器。
 - `loko-image` 已把 `loko-ir` 自动转成粗布局 `layout-spec`；
   需要自己提供 layout-spec 时用 `'loko-manual`。
+- `compile-image` 默认跑 `'elf`，返回 `(elf ...)`。

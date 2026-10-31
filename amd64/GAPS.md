@@ -44,16 +44,18 @@
 
 - `layout-spec.rkt`：`loko-ir` 的 sections/origin/modes/comms -> 带 bss segment 的
   粗布局 `layout-spec`
+- `elf.rkt`：build + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
 - section 起始 synthetic label、place 规则、空 section、data section 边界
 - code section 非 64 位 -> `mode-unsupported`
 
 还缺：
 
 - 精确尺寸（当前用 near 分支上界，DCE 后可能留 gap）
-- `%call` -> 声明式 strtab/symtab，替代宿主回调
+- `%call` -> 声明式 ELF header / strtab/symtab，替代宿主回调
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
-- BSS/NOBITS 的 ELF 表示
-- ELF header / segment table / section table / strtab / symtab
+- 多 PT_LOAD / text-data 权限分离
+- 符号 size（当前为 0）
+- reloc / dynamic linking
 
 ### `amd64-asm/` 通用能力
 

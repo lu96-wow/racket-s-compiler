@@ -25,6 +25,7 @@
          (only-in "../../loko-compatibility/ir.rkt" make-loko-ir)
          (only-in "../../loko-compatibility/lower/ir.rkt" lower-loko-ir)
          (only-in "../../loko-compatibility/image/layout-spec.rkt" build-layout-spec)
+         (only-in "../../loko-compatibility/image/elf.rkt" write-elf)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program pseudo-leftover?)
@@ -45,6 +46,7 @@
          run-flow
          run-stage
          compile
+         compile-image
          context-value
          default-flow)
 
@@ -179,7 +181,15 @@
    'encode
    (stage 'encode '(bound-layout) '(build)
           (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'bound-layout))))
-          "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")))
+          "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")
+
+   'loko-elf
+   (stage 'loko-elf '(build bound-layout) '(image)
+          (lambda (_target in)
+            (define symbols
+              (cdr (assq 'symbols (hash-ref in 'bound-layout))))
+            (hash 'image (write-elf (hash-ref in 'build) symbols)))
+          "build + symbols -> ELF64 image")))
 
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -207,6 +217,8 @@
   (hash
    'loko        '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode)
    'loko-manual '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode)
+   'elf         '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode loko-elf)
+   'elf-manual  '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode loko-elf)
    'frontend '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
    'backend  '(relax bind-labels encode)
@@ -303,3 +315,6 @@
 ;; 只做组合, 不增加任何层语义。
 (define (compile target seeds [flow default-flow])
   (context-value (run-flow target flow seeds) 'build))
+
+(define (compile-image target seeds [flow 'elf])
+  (context-value (run-flow target flow seeds) 'image))
