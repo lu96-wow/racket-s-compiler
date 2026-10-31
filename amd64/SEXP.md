@@ -25,7 +25,7 @@
   ```
 - 入口接受 `(quote ...)` / `(begin ...)`，出口一律 plain list
 - 段、label、`value` / `bytes` / `fill` / `pad` / `align` 的语义与 RISC-V 保持一致
-- `reserve` 是只在 `kind bss` 段里有效的“占内存、不占文件字节”item
+- `reserve` 是只在 `kind hole` 段里有效的“推进位置、不占文件字节”item
 
 数据 item 继续使用：
 
@@ -37,14 +37,26 @@
 (fill 16 0)
 (pad 8)
 (align 16)
-(reserve 4096)          ; 仅 bss 段
+(reserve 4096)          ; 仅 hole 段
 ```
 
-BSS 段：
+hole 段（有位置、没有文件字节）：
 
 ```scheme
-(segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16))
+(segment (name bss) (kind hole) (start #x300000) (end #x301000) (align 16))
 ```
+
+`kind` 只回答两件事：**这一段收哪些 item**、**对齐补出来的空间怎么落**。
+
+| kind | 收的 item | `(align n)` 的产物 | 文件字节 |
+| --- | --- | --- | --- |
+| `code` | `label` / `comment` / `align` / `pad` / 指令 / 数据（header、跳转表） | `(pad n)` | 有 |
+| `data` | `label` / `comment` / `align` / `pad` / `bytes` / `fill` / `value` | `(pad n)` | 有 |
+| `hole` | `label` / `comment` / `align` / `reserve` | `(reserve n)` | **没有** |
+
+`hole` 段只回答“这些地址存在”；内容不由本产物定义（loader / 程序 / 硬件决定），
+所以 `build` 里它的 `bytes` 是 `#""`，`size` 照旧。谁把它清成 0、什么时候清，
+是前端/平台的事，后端不参与。`.bss`（Loko 的 `%section bss`）就是 `hole` 段的一例。
 
 ## 2. 寄存器
 

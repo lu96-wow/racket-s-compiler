@@ -11,7 +11,7 @@
 | 模块 | 内容 |
 | --- | --- |
 | `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
-| `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
+| `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
 | `amd64-asm/insn.rkt` | 真实指令表、前缀/字符串指令、`instruction-size`、`encode-instruction` |
 | `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |
 | `amd64-asm/target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md) |
@@ -138,8 +138,8 @@ symbols: (symbol chain segment offset address)
 | `unallocated-pseudo` | lower | 伪寄存器没有分配，仍留在 item 里 |
 | `uncolored-pseudo` | lower | 干涉图着色时没有可用物理寄存器 |
 | `comm-without-bss-section` | loko-compat | 有 `%comm` 但没有 bss section |
-| `reserve-outside-bss` | layout | `reserve` 出现在非 bss 段 |
-| `bss-unsupported-item` | layout | bss 段里出现了 reserve/align 之外的 item |
+| `reserve-outside-hole` | layout | `reserve` 出现在 code/data 段 |
+| `hole-materialized-item` | layout | hole 段里出现了要写字节的 item（bytes / fill / value / pad / 指令） |
 
 ## 8. 纯函数与状态
 

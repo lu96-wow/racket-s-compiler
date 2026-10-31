@@ -24,7 +24,7 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 '((segments
    (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
    (segment (name data) (kind data) (start #x300000) (end #x301000) (align 8))
-   (segment (name bss) (kind bss) (start #x400000) (end #x401000) (align 16)))
+   (segment (name bss) (kind hole) (start #x400000) (end #x401000) (align 16)))
   (place text (text))      ; 精确匹配
   (place data (data))
   (place text *))          ; 可选：未命中的块/run 落到 text
@@ -38,18 +38,41 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 - `*` 是显式 wildcard，只作为没有精确命中的兜底。
 - 没有命中也没有 wildcard 的块/run 报 `unplaced-block` / `unplaced-data`。
 
+## item 类别
+
+`item-kind`（`compiler/item.rkt`）只回答“这条 item 是什么”；能不能放进某段由
+本层的表 `item-kind-allowed-in?`（`layout/forms.rkt`）回答：
+
+| 类别 | item | code | data | hole |
+| --- | --- | --- | --- | --- |
+| `marker` | `label` / `comment` | ✓ | ✓ | ✓ |
+| `align` | `align` | ✓ | ✓ | ✓ |
+| `pad` | `pad`（本层产的对齐事实） | ✓ | ✓ | ✗ |
+| `space` | `reserve` | ✗ | ✗ | ✓ |
+| `materialized` | `bytes` / `fill` / `value` | ✓ | ✓ | ✗ |
+| `code` | 指令 | ✓ | ✗ | ✗ |
+
+`code` 段收 `materialized` 是有意的：ELF/multiboot header、跳转表都放那里。
+
 ## 度量
 
-- `align` 按**绝对地址** `start + cursor` 换算成 `(pad n)` 事实。
+- `align` 按**绝对地址** `start + cursor` 换算成事实；产物写事实，不写请求。
+  补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见下）。
 - `comment` 零尺寸，不进入 items。
-- `(reserve n)` 只增加内存偏移，不产生文件字节。
 - item 尺寸来自 `layout/forms.rkt` -> `instruction-size`。
-- `code` 段可以放 code/data item（ELF/multiboot header、跳转表等）；
-  `data` 段只放 data item；code item 放进 data/bss 段报
-  `segment-item-kind-mismatch`。
-- `bss` 段只接受 `label` / `comment` / `align` / `reserve`；`reserve` 不得出现在
-  非 bss 段。
-- 段起始对齐、段重叠、段容量都在本层检查；空段允许 `start == end`。
+- 段起始对齐、段重叠、段容量都在本层检查；空段允许 `start == end`
+  （自动布局会产出没内容的 data section）。
+
+## hole 段（有位置，没有文件字节）
+
+- `align` 在 hole 段里归一化成 `(reserve n)`，在 code/data 段里是 `(pad n)`。
+  这是本层**唯一的 kind 分叉**。
+- 因此 hole 段的 items 永远只含 `reserve`（label 在 amd64 只进 anchors）：
+  encode 不用再判“洞从哪儿开始”，“这段是洞”是段声明，不是运行时状态。
+- 本层**不解释**洞里的内容；是 0 还是别的、谁来写，是前端 / loader 的事。
+- 问题名：hole 段里出现要写字节的 item 报 `hole-materialized-item`；
+  `reserve` 出现在 code/data 段报 `reserve-outside-hole`；
+  其余不合法组合仍是 `segment-item-kind-mismatch`。
 
 ## 校验
 

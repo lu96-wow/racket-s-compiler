@@ -46,7 +46,7 @@ problems
 - 每个 section 如果开头不是 label，就补一个内部 label：
   `loko-image-start-<section>`。
 - 每个 section 生成一个 segment：
-  `(segment (name ...) (kind code|data|bss) (start ...) (end ...) (align 1))`。
+  `(segment (name ...) (kind code|data|hole) (start ...) (end ...) (align 1))`。
 - 该 section 的所有 label 生成一条 `place`。
 - 空 section 允许 `start == end`。
 - data/bss section 之间插入零尺寸 `(comment section-boundary ...)`，避免相邻

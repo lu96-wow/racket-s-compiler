@@ -18,7 +18,7 @@ test.rkt     header / program header / section / symtab 检查
 
 ```scheme
 (build
-  (segment (name ...) (kind code|data|bss)
+  (segment (name ...) (kind code|data|hole)
            (start ...) (size ...) (bytes ...))
   ...)
 
@@ -48,20 +48,20 @@ test.rkt     header / program header / section / symtab 检查
 
 - 没有 plan 时：一个 `PT_LOAD`，覆盖最小段起点到最大段终点的连续虚拟内存；
 - 有 plan `load` 时：每个 build segment 一个 `PT_LOAD`，权限/对齐来自 plan；
-- 末尾的 bss 是 `p_filesz < p_memsz` 的零填充区；
+- `kind hole` 的段是 `p_filesz < p_memsz` 的零填充区（`.bss` 就是一例）；
 - 另加 `PT_GNU_STACK`；
 - `.text` / `.data` / `.bss` / `.symtab` / `.strtab` / `.shstrtab` section headers；
-- `.bss` 使用 `SHT_NOBITS`；
+- `kind hole` 的段写成 `SHT_NOBITS`（段名叫 `bss` 时 section 名就是 `.bss`）；
 - 符号名做简单 mangle；plan 可以覆盖 `size` / `type` / `bind` / `section`；
 - 入口优先 plan entry，其次 `elf-entry`，再回退第一个 code segment 起点。
 
 ## 4. 边界
 
 - 不做 reloc / dynamic linking。
-- 单 `PT_LOAD` 当前是 RWX；后续应拆成 text/data 独立段。
-- 符号 `st_size` 目前为 0。
+- 没有 plan 时默认单 `PT_LOAD` 且是 RWX；有 plan `load` 时可拆成 text/data/bss 独立段。
+- 符号 `st_size` 默认 0；plan `symbol` 可以显式覆盖。
 - `%call` 生成的 Loko ELF header 还没有被替换。
-- bss 最好位于所有非 bss 段之后；中间 bss 会被写成文件零字节。
+- `kind hole` 的段最好排在所有非 hole 段之后；夹在中间会让后面的字节按文件偏移错位。
 - section 尺寸来自已编码的 `build`，不在本层重新布局。
 
 ## 5. 测试

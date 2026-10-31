@@ -57,9 +57,19 @@
   (and (form? x) (eq? (car x) 'value) (= 3 (length x))
        (memq (value-width x) '(1 2 4 8))))
 
+;; item 的类别: 决定它能落进哪种段 (合法性表在 layout/forms.rkt)。
+;;   marker       = label / comment, 不占字节, 三种段都行
+;;   align        = align(请求), 补出来的是 pad 还是 reserve 由段 kind 定
+;;   pad          = pad(事实) = 补 n 个字节, 要材料化
+;;   space        = reserve, 只推进位置, 只有 hole 段收
+;;   materialized = bytes / fill / value, 要写字节
+;;   code         = 指令
+;; 这里只回答"这条 item 是什么", 不回答"它能不能放进某段"。
 (define (item-kind x)
   (cond
     [(or (label-form? x) (comment-form? x)) 'marker]
-    [(or (align-form? x) (pad-form? x)) 'both]
-    [(or (bytes-form? x) (fill-form? x) (value-form? x) (reserve-form? x)) 'data]
+    [(align-form? x) 'align]
+    [(pad-form? x) 'pad]
+    [(reserve-form? x) 'space]
+    [(or (bytes-form? x) (fill-form? x) (value-form? x)) 'materialized]
     [else 'code]))

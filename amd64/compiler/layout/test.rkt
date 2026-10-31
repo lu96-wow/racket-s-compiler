@@ -51,27 +51,87 @@
 (check-equal? (map cadr items) '(0 0 3 8))
 (check-equal? (cadr (assq 'size text-fields)) 9)
 
-;; reserve only exists in bss segments; layout keeps addresses but no bytes
-(define bss-spec
+;; --- hole 段: 有位置, 没有文件字节 ---------------------------------------
+;;
+;; 归一化只有一个分叉: align 在 hole 段里变 reserve, 在 code/data 段里变 pad。
+;; 所以 hole 段的 items 永远只含 label / comment / reserve。
+
+(define (hole-spec)
   '((segments
      (segment (name text) (kind code) (start #x200000) (end #x200100) (align 16))
-     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+     (segment (name bss) (kind hole) (start #x300000) (end #x301000) (align 16)))
     (place text (text))
     (place bss (bss) (common))))
-(define bss-out
-  (layout-flat-items
-   target-amd64
-   '((label text) (ret)
-     (label bss) (reserve 3) (align 16)
-     (label common) (reserve 32))
-   bss-spec))
-(check-equal? (cdr (assq 'problems bss-out)) '())
-(check-equal? (cdr (assq 'anchors bss-out))
+
+(define hole-items
+  '((label text) (ret)
+    (label bss) (reserve 3) (align 16)
+    (label common) (reserve 32)))
+
+(define hole-out (layout-flat-items target-amd64 hole-items (hole-spec)))
+
+(check-equal? (cdr (assq 'problems hole-out)) '())
+(check-equal? (cdr (assq 'anchors hole-out))
               '((anchor (text) text 0)
                 (anchor (bss) bss 0)
                 (anchor (common) bss 16)))
-(define bss-seg (cadr (cdr (assq 'segments bss-out))))
-(check-equal? (cadr (assq 'size (cdr bss-seg))) 48)
+
+(define hole-seg (cadr (cdr (assq 'segments hole-out))))
+(check-equal? (cadr (assq 'size (cdr hole-seg))) 48)
+
+;; align(16) 在 0x300003 处要补 13 字节 —— 进产物是 (reserve 13), 不是 (pad 13)
+(define hole-seg-items (cdr (assq 'items (cdr hole-seg))))
+(check-equal? (map cadr hole-seg-items) '(0 3 16))
+(check-equal? (map caddr hole-seg-items)
+              '((reserve 3) (reserve 13) (reserve 32)))
+
+;; 不变量: hole 段里没有任何要写字节的 item (label 在 amd64 只进 anchors)
+(check-equal? (map (lambda (it) (car (caddr it))) hole-seg-items)
+              '(reserve reserve reserve))
+
+;; hole 段不收要写字节的东西
+(define (problem-kinds items spec)
+  (map car (cdr (assq 'problems (layout-flat-items target-amd64 items spec)))))
+
+(check-equal? (problem-kinds '((label text) (ret) (label bss) (bytes 1 2)) (hole-spec))
+              '(hole-materialized-item))
+(check-equal? (problem-kinds '((label text) (ret) (label bss) (pad 4)) (hole-spec))
+              '(hole-materialized-item))
+(check-equal? (problem-kinds '((label text) (ret) (label bss) (mov rax rbx)) (hole-spec))
+              '(hole-materialized-item))
+
+;; reserve 只属于 hole 段
+(check-equal? (problem-kinds '((label text) (ret) (label data) (reserve 8))
+                             '((segments
+                                (segment (name text) (kind code) (start #x200000) (end #x200100) (align 16))
+                                (segment (name data) (kind data) (start #x300000) (end #x301000) (align 8)))
+                               (place text (text))
+                               (place data (data))))
+              '(reserve-outside-hole))
+
+;; 段 kind 只回答"收哪些 item 类"
+(check-true  (item-kind-allowed-in? 'code 'code))
+(check-true  (item-kind-allowed-in? 'materialized 'code))  ; code 段可以放数据
+(check-false (item-kind-allowed-in? 'space 'code))
+(check-true  (item-kind-allowed-in? 'materialized 'data))
+(check-false (item-kind-allowed-in? 'code 'data))
+(check-false (item-kind-allowed-in? 'space 'data))
+(check-true  (item-kind-allowed-in? 'space 'hole))
+(check-true  (item-kind-allowed-in? 'align 'hole))
+(check-false (item-kind-allowed-in? 'materialized 'hole))
+(check-false (item-kind-allowed-in? 'pad 'hole))
+(check-false (item-kind-allowed-in? 'code 'hole))
+
+;; item 类别
+(check-equal? (item-kind '(label a)) 'marker)
+(check-equal? (item-kind '(comment liveness)) 'marker)
+(check-equal? (item-kind '(align 16)) 'align)
+(check-equal? (item-kind '(pad 4)) 'pad)
+(check-equal? (item-kind '(reserve 8)) 'space)
+(check-equal? (item-kind '(bytes 1 2)) 'materialized)
+(check-equal? (item-kind '(fill 4 0)) 'materialized)
+(check-equal? (item-kind '(value 8 1)) 'materialized)
+(check-equal? (item-kind '(mov rax rbx)) 'code)
 
 (displayln "amd64 layout tests: ok")
 

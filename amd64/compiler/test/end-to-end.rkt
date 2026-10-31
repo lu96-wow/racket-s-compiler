@@ -150,11 +150,11 @@
                 (size 16)
                 (bytes #"\x01\x00\x30\x00\x00\x00\x00\x00\x00\x00\x60\x00\x00\x00\x00\x00")))
 
-;; bss: layout assigns addresses, encode emits no file bytes
+;; hole: layout assigns addresses, encode emits no file bytes
 (define bss-spec
   '((segments
      (segment (name text) (kind code) (start #x200000) (end #x200100) (align 16))
-     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+     (segment (name bss) (kind hole) (start #x300000) (end #x301000) (align 16)))
     (place text (text))
     (place bss (bss) (common))))
 (define bss-items
@@ -168,12 +168,33 @@
               '((symbol (text) text 0 #x200000)
                 (symbol (bss) bss 0 #x300000)
                 (symbol (common) bss 16 #x300010)))
+;; align 在 hole 段里归一化成 reserve: 位置推进, 但没有字节
+(define bss-seg (cadr (cdr (assq 'segments bss-measured))))
+(check-equal? (map caddr (cdr (assq 'items (cdr bss-seg))))
+              '((reserve 3) (reserve 13) (reserve 32)))
+
 (define bss-build (encode-layout target-amd64 bss-bound))
 (check-equal? (cddr (cadr (cdr bss-build)))
-              '((kind bss)
+              '((kind hole)
                 (start #x300000)
                 (size 48)
                 (bytes #"")))
+
+;; hole 段里出现要写字节的 item: layout 和 encode 对"这段是不是洞"理解不一致
+(define bad-hole-layout
+  (list (list 'phase 'bound)
+        (cons 'segments
+              (list (list 'segment
+                          (list 'name 'bss) (list 'kind 'hole)
+                          (list 'start #x300000) (list 'end #x301000) (list 'align 16)
+                          (cons 'items '((offset 0 (pad 4))))
+                          (list 'size 4))))
+        (cons 'anchors '())
+        (cons 'symbols '())
+        (cons 'requests '())
+        (cons 'problems '())))
+
+(check-exn exn:fail? (lambda () (encode-layout target-amd64 bad-hole-layout)))
 
 ;; data items are allowed inside a code segment (headers, tables, ...)
 (define mixed-items

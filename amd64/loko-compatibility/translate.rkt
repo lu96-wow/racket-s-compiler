@@ -159,9 +159,17 @@
   (unless (and (pair? modes) (eqv? (cadr (car modes)) mode))
     (set-section-state-modes! s (cons (list index mode) modes))))
 
+;; 前端内部沿用源码词汇(text/data/bss), 出 loko-ir 时翻成后端词汇:
+;; bss 段在后端就叫 hole —— 有地址范围、没有文件字节。
+;; "bss" 这个词只属于前端和 ELF 段名, 后端不认识它。
+(define (section-state->kind k)
+  (case k
+    [(bss) 'hole]
+    [else k]))
+
 (define (section-state->sexp s)
   (make-section (section-state-name s)
-                (section-state-kind s)
+                (section-state->kind (section-state-kind s))
                 (reverse (section-state-modes s))
                 (reverse (section-state-items s))))
 

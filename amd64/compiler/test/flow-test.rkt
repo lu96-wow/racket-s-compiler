@@ -35,7 +35,7 @@
 (define bss-spec
   '((segments
      (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
-     (segment (name bss) (kind bss) (start #x300000) (end #x301000) (align 16)))
+     (segment (name bss) (kind hole) (start #x300000) (end #x301000) (align 16)))
     (place text (text))
     (place bss (bss) (bss-end))))
 (define bss-build
@@ -58,13 +58,13 @@
          (cons 'layout-spec bss-spec))
    'loko-manual))
 (check-equal? (cddr (cadr (cdr bss-build)))
-              '((kind bss) (start #x300000) (size 32) (bytes #"")))
+              '((kind hole) (start #x300000) (size 32) (bytes #"")))
 
 ;; %comm is expanded into the bss section and respects size ordering/align
 (define comm-spec
   '((segments
      (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
-     (segment (name bss) (kind bss) (start #x300000) (end #x302000) (align 16)))
+     (segment (name bss) (kind hole) (start #x300000) (end #x302000) (align 16)))
     (place text (text))
     (place bss (bss) (small) (large) (bss-end))))
 (define comm-build
@@ -85,7 +85,7 @@
          (cons 'layout-spec comm-spec))
    'loko-manual))
 (check-equal? (cddr (cadr (cdr comm-build)))
-              '((kind bss) (start #x300000) (size 8192) (bytes #"")))
+              '((kind hole) (start #x300000) (size 8192) (bytes #"")))
 
 ;; automatic loko-ir -> layout-spec (no layout-spec seed)
 (define auto-build
@@ -130,7 +130,7 @@
                   (%label bss-end)))))
    'loko))
 (check-equal? (cddr (cadddr auto-bss-build))
-              '((kind bss) (start #x200017) (size 32) (bytes #"")))
+              '((kind hole) (start #x200017) (size 32) (bytes #"")))
 
 ;; loko-lower is part of the automatic loko flow
 (define reg-build

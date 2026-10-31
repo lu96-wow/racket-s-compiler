@@ -18,7 +18,7 @@
 | `(offset k item)` | 当前段从 offset k 开始的字节 |
 | `(symbol 链 段名 偏移 绝对地址)` | 符号地址解析 |
 | `(value 宽度 值)` | 按 target 端序落成宽度个字节 |
-| `(reserve n)` | 只在 bss 段合法；由 bss 段整体跳过字节输出 |
+| `(reserve n)` | 只在 `kind hole` 段出现；只推进位置，不写字节 |
 | `item` 指令 | 操作数解析后交给 `insn.rkt` 编码 |
 
 ## 设计思路
@@ -31,8 +31,18 @@
 - 指令字节由 `insn.rkt` 的同一套 `instruction-size` / `encode-instruction` 提供，
   不在 encode 层重新维护指令尺寸。
 - `prefix` form 的内部操作数递归解析；内部 RIP-relative 以 `here + 1` 为基准。
-- `kind bss` 段返回 `(bytes #"")`，`size` 保留内存大小；BSS 内容由 loader 清零。
-- `reserve` 出现在非 bss 段时拒绝编码。
+- 两种段两条路径：`code` / `data` 逐条落字节；`kind hole` 只推进位置。
+  “洞从哪儿开始”不作为状态存在，它由段声明，不需要两个游标。
+
+## hole 段
+
+- `items` 只可能是 `reserve`（`label` 在 amd64 只进 anchors；`align` 已被 layout
+  归一化成 `reserve`）。
+- 产出 `(segment … (size n) (bytes #""))`：**`size` 保留，字节为空**。
+- 本层不解释洞的内容（loader / 程序 / 硬件决定），只做防御性断言：
+  offset 连续、`size` 等于 `reserve` 之和、items 全部是位置类。
+- hole 段里出现 `pad` / `bytes` / 指令等要写字节的 item 就报错：说明 layout 和
+  encode 对“这段是不是洞”的理解不一致。
 
 ## 边界
 

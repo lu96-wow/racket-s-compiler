@@ -3,6 +3,9 @@
 ;;;
 ;;; bound layout -> 每段字节。分支目标在这里换成相对偏移。
 ;;; 目前只支持已解析/常量内存 displacement。
+;;;
+;;; 两种段两条路径: code/data 逐条落字节; kind = hole 的段只有地址没有字节,
+;;; 产物是 (size n) + (bytes #"")。洞里的内容不归本产物定义。
 
 (require "../../amd64-asm/sexp.rkt"
          "../../amd64-asm/target.rkt"
@@ -80,55 +83,86 @@
                       operands)])
        (encode-instruction name ops))]))
 
-(define (encode-segment target seg symbols)
+;; (offset k ...) is an assertion: by the time we reach this item the position
+;; must be exactly k.  Both segment paths share it, so their errors cannot drift.
+(define (check-offset! name at reached it)
+  (unless (= at reached)
+    (error 'encode "segment ~a offset mismatch: layout ~a, encode ~a (item ~e)"
+           name at reached it)))
+
+;; A hole segment has an address range but no file bytes; the segment's size is
+;; kept, the bytes are empty.  What lives there is defined by the loader, the
+;; program or the hardware -- not by this artifact, so encode does not
+;; materialize anything and does not care who zeroes it.
+;; Items can only be label / reserve (layout already turned align into reserve).
+(define (encode-hole-segment seg)
+  (define name (segment-field seg 'name))
+  (define size (segment-field seg 'size))
+  (define cursor 0)                     ; memory-only: there is no file cursor here
+  (for ([entry (in-list (segment-items seg))])
+    (define at (cadr entry))
+    (define it (caddr entry))
+    (check-offset! name at cursor it)
+    (cond
+      [(label-form? it) (void)]
+      [(reserve-form? it) (set! cursor (+ cursor (reserve-size it)))]
+      [else (error 'encode
+                   "hole segment ~a got an item that writes bytes: ~e"
+                   name it)]))
+  (unless (= cursor size)
+    (error 'encode "segment ~a size mismatch: layout says ~a, hole advances ~a"
+           name size cursor))
+  (list 'segment
+        (list 'name name)
+        (list 'kind 'hole)
+        (list 'start (segment-field seg 'start))
+        (list 'size size)
+        (list 'bytes #"")))
+
+(define (encode-materialized-segment target seg symbols)
   (define name (segment-field seg 'name))
   (define kind (segment-field seg 'kind))
   (define start (segment-field seg 'start))
   (define size (segment-field seg 'size))
   (define entries (segment-items seg))
-  (cond
-    [(eq? kind 'bss)
-     ;; BSS has memory size but no file bytes.  The loader maps it as
-     ;; zero-filled memory; encode must not materialize the zeros.
-     (list 'segment
-           (list 'name name)
-           (list 'kind kind)
-           (list 'start start)
-           (list 'size size)
-           (list 'bytes #""))]
-    [else
-     (let ([chunks '()]
-           [cursor 0])
-       (define (emit! bs)
-         (set! chunks (cons bs chunks))
-         (set! cursor (+ cursor (bytes-length bs))))
-       (for ([entry (in-list entries)])
-         (define at (cadr entry))
-         (define it (caddr entry))
-         (define here (+ start at))
-         (unless (= at cursor)
-           (error 'encode "segment ~a offset mismatch: layout ~a, encode ~a (item ~e)"
-                  name at cursor it))
-         (cond
-           [(label-form? it) (void)]
-           [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (cadr it))))]
-           [(bytes-form? it) (emit! (list->bytes (cdr it)))]
-           [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
-           [(reserve-form? it)
-            (error 'encode "reserve is only valid in a bss segment: ~e" it)]
-           [(value-form? it)
-            (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
-           [else
-            (emit! (encode-code (car it) (cdr it) here symbols))]))
-       (unless (= cursor size)
-         (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
-                name size cursor))
-       (list 'segment
-             (list 'name name)
-             (list 'kind kind)
-             (list 'start start)
-             (list 'size size)
-             (list 'bytes (apply bytes-append (reverse chunks)))))]))
+  (let ([chunks '()]
+        [cursor 0])
+    (define (emit! bs)
+      (set! chunks (cons bs chunks))
+      (set! cursor (+ cursor (bytes-length bs))))
+    (for ([entry (in-list entries)])
+      (define at (cadr entry))
+      (define it (caddr entry))
+      (define here (+ start at))
+      (check-offset! name at cursor it)
+      (cond
+        [(label-form? it) (void)]
+        [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (cadr it))))]
+        [(bytes-form? it) (emit! (list->bytes (cdr it)))]
+        [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
+        [(reserve-form? it)
+         (error 'encode "reserve is only valid in a hole segment: ~e" it)]
+        [(value-form? it)
+         (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
+        [else
+         (emit! (encode-code (car it) (cdr it) here symbols))]))
+    (unless (= cursor size)
+      (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
+             name size cursor))
+    (list 'segment
+          (list 'name name)
+          (list 'kind kind)
+          (list 'start start)
+          (list 'size size)
+          (list 'bytes (apply bytes-append (reverse chunks))))))
+
+;; Two kinds of segments, two paths: materialized ones emit bytes item by item,
+;; hole ones only advance the position.  "Where the hole starts" is not a
+;; runtime state -- the segment declares it.
+(define (encode-segment target seg symbols)
+  (if (eq? (segment-field seg 'kind) 'hole)
+      (encode-hole-segment seg)
+      (encode-materialized-segment target seg symbols)))
 (define (encode-layout target layout)
   (define requests (cdr (or (assq 'requests layout) '(requests))))
   (unless (null? requests)

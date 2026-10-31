@@ -37,7 +37,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
   (image-plan (entry ...) (load ...) (section ...) (symbol ...))
   (origin 地址|#f)
   (sections
-    (section (name 名字) (kind code|data|bss)
+    (section (name 名字) (kind code|data|hole)
              (modes (item下标 mode) ...)
              (items item ...))
     ...)
@@ -48,6 +48,8 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 - `aliases` 是 `%equiv` 解析后的常量/地址表达式，供 image 层或调试使用。
 - `symbols` 保留 Loko `%label` 的符号元数据：start/end 路径、section、misc。
 - `comms` 保留 `%comm` 的原始声明；`translate.rkt` 已把它展开到 bss section。
+- `sections` 的 `kind` 用后端词汇：源码的 `%section bss` 出 IR 时翻成 `hole`。
+  “bss” 这个词只留在源码指令、section 名字和 ELF 段名里。
 - `image-plan` 是 `%elf` 的显式声明，交给 `amd64-elf` 消费；不是过程。
 - `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
@@ -132,7 +134,7 @@ push/pop 或改用自定义指令序列。
 %call
 ```
 
-本层不猜 BSS 位置、不调用宿主过程；等 image 子层接上。
+本层不猜 BSS 位置、不调用宿主过程；`image/layout-spec.rkt` 和 `amd64-elf` 已经接上，`%call` 仍需声明式替代。
 
 `$`（当前 IP）会原样变成核心地址表达式里的 `$`，由 layout / bind / encode
 在求值时解析。带标签的 `bitwise-and` / `bitwise-ior` / `ash` /

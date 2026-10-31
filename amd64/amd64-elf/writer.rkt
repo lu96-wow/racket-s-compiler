@@ -5,7 +5,7 @@
 ;;;
 ;;; 输入：
 ;;;
-;;;   build    (build (segment (name ...) (kind code|data|bss)
+;;;   build    (build (segment (name ...) (kind code|data|hole)
 ;;;                            (start ...) (size ...) (bytes ...)) ...)
 ;;;   symbols  (symbol chain segment offset address) ...
 ;;;
@@ -18,8 +18,8 @@
 ;;;     (bytes #"..."))
 ;;;
 ;;; 当前实现：
-;;;   - 一个 PT_LOAD，覆盖从最小段起点到最大段终点的连续内存；
-;;;   - 末尾的 bss 作为 p_filesz < p_memsz 的零填充区；
+;;;   - 没有 plan 时一个 PT_LOAD；有 plan load 时按 build segment 生成多个 PT_LOAD；
+;;;   - kind hole 的段（.bss / .tbss / guard …）作为 p_filesz < p_memsz 的零填充区；
 ;;;   - 另加一个 PT_GNU_STACK；
 ;;;   - .text/.data/.bss + .symtab/.strtab/.shstrtab section headers；
 ;;;   - 不做 reloc / dynamic linking。
@@ -116,7 +116,7 @@
     (case kind
       [(code) (if (eq? name 'text) ".text" (format ".~a" name))]
       [(data) (if (eq? name 'data) ".data" (format ".~a" name))]
-      [(bss) (if (eq? name 'bss) ".bss" (format ".~a" name))]
+      [(hole) (if (eq? name 'bss) ".bss" (format ".~a" name))]
       [else (format ".~a" name)]))
   base)
 
@@ -182,11 +182,11 @@
 (define (section-flags kind)
   (case kind
     [(code) #x6]                    ; ALLOC | EXECINSTR
-    [(data bss) #x3]                ; ALLOC | WRITE
+    [(data hole) #x3]               ; ALLOC | WRITE
     [else #x3]))
 
 (define (section-type kind)
-  (if (eq? kind 'bss) 8 1))         ; NOBITS / PROGBITS
+  (if (eq? kind 'hole) 8 1))        ; NOBITS / PROGBITS
 
 (define (section-align kind)
   (if (eq? kind 'code) 16 8))
@@ -386,7 +386,7 @@
                                     segments)))
   (define file-mem-end
     (for/fold ([end image-base]) ([s (in-list segments)]
-                                  #:unless (eq? (elf-segment-kind s) 'bss))
+                                  #:unless (eq? (elf-segment-kind s) 'hole))
       (max end (+ (elf-segment-start s) (elf-segment-size s)))))
   (define data-span (max 0 (- file-mem-end image-base)))
   (define mem-span (max 0 (- image-end image-base)))
@@ -548,7 +548,7 @@
         (for/list ([s (in-list segments)])
           (define kind (elf-segment-kind s))
           (define b (elf-segment-bytes s))
-          (unless (or (eq? kind 'bss) (= (bytes-length b) (elf-segment-size s)))
+          (unless (or (eq? kind 'hole) (= (bytes-length b) (elf-segment-size s)))
             (error 'write-elf "segment ~a file size mismatch"
                    (elf-segment-name s)))
           (list 1
@@ -556,14 +556,14 @@
                 (+ data-offset (- (elf-segment-start s) image-base))
                 (elf-segment-start s)
                 (elf-segment-start s)
-                (if (eq? kind 'bss) 0 (bytes-length b))
+                (if (eq? kind 'hole) 0 (bytes-length b))
                 (elf-segment-size s)
                 (segment-load-align plan* s)))
         (list (list 1 #x7 data-offset image-base image-base
                     data-span mem-span 4096))))
 
   ;; copy segment bytes
-  (for ([s (in-list segments)] #:unless (eq? (elf-segment-kind s) 'bss))
+  (for ([s (in-list segments)] #:unless (eq? (elf-segment-kind s) 'hole))
     (define b (elf-segment-bytes s))
     (unless (= (bytes-length b) (elf-segment-size s))
       (error 'write-elf "segment ~a file size mismatch"

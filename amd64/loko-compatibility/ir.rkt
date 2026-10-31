@@ -10,7 +10,7 @@
 ;;;     (image-plan (entry ...) (load ...) (section ...) (symbol ...))
 ;;;     (sections
 ;;;       (section (name 名字)
-;;;                (kind code|data|bss)
+;;;                (kind code|data|hole)   ; bss 段在这里叫 hole
 ;;;                (modes (item下标 mode) ...)
 ;;;                (items item ...))
 ;;;       ...))

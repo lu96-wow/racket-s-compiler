@@ -1,16 +1,16 @@
 # 当前缺口
 
-> 项目已经按 `amd64-asm` / `compiler` / `amd64-help` / `loko-compatibility`
-> 拆开。本文记录拆分后仍然缺的结构和能力。
+> 项目已经按 `amd64-asm` / `compiler` / `amd64-help` / `amd64-elf` /
+> `loko-compatibility` 拆开。本文记录拆分后仍然缺的结构和能力。
 
 ## 1. 结构缺口
 
 | 位置 | 现状 | 缺口 |
 | --- | --- | --- |
-| `loko-compatibility/` | `translate.rkt` + `lower/`：符号元数据、sections/origin/mode、伪寄存器、liveness、图着色 | lower 还缺跨调用值 spill、frame allocation；image plan 尚未消费 sections |
-| `loko-compatibility/` | 同上 | 没有 `image/`：sections/comms -> layout-spec、`%call`、BSS/NOBITS、strtab/symtab、ELF |
+| `loko-compatibility/` | `translate.rkt` + `lower/` + `image/layout-spec.rkt`：符号元数据、sections/origin/mode、伪寄存器、liveness、图着色、自动 layout-spec | lower 还缺跨调用值 spill、frame allocation、GC 注记；`%call` 还没有声明式替代 |
+| `amd64-elf/` | build + symbols + image-plan -> 静态 ELF64 | 单 PT_LOAD 默认、plan 可多 PT_LOAD；还缺精确 symbol metadata / reloc |
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
-| `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/bss 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
+| `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/hole 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
 | 仓库根 | 分层测试脚本 | 还没有一个统一 test runner |
 
@@ -42,9 +42,9 @@
 
 已完成：
 
-- `layout-spec.rkt`：`loko-ir` 的 sections/origin/modes/comms -> 带 bss segment 的
+- `layout-spec.rkt`：`loko-ir` 的 sections/origin/modes/comms -> 带 hole segment 的
   粗布局 `layout-spec`
-- [`amd64-elf/writer.rkt`](../amd64-elf/writer.rkt)：build + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
+- [`amd64-elf/writer.rkt`](../amd64-elf/writer.rkt)：build + symbols + image-plan -> 静态 ELF64（默认单 PT_LOAD，plan 可多 PT_LOAD；NOBITS BSS、symtab/strtab）
 - section 起始 synthetic label、place 规则、空 section、data section 边界
 - code section 非 64 位 -> `mode-unsupported`
 
@@ -69,7 +69,7 @@
 已完成：
 
 - 通用 `(reserve n)` item
-- `kind bss` 段；encode 不生成文件字节
+- `kind hole` 段（有位置、没有文件字节）；encode 不生成文件字节
 - `cld` 编码
 
 ## 3. 表达式缺口
@@ -98,7 +98,7 @@
 
 1. `loko-compatibility/translate.rkt`：`%label start end` 语义、sections/origin/mode 采集已完成
 2. `loko-compatibility/lower/`：补齐 spill / frame / GC 注记
-3. `loko-compatibility/image/`：loko-ir -> layout-spec、call、BSS/NOBITS、ELF/symtab
+3. `loko-compatibility/image/`：`%call` 的声明式 ELF 计划；`layout-spec` 已自动生成
 4. `amd64-asm/` far form + mode
 5. `amd64-help/`：far/表达式辅助
 6. Racket ↔ Loko bridge

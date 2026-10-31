@@ -163,7 +163,7 @@
                          (items (label text) (mov rax 1)))
                 (section (name data) (kind data) (modes)
                          (items (label d) (value 8 1)))
-                (section (name bss) (kind bss) (modes)
+                (section (name bss) (kind hole) (modes)
                          (items (label b)))))
 
 ;; %init-bss is a frontend marker: only explicit source gets zeroing code.
@@ -256,7 +256,7 @@
                          (items (label text) (ret)))
                 (section (name data) (kind data) (modes)
                          (items (label bss)))
-                (section (name bss) (kind bss) (modes)
+                (section (name bss) (kind hole) (modes)
                          (items
                           (align 8) (label small) (reserve 8)
                           (align 4096) (label large) (reserve 4096)

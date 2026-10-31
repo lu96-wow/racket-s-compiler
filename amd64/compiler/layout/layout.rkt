@@ -6,7 +6,7 @@
 ;;; 本层只做“放置 + 度量 + 问题”:
 ;;;   - 按 place 把代码块/数据 run 放进段
 ;;;   - 按块内/run 内顺序累加尺寸
-;;;   - align 换成 pad 事实
+;;;   - align 换成 pad / reserve 事实（看段 kind）
 ;;;   - 记录 anchors、requests、problems
 ;;;
 ;;; 不改程序、不选远形式、不填 scratch、不生成绝对符号。
@@ -43,7 +43,7 @@
   (define end (field-value 'end fields))
   (define align (field-value 'align fields))
   (unless (symbol? name) (error 'layout "segment needs name: ~e" s))
-  (unless (memq kind '(code data bss)) (error 'layout "bad segment kind: ~e" s))
+  (unless (memq kind '(code data hole)) (error 'layout "bad segment kind: ~e" s))
   (unless (exact-integer? start) (error 'layout "segment needs start: ~e" s))
   (unless (exact-integer? end) (error 'layout "segment needs end: ~e" s))
   (unless (exact-positive-integer? align) (error 'layout "segment needs align: ~e" s))
@@ -54,7 +54,8 @@
   (unless (= (length names) (length (remove-duplicates names)))
     (problem! (list 'segment-name-duplicated names)))
   (for ([s (in-list segments)])
-    ;; Empty sections (e.g. an unused bss) are valid: start may equal end.
+    ;; Empty sections are valid: start may equal end (an unused data section, a
+    ;; hole with no addresses yet, ...).  RISC-V is stricter here; amd64 is not.
     (unless (<= (segment-start s) (segment-end s))
       (problem! (list 'segment-bad-range (segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
@@ -243,28 +244,34 @@
   (define (anchor! chain)
     (set! anchors (cons (list 'anchor chain name cursor) anchors)))
 
+  ;; item 类别的合法性只有一张表(forms.rkt 的 item-kind-allowed-in?);
+  ;; 这里只把"不合法"翻译成本层的问题名, 不在这里塞策略。
+  (define (check-item-kind! it)
+    (define ik (item-kind it))
+    (unless (item-kind-allowed-in? ik kind)
+      (problem!
+       (cond
+         [(eq? kind 'hole) (list 'hole-materialized-item name cursor it)]
+         [(eq? ik 'space)  (list 'reserve-outside-hole name cursor it)]
+         [else (list 'segment-item-kind-mismatch name kind cursor it)]))))
+
   (define (emit-item! it origin)
     (cond
       [(label-form? it) (anchor! (label-chain it))]
       [(comment-form? it) (void)]
       [(align-form? it)
        (define n (align-pad (+ start cursor) (cadr it)))
-       (set! out (cons (list 'offset cursor (list 'pad n)) out))
+       ;; 补出来的空间算不算文件字节由段 kind 定:
+       ;;   code / data -> (pad n)      要材料化
+       ;;   hole        -> (reserve n)  只推进位置, 文件里没有
+       ;; 这一句就是本层唯一的 kind 分叉: 它让 hole 段的 items 永远只含
+       ;; reserve（label 只进 anchors），encode 不用再判"洞从哪儿开始"。
+       (define fact (if (eq? kind 'hole) (list 'reserve n) (list 'pad n)))
+       (check-item-kind! fact)
+       (set! out (cons (list 'offset cursor fact) out))
        (set! cursor (+ cursor n))]
       [else
-       (define item-kind* (item-kind it))
-       (unless (or (eq? item-kind* 'both)
-                   ;; A code segment may contain data (ELF/multiboot
-                   ;; headers, jump tables, ...).
-                   (and (eq? kind 'code) (memq item-kind* '(code data)))
-                   (and (eq? kind 'data) (eq? item-kind* 'data))
-                   (and (eq? kind 'bss) (eq? item-kind* 'data)))
-         (problem! (list 'segment-item-kind-mismatch name kind cursor it)))
-       (when (and (eq? kind 'bss)
-                  (not (or (reserve-form? it) (align-form? it))))
-         (problem! (list 'bss-unsupported-item name cursor it)))
-       (when (and (reserve-form? it) (not (eq? kind 'bss)))
-         (problem! (list 'reserve-outside-bss name cursor it)))
+       (check-item-kind! it)
        (define size (item-size it))
        (unless (and (exact-integer? size) (>= size 0))
          (error 'layout "cannot size item in segment ~a: ~e" name it))

@@ -13,7 +13,7 @@
          align-form? pad-form? bytes-form? fill-form? value-form?
          reserve-form? reserve-size
          value-width value-payload
-         item-kind item-size
+         item-kind item-size item-kind-allowed-in?
          align-pad
          control-transfer-form? short-control-transfer-form? near-control-transfer-form?
          control-transfer-target control-transfer-range)
@@ -32,6 +32,17 @@
 
 (define (align-pad absolute-address alignment)
   (modulo (- alignment (modulo absolute-address alignment)) alignment))
+
+;; 段 kind -> 它收哪些 item 类。
+;; code 段可以放数据(ELF/multiboot header、跳转表…), 这是本后端的事实;
+;; hole 段只收位置类: 洞里的地址没有字节可对应。
+(define (item-kind-allowed-in? ik kind)
+  (and (case kind
+         [(code) (memq ik '(marker align pad materialized code))]
+         [(data) (memq ik '(marker align pad materialized))]
+         [(hole) (memq ik '(marker align space))]
+         [else #f])
+       #t))
 
 (define control-transfer-mnemonics
   '(jmp-short jmp-near jcc-short jcc-near call-near))

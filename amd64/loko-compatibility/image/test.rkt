@@ -34,7 +34,7 @@
               '((segments
                  (segment (name text) (kind code) (start #x200000) (end #x200001) (align 1))
                  (segment (name data) (kind data) (start #x200001) (end #x200001) (align 1))
-                 (segment (name bss) (kind bss) (start #x200001) (end #x200021) (align 1)))
+                 (segment (name bss) (kind hole) (start #x200001) (end #x200021) (align 1)))
                 (place text (text))
                 (place data (bss))
                 (place bss (loko-image-start-bss) (bss-end))))

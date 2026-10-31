@@ -50,10 +50,10 @@
 - [x] SSE/xmm：`movss/movq/movd/movdqa`、算术/比较/转换、`ldmxcsr/stmxcsr`、`xorps/xorpd/orps`
 - [x] PC 控制面：`mov cr/dr`、`lgdt/lidt/lldt/ltr`、`rdmsr/wrmsr`、`swapgs/sysretq/iretq`
 - [x] 地址表达式支持 `$`（当前 item 地址）
-- [x] 通用 `reserve` / `kind bss` 段；encode 不生成 BSS 文件字节
+- [x] 通用 `reserve` / `kind hole` 段；encode 不生成文件字节
 - [x] `cld` 与 64 位 `%init-bss` 展开
 - [x] `%comm` 收集、按 size 排序并展开到 bss section
-- [x] `loko-ir` -> 自动 `layout-spec`（sections/origin/bss）
+- [x] `loko-ir` -> 自动 `layout-spec`（sections/origin/hole）
 - [x] `loko-lower` stage：loko-ir code section -> 物理寄存器
 - [x] 第一版静态 ELF64 writer：`amd64-elf/`，单 PT_LOAD、NOBITS BSS、symtab/strtab
 - [x] `%elf` / `image-plan`：显式 entry/load/section/symbol，支持多 PT_LOAD 权限
@@ -64,7 +64,7 @@
 - [ ] lower 的跨调用值 spill / frame allocation
 - [ ] `adc/sbb`、更多双精度/packed SSE
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
-- [ ] image 层：`loko-ir` -> 带 bss 的 `layout-spec`、`%call`、ELF/symtab
+- [ ] image 层：`%call` 的声明式替代；自动 `layout-spec` / ELF 已可用
 - [x] block-aware layout：place/region/wildcard、data runs、fallthrough
 - [x] 段起始对齐/重叠、代码数据混放、RIP/绝对 disp32 范围检查
 - [x] relax 按 `(code 块下标 项下标)` origin 精确升级
