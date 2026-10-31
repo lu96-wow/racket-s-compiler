@@ -1,10 +1,10 @@
 #lang racket
-;;; amd64/loko-compatibility/image/elf-test.rkt
+;;; amd64/amd64-elf/test.rkt
 
 (require rackunit
-         "../../amd64-asm/target.rkt"
-         "../../compiler/flow/flow.rkt"
-         "elf.rkt")
+         "../amd64-asm/target.rkt"
+         "../compiler/flow/flow.rkt"
+         "writer.rkt")
 
 (define (u16 bv off)
   (+ (bytes-ref bv off)
@@ -93,4 +93,4 @@
 (check-equal? (subbytes bytes2 0 4) #"\x7fELF")
 (check-equal? (cadr (assq 'entry (cdr image2))) #x200000)
 
-(displayln "amd64 loko-elf tests: ok")
+(displayln "amd64 elf tests: ok")

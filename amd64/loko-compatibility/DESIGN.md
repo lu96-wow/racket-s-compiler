@@ -148,7 +148,7 @@ push/pop 或改用自定义指令序列。
 ```sh
 racket amd64/loko-compatibility/test.rkt
 racket amd64/loko-compatibility/image/test.rkt
-racket amd64/loko-compatibility/image/elf-test.rkt
+racket amd64/amd64-elf/test.rkt
 ```
 
 ## 8. 后续结构
@@ -160,7 +160,7 @@ loko-compatibility/
   translate.rkt        ; 已有：旧写法 -> 核心 item + 符号元数据
   lower/               ; 已有：伪寄存器 / liveness / 图着色 / call save；见 lower/DESIGN.md
   image/layout-spec.rkt ; 已有：loko-ir -> layout-spec；见 image/DESIGN.md
-  image/elf.rkt         ; 已有：build + symbols -> ELF64；计划：%call
+  image/                ; 计划：%call
 ```
 
 lower 目前还缺 spill 和 frame allocation；详细缺口见

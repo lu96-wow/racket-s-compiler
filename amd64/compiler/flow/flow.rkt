@@ -25,7 +25,7 @@
          (only-in "../../loko-compatibility/ir.rkt" make-loko-ir)
          (only-in "../../loko-compatibility/lower/ir.rkt" lower-loko-ir)
          (only-in "../../loko-compatibility/image/layout-spec.rkt" build-layout-spec)
-         (only-in "../../loko-compatibility/image/elf.rkt" write-elf)
+         (only-in "../../amd64-elf/writer.rkt" write-elf)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program pseudo-leftover?)

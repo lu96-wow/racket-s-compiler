@@ -44,7 +44,7 @@
 
 - `layout-spec.rkt`：`loko-ir` 的 sections/origin/modes/comms -> 带 bss segment 的
   粗布局 `layout-spec`
-- `elf.rkt`：build + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
+- [`amd64-elf/writer.rkt`](../amd64-elf/writer.rkt)：build + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
 - section 起始 synthetic label、place 规则、空 section、data section 边界
 - code section 非 64 位 -> `mode-unsupported`
 

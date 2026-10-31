@@ -26,6 +26,7 @@ loko-source -> loko-compat -> loko-ir
   -> loko-image -> program-items / data-items / layout-spec
   -> expand-pseudo -> analyze -> dce
   -> relax (内部反复 layout) -> bind-labels -> encode
+  -> loko-elf (可选) -> image
 
 rich data -> expand-data -> flatten -> program-items / data-items
   -> 同一后半段
@@ -35,9 +36,9 @@ rich data -> expand-data -> flatten -> program-items / data-items
 `loko-compat`（目录 `loko-compatibility/`）把旧写法变换成核心 item，并采集
 `loko-ir`（sections / origin / mode / symbols / comms）。
 `loko-image`（目录 `loko-compatibility/image/`）把 `loko-ir` 转成自动
-`layout-spec` 和扁平 items。
-`loko-lower`（目录 `loko-compatibility/lower/`）消除 `(reg N)`；目前还是可选层，
-尚未注册进 `flow` 的默认 stage 表。
+`layout-spec` 和扁平 items。ELF writer 独立在 `amd64-elf/`。
+`loko-lower`（目录 `loko-compatibility/lower/`）消除 `(reg N)`；它已注册为 stage，
+由 Loko 流组使用，不在 rich-data 默认流里。
 
 ## 3. 层契约
 

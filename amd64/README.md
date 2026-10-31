@@ -1,13 +1,14 @@
 # amd64 后端
 
-amd64 后端拆成四个子项目：
+amd64 后端拆成五个子项目：
 
 ```text
 amd64/
   amd64-asm/           二进制编码：寄存器、target、指令编码
   compiler/            S-expression 汇编编译器：展开、分析、布局、编码
   amd64-help/          x64 辅助函数：li 展开、范围判断
-  loko-compatibility/  Loko 旧汇编写法 -> 核心 item
+  amd64-elf/           build + symbols -> ELF64 image
+  loko-compatibility/  Loko 旧汇编写法 -> 核心 item / loko-ir
 ```
 
 整体流水线：
@@ -27,10 +28,12 @@ rich data
 Loko 兼容入口：
 
 ```text
-loko-source (text/data)
-  -> loko-compat
-  -> program-items + data-items
+loko-source
+  -> loko-compat -> loko-ir
+  -> loko-lower
+  -> loko-image -> program-items/data-items/layout-spec
   -> compiler 的后半段
+  -> build -> amd64-elf
 ```
 
 ## 子项目
@@ -58,6 +61,15 @@ S-expression 汇编编译器，负责 item、控制流、布局、松弛、绑�
 ### `amd64-help`
 
 `li` 展开和整数范围判断等辅助函数；不编码、不布局。
+
+### `amd64-elf`
+
+把 `build` + symbols 写成静态 ELF64；不依赖 Loko 前端。
+
+| 文件 | 内容 |
+| --- | --- |
+| [`amd64-elf/writer.rkt`](amd64-elf/writer.rkt) | ELF header、program/section headers、symtab/strtab |
+| [`amd64-elf/DESIGN.md`](amd64-elf/DESIGN.md) | 输入输出、布局、边界 |
 
 ### `loko-compatibility`
 
@@ -96,8 +108,8 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 
 - lower 的跨调用值 spill、frame allocation
 - `needs-far` / far form / trampoline / scratch 寄存器
-- image 层：`loko-ir` -> 带 bss 的 `layout-spec`、`%call`、ELF/symtab
-- 外部符号 / reloc / loader
+- image 层：`%call`、多 PT_LOAD / 权限分离、reloc/dynamic linking
+- 外部符号 / loader
 - `jmpf`/`far`、16/32 位模式
 - `adc/sbb`、AVX、更多双精度/packed SSE
 
@@ -115,6 +127,6 @@ racket amd64/compiler/test/end-to-end.rkt
 racket amd64/compiler/test/flow-test.rkt
 racket amd64/loko-compatibility/test.rkt
 racket amd64/loko-compatibility/image/test.rkt
-racket amd64/loko-compatibility/image/elf-test.rkt
+racket amd64/amd64-elf/test.rkt
 racket amd64/loko-compatibility/lower/test.rkt
 ```

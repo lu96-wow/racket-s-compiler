@@ -1,5 +1,5 @@
 #lang racket
-;;; amd64/loko-compatibility/image/elf.rkt
+;;; amd64/amd64-elf/writer.rkt
 ;;;
 ;;; build + symbols -> ELF64 executable (bytevector).
 ;;;

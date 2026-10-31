@@ -55,7 +55,7 @@
 - [x] `%comm` 收集、按 size 排序并展开到 bss section
 - [x] `loko-ir` -> 自动 `layout-spec`（sections/origin/bss）
 - [x] `loko-lower` stage：loko-ir code section -> 物理寄存器
-- [x] 第一版静态 ELF64 writer：单 PT_LOAD、NOBITS BSS、symtab/strtab
+- [x] 第一版静态 ELF64 writer：`amd64-elf/`，单 PT_LOAD、NOBITS BSS、symtab/strtab
 - [x] `program-items` / `data-items` 从 sections 按 kind 推导
 - [x] 地址表达式支持符号 `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field`
 - [x] lower 第一版：伪寄存器 `(reg N)`、uses/sets、liveness、图着色分配

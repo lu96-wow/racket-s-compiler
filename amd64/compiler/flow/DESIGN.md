@@ -91,3 +91,4 @@
 - `loko-image` 已把 `loko-ir` 自动转成粗布局 `layout-spec`；
   需要自己提供 layout-spec 时用 `'loko-manual`。
 - `compile-image` 默认跑 `'elf`，返回 `(elf ...)`。
+- `loko-elf` 调用 [`../../amd64-elf/writer.rkt`](../../amd64-elf/writer.rkt)。
