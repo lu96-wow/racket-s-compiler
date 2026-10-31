@@ -24,7 +24,7 @@
     (place text (text))
     (place data (data))))
 
-(define measured (layout-items target-amd64 items spec))
+(define measured (layout-flat-items target-amd64 items spec))
 (check-equal? (cdr (assq 'problems measured)) '())
 
 (define bound (bind-labels measured))
@@ -55,7 +55,7 @@
     (ret)
     (label data)
     (value 8 #x1234)))
-(define sym-measured (layout-items target-amd64 sym-items spec))
+(define sym-measured (layout-flat-items target-amd64 sym-items spec))
 (check-equal? (cdr (assq 'requests sym-measured)) '())
 (check-equal? (cdr (assq 'problems sym-measured)) '())
 (define sym-bound (bind-labels sym-measured))
@@ -69,7 +69,7 @@
 
 ;; full unsigned data byte range
 (define byte-items '((label data) (value 1 255)))
-(define byte-measured (layout-items target-amd64 byte-items spec))
+(define byte-measured (layout-flat-items target-amd64 byte-items spec))
 (define byte-bound (bind-labels byte-measured))
 (define byte-build (encode-layout target-amd64 byte-bound))
 (check-equal? (cddr (car (cdr byte-build)))
@@ -84,7 +84,7 @@
     (ret)
     (label data)
     (value 8 0)))
-(define prefix-measured (layout-items target-amd64 prefix-items spec))
+(define prefix-measured (layout-flat-items target-amd64 prefix-items spec))
 (check-equal? (cdr (assq 'problems prefix-measured)) '())
 (define prefix-bound (bind-labels prefix-measured))
 (check-equal? (cdr (assq 'problems prefix-bound)) '())
@@ -101,7 +101,7 @@
     (movss xmm1 xmm2)
     (movdqa (b128 (base rsp) (disp 0)) xmm0)
     (ret)))
-(define sse-measured (layout-items target-amd64 sse-items spec))
+(define sse-measured (layout-flat-items target-amd64 sse-items spec))
 (check-equal? (cdr (assq 'problems sse-measured)) '())
 (define sse-bound (bind-labels sse-measured))
 (check-equal? (cdr (assq 'problems sse-bound)) '())
@@ -114,7 +114,7 @@
 
 ;; bind-labels is the final value-width check
 (define bad-value-items '((label data) (value 1 300)))
-(define bad-value-measured (layout-items target-amd64 bad-value-items spec))
+(define bad-value-measured (layout-flat-items target-amd64 bad-value-items spec))
 (define bad-value-bound (bind-labels bad-value-measured))
 (check-true
  (for/or ([p (in-list (cdr (assq 'problems bad-value-bound)))])

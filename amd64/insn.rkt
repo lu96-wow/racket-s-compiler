@@ -272,7 +272,7 @@
     [(mem-form? op) (parse-mem op)]
     [(or (reg? op) (symbol? op))
      (define r (if (reg? op) op (lookup-register op)))
-     (unless (gpr? r)
+     (unless (gpr-register? r)
        (error 'parse-rm "expected GPR or memory, got XMM register: ~e" op))
      r]
     [else (error 'parse-rm "expected register or memory operand: ~e" op)]))
@@ -283,8 +283,8 @@
               [(symbol? op) (lookup-register op #f)]
               [else #f]))
   (cond
-    [(and r (gpr? r)) r]
-    [(and r (xmm? r))
+    [(and r (gpr-register? r)) r]
+    [(and r (xmm-register? r))
      (error 'parse-reg "expected GPR, got XMM register: ~e" op)]
     [else (error 'parse-reg "expected register operand: ~e" op)]))
 
@@ -294,8 +294,8 @@
               [(symbol? op) (lookup-register op #f)]
               [else #f]))
   (cond
-    [(and r (xmm? r)) r]
-    [(and r (gpr? r))
+    [(and r (xmm-register? r)) r]
+    [(and r (gpr-register? r))
      (error 'parse-xmm "expected XMM register, got GPR: ~e" op)]
     [else (error 'parse-xmm "expected XMM register: ~e" op)]))
 
@@ -627,7 +627,7 @@
      (bytes* '(#xe8) (u32 off))]
     [_ (error 'encode-call-near "call-near takes one offset: ~e" operands)]))
 
-(define (encode-indirect opcode operands name)
+(define (encode-indirect-transfer opcode operands name)
   (match operands
     [(list rm)
      (define rm* (parse-rm rm))
@@ -758,7 +758,7 @@
               (list (if (= width 8) #xf6 #xf7)))]
     [_ (error 'encode-divide "~a takes one operand: ~e" name operands)]))
 
-(define (encode-movx signed? operands)
+(define (encode-mov-extend signed? operands)
   (match operands
     [(list dst src)
      (define dst* (parse-reg dst))
@@ -772,9 +772,9 @@
          [(and signed? (= sw 32) (= dw 64)) '(#x63)]
          [(and (not signed?) (= sw 8)) '(#x0f #xb6)]
          [(and (not signed?) (= sw 16)) '(#x0f #xb7)]
-         [else (error 'encode-movx "unsupported width combination: ~e -> ~e" sw dw)]))
+         [else (error 'encode-mov-extend "unsupported width combination: ~e -> ~e" sw dw)]))
      (emit-rm dw (list dst*) (encode-rm src* dst*) opcode)]
-    [_ (error 'encode-movx "~a takes two operands: ~e"
+    [_ (error 'encode-mov-extend "~a takes two operands: ~e"
               (if signed? 'movsx 'movzx) operands)]))
 
 (define (encode-setcc operands)
@@ -978,7 +978,7 @@
        [else (error 'encode-out "port must be dx or imm8: ~e" port)])]
     [_ (error 'encode-out "out takes port, src: ~e" operands)]))
 
-(define (fixed-instruction name bytes)
+(define (make-fixed-encoder name bytes)
   (lambda (operands)
     (unless (null? operands)
       (error name "~a takes no operands: ~e" name operands))
@@ -1086,14 +1086,14 @@
               [(reg? x) x]
               [(symbol? x) (lookup-register x #f)]
               [else #f]))
-  (and r (xmm? r)))
+  (and r (xmm-register? r)))
 
 (define (gpr-operand? x)
   (define r (cond
               [(reg? x) x]
               [(symbol? x) (lookup-register x #f)]
               [else #f]))
-  (and r (gpr? r)))
+  (and r (gpr-register? r)))
 
 (define (check-mem-width op width who)
   (when (and (mem? op) (not (= (mem-width op) width)))
@@ -1280,8 +1280,8 @@
    'jcc-short  (insn-def 2 encode-jcc-short)
    'jcc-near   (insn-def 2 encode-jcc-near)
    'call-near  (insn-def 1 encode-call-near)
-   'call-indirect (insn-def 1 (lambda (ops) (encode-indirect 2 ops 'call-indirect)))
-   'jmp-indirect  (insn-def 1 (lambda (ops) (encode-indirect 4 ops 'jmp-indirect)))
+   'call-indirect (insn-def 1 (lambda (ops) (encode-indirect-transfer 2 ops 'call-indirect)))
+   'jmp-indirect  (insn-def 1 (lambda (ops) (encode-indirect-transfer 4 ops 'jmp-indirect)))
    'test       (insn-def 2 encode-test)
    'inc        (insn-def 1 (lambda (ops) (encode-unary 'inc ops)))
    'dec        (insn-def 1 (lambda (ops) (encode-unary 'dec ops)))
@@ -1293,8 +1293,8 @@
    'imul       (insn-def #f encode-imul)
    'div        (insn-def 1 (lambda (ops) (encode-divide 'div ops)))
    'idiv       (insn-def 1 (lambda (ops) (encode-divide 'idiv ops)))
-   'movzx      (insn-def 2 (lambda (ops) (encode-movx #f ops)))
-   'movsx      (insn-def 2 (lambda (ops) (encode-movx #t ops)))
+   'movzx      (insn-def 2 (lambda (ops) (encode-mov-extend #f ops)))
+   'movsx      (insn-def 2 (lambda (ops) (encode-mov-extend #t ops)))
    'setcc      (insn-def 2 encode-setcc)
    'cmovcc     (insn-def 3 encode-cmovcc)
    'xchg       (insn-def 2 encode-xchg)
@@ -1340,31 +1340,31 @@
    'lidt       (insn-def 1 (lambda (ops) (encode-descriptor-table #x01 3 'lidt ops)))
    'lldt       (insn-def 1 (lambda (ops) (encode-system-rm16 2 'lldt ops)))
    'ltr        (insn-def 1 (lambda (ops) (encode-system-rm16 3 'ltr ops)))
-   'rdmsr      (insn-def 0 (fixed-instruction 'rdmsr '(#x0f #x32)))
-   'wrmsr      (insn-def 0 (fixed-instruction 'wrmsr '(#x0f #x30)))
-   'swapgs     (insn-def 0 (fixed-instruction 'swapgs '(#x0f #x01 #xf8)))
-   'sysretq    (insn-def 0 (fixed-instruction 'sysretq '(#x48 #x0f #x07)))
-   'iretq      (insn-def 0 (fixed-instruction 'iretq '(#x48 #xcf)))
+   'rdmsr      (insn-def 0 (make-fixed-encoder 'rdmsr '(#x0f #x32)))
+   'wrmsr      (insn-def 0 (make-fixed-encoder 'wrmsr '(#x0f #x30)))
+   'swapgs     (insn-def 0 (make-fixed-encoder 'swapgs '(#x0f #x01 #xf8)))
+   'sysretq    (insn-def 0 (make-fixed-encoder 'sysretq '(#x48 #x0f #x07)))
+   'iretq      (insn-def 0 (make-fixed-encoder 'iretq '(#x48 #xcf)))
    'movs       (insn-def 2 encode-movs)
    'stos       (insn-def 2 encode-stos)
    'ins        (insn-def 2 encode-ins)
    'outs       (insn-def 2 encode-outs)
-   'cdqe       (insn-def 0 (fixed-instruction 'cdqe '(#x48 #x98)))
-   'cpuid      (insn-def 0 (fixed-instruction 'cpuid '(#x0f #xa2)))
-   'rdtsc      (insn-def 0 (fixed-instruction 'rdtsc '(#x0f #x31)))
-   'rdtscp     (insn-def 0 (fixed-instruction 'rdtscp '(#x0f #x01 #xf9)))
-   'syscall    (insn-def 0 (fixed-instruction 'syscall '(#x0f #x05)))
-   'clc        (insn-def 0 (fixed-instruction 'clc '(#xf8)))
-   'stc        (insn-def 0 (fixed-instruction 'stc '(#xf9)))
-   'cli        (insn-def 0 (fixed-instruction 'cli '(#xfa)))
-   'sti        (insn-def 0 (fixed-instruction 'sti '(#xfb)))
-   'hlt        (insn-def 0 (fixed-instruction 'hlt '(#xf4)))
-   'pause      (insn-def 0 (fixed-instruction 'pause '(#xf3 #x90)))
-   'pushfq     (insn-def 0 (fixed-instruction 'pushfq '(#x9c)))
-   'popfq      (insn-def 0 (fixed-instruction 'popfq '(#x9d)))
-   'mfence     (insn-def 0 (fixed-instruction 'mfence '(#x0f #xae #xf0)))
-   'lfence     (insn-def 0 (fixed-instruction 'lfence '(#x0f #xae #xe8)))
-   'sfence     (insn-def 0 (fixed-instruction 'sfence '(#x0f #xae #xf8)))
+   'cdqe       (insn-def 0 (make-fixed-encoder 'cdqe '(#x48 #x98)))
+   'cpuid      (insn-def 0 (make-fixed-encoder 'cpuid '(#x0f #xa2)))
+   'rdtsc      (insn-def 0 (make-fixed-encoder 'rdtsc '(#x0f #x31)))
+   'rdtscp     (insn-def 0 (make-fixed-encoder 'rdtscp '(#x0f #x01 #xf9)))
+   'syscall    (insn-def 0 (make-fixed-encoder 'syscall '(#x0f #x05)))
+   'clc        (insn-def 0 (make-fixed-encoder 'clc '(#xf8)))
+   'stc        (insn-def 0 (make-fixed-encoder 'stc '(#xf9)))
+   'cli        (insn-def 0 (make-fixed-encoder 'cli '(#xfa)))
+   'sti        (insn-def 0 (make-fixed-encoder 'sti '(#xfb)))
+   'hlt        (insn-def 0 (make-fixed-encoder 'hlt '(#xf4)))
+   'pause      (insn-def 0 (make-fixed-encoder 'pause '(#xf3 #x90)))
+   'pushfq     (insn-def 0 (make-fixed-encoder 'pushfq '(#x9c)))
+   'popfq      (insn-def 0 (make-fixed-encoder 'popfq '(#x9d)))
+   'mfence     (insn-def 0 (make-fixed-encoder 'mfence '(#x0f #xae #xf0)))
+   'lfence     (insn-def 0 (make-fixed-encoder 'lfence '(#x0f #xae #xe8)))
+   'sfence     (insn-def 0 (make-fixed-encoder 'sfence '(#x0f #xae #xf8)))
    'cqo        (insn-def 0 encode-cqo)
    'cdq        (insn-def 0 encode-cdq)
    'ret        (insn-def 0 encode-ret)

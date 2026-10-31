@@ -3,7 +3,11 @@
 > 只做写法兼容。输入和输出都是 s-expression；没有布局、地址、编码，也没有
 > 跨调用状态。目标是把 Loko `arch/amd64` 现在吐出的汇编写法接到本后端。
 
-## 1. 输入
+## 1. 作用
+
+把 Loko `arch/amd64` 的旧汇编写法纯变换成本后端的核心 item。
+
+## 2. 相关 s-exp：输入
 
 ```scheme
 (loko-source
@@ -17,7 +21,7 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 `translate-loko-text` / `translate-loko-data` 是单边便利入口；如果代码引用了
 另一边的 `%equiv`，用 `translate-loko-source`。
 
-## 2. 输出
+## 3. 相关 s-exp：输出
 
 ```scheme
 (loko-compat
@@ -31,7 +35,7 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 - `aliases` 是 `%equiv` 解析后的常量/地址表达式，供 image 层或调试使用。
 - `problems` 是明确的问题列表；`flow/flow.rkt` 在非空时报错。
 
-## 3. 映射
+## 4. 映射
 
 | Loko 写法 | 核心写法 | 说明 |
 | --- | --- | --- |
@@ -54,7 +58,7 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 | `(call (mem...))` | `(call-indirect mem)` | 直接调用留给 expand-pseudo |
 | `(jmp (mem...))` | `(jmp-indirect mem)` | 直接跳转留给 expand-pseudo |
 
-## 4. 不在这里做的事
+## 5. 边界：不在这里做的事
 
 以下写法反映的是 image/链接事实，不是单纯拼写：
 
@@ -69,14 +73,14 @@ bss、不调用宿主过程。等 image 层设计好后再接。
 它们要么需要布局期地址，要么需要扩展核心地址表达式。当前显式报
 `current-ip-expression` / `symbolic-bit-expression`。
 
-## 5. 纯函数
+## 6. 设计思路：纯函数
 
 - 输入列表不被修改。
 - 标签表、别名表、问题列表都是本次调用的局部数据。
 - 输出只依赖输入；同样的输入得到同样的输出（匿名标签编号按遍历顺序固定）。
 - 不 require `layout` / `encode` / `flow`，避免反向依赖。
 
-## 6. 测试
+## 7. 边界 / 测试
 
 ```sh
 racket amd64/loko-compat/test.rkt

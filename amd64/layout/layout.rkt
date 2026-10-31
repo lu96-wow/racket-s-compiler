@@ -19,7 +19,7 @@
                   program? program-blocks program-flows
                   block-head block-items flow-fallthrough))
 
-(provide layout-items
+(provide layout-flat-items
          layout-program)
 
 ;; ---------------------------------------------------------------------------
@@ -108,16 +108,16 @@
 ;;
 ;;   code: analyze 的 block
 ;;   data: 从一条 label 到下一条 label 的 run
-;;   flat: layout-items 的兼容输入，按 place 标签切分
+;;   flat: layout-flat-items 的兼容输入，按 place 标签切分
 ;; ---------------------------------------------------------------------------
 
 (struct unit (id labels items) #:transparent)
 
-(define (program-units prog)
+(define (program->units prog)
   (for/list ([b (in-list (program-blocks prog))] [i (in-naturals)])
     (unit (list 'code i) (block-head b) (block-items b))))
 
-(define (split-data-units items)
+(define (data-items->units items)
   (define out '())
   (define labels '())
   (define body '())
@@ -140,7 +140,7 @@
   (or wildcard
       (for/or ([r (in-list rules)]) (equal? chain (car r)))))
 
-(define (flat-units items rules wildcard)
+(define (flat-items->units items rules wildcard)
   (define out '())
   (define labels '())
   (define body '())
@@ -175,7 +175,7 @@
 ;; 放置
 ;; ---------------------------------------------------------------------------
 
-(define (matching-segments rules labels)
+(define (matching-segment-names rules labels)
   (remove-duplicates
    (for*/list ([chain (in-list labels)]
                [r (in-list rules)]
@@ -190,7 +190,7 @@
   (define current #f)
   (for ([u (in-list units)])
     (define labels (unit-labels u))
-    (define hits (matching-segments rules labels))
+    (define hits (matching-segment-names rules labels))
     (cond
       [(> (length hits) 1)
        (problem! (list 'ambiguous-placement labels hits))]
@@ -205,7 +205,7 @@
        (problem! (list 'unplaced-block (unit-id u) labels))]))
   by-seg)
 
-(define (place-exact-units units rules wildcard problem! what)
+(define (place-exact-units units rules wildcard problem! unplaced-kind)
   (define by-seg (make-hash))
   (for ([u (in-list units)])
     (define labels (unit-labels u))
@@ -213,20 +213,20 @@
       [(null? labels)
        (problem! (list 'unlabeled-run (unit-id u) (unit-items u)))]
       [else
-       (define hits (matching-segments rules labels))
+       (define hits (matching-segment-names rules labels))
        (cond
          [(> (length hits) 1)
           (problem! (list 'ambiguous-placement labels hits))]
          [(= 1 (length hits)) (add-unit! by-seg (car hits) u)]
          [wildcard (add-unit! by-seg wildcard u)]
-         [else (problem! (list what (unit-id u) labels))])]))
+         [else (problem! (list unplaced-kind (unit-id u) labels))])]))
   by-seg)
 
 ;; ---------------------------------------------------------------------------
 ;; 度量
 ;; ---------------------------------------------------------------------------
 
-(struct measured-segment (segment items size entries anchors units) #:transparent)
+(struct measured-segment (segment items size entries anchors) #:transparent)
 ;; entries: (list segment 段内偏移 item 尺寸 origin)
 
 (define (measure-segment target seg units problem!)
@@ -267,9 +267,9 @@
     (for ([it (in-list (unit-items u))] [i (in-naturals)])
       (emit-item! it (append (unit-id u) (list i)))))
 
-  (measured-segment seg (reverse out) cursor (reverse entries) (reverse anchors) units))
+  (measured-segment seg (reverse out) cursor (reverse entries) (reverse anchors)))
 
-(define (all-units-by-segment segments code-by-seg data-by-seg)
+(define (units-by-segment segments code-by-seg data-by-seg)
   (for/hash ([seg (in-list segments)])
     (define name (segment-name seg))
     (values name
@@ -281,7 +281,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; The measured layout carries segment starts in its own segment forms.
-(define (positions-of anchors measured-segments)
+(define (anchor-positions anchors measured-segments)
   (define start-of
     (for/hash ([m (in-list measured-segments)])
       (values (segment-name (measured-segment-segment m))
@@ -292,7 +292,7 @@
     (define off (cadddr a))
     (values chain (+ (hash-ref start-of seg) off))))
 
-(define (check-control entry positions problem! request!)
+(define (check-control-transfer entry positions problem! request!)
   (define seg (car entry))
   (define offset (cadr entry))
   (define item (caddr entry))
@@ -318,26 +318,26 @@
                           (list 'needs-near origin (segment-name seg) offset item disp)
                           (list 'needs-far origin (segment-name seg) offset item disp))))])])))
 
-(define (collect-mem-sites item here size)
+(define (item-memory-sites item here size)
   (cond
     [(mem-form? item) (list (list (parse-mem item) here size))]
     [(and (form? item)
           (eq? (car item) 'prefix)
           (= 3 (length item))
           (form? (caddr item)))
-     (collect-mem-sites (caddr item) (+ here 1) (- size 1))]
+     (item-memory-sites (caddr item) (+ here 1) (- size 1))]
     [(form? item)
      (append* (for/list ([op (in-list (cdr item))])
-                (collect-mem-sites op here size)))]
+                (item-memory-sites op here size)))]
     [else '()]))
 
-(define (check-memory entry positions problem!)
+(define (check-memory-range entry positions problem!)
   (define seg (car entry))
   (define offset (cadr entry))
   (define item (caddr entry))
   (define size (cadddr entry))
   (define here (+ (segment-start seg) offset))
-  (for ([site (in-list (collect-mem-sites item here size))])
+  (for ([site (in-list (item-memory-sites item here size))])
     (define m (car site))
     (define m-here (cadr site))
     (define m-size (caddr site))
@@ -363,7 +363,7 @@
               (problem! (list 'absolute-out-of-range
                               (segment-name seg) offset item value)))])]))))
 
-(define (check-value entry positions problem!)
+(define (check-value-chains entry positions problem!)
   (define seg (car entry))
   (define offset (cadr entry))
   (define item (caddr entry))
@@ -419,20 +419,17 @@
                        problem!)))
   (define anchors (append* (map measured-segment-anchors measured)))
   (define entries (append* (map measured-segment-entries measured)))
-  (define positions (positions-of anchors measured))
+  (define positions (anchor-positions anchors measured))
   (define requests '())
   (define (request! r) (set! requests (cons r requests)))
   (for ([e (in-list entries)])
-    (check-control e positions problem! request!)
-    (check-memory e positions problem!)
-    (check-value e positions problem!))
+    (check-control-transfer e positions problem! request!)
+    (check-memory-range e positions problem!)
+    (check-value-chains e positions problem!))
   (check-segment-overflow measured problem!)
   (when (and code-by-seg flows)
     (check-fallthrough code-by-seg flows problem!))
   (values measured anchors (reverse requests)))
-
-(define (measuring-units code-by-seg data-by-seg segments)
-  (all-units-by-segment segments code-by-seg data-by-seg))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口
@@ -444,11 +441,11 @@
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (define-values (segments rules wildcard) (parse-spec spec problem!))
-  (define code-by-seg (place-code-units (program-units prog) rules wildcard problem!))
+  (define code-by-seg (place-code-units (program->units prog) rules wildcard problem!))
   (define data-by-seg
-    (place-exact-units (split-data-units (as-items data-items))
+    (place-exact-units (data-items->units (as-items data-items))
                        rules wildcard problem! 'unplaced-data))
-  (define units-by-seg (measuring-units code-by-seg data-by-seg segments))
+  (define units-by-seg (units-by-segment segments code-by-seg data-by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg code-by-seg (program-flows prog) problem!))
   (list (list 'phase 'measured)
@@ -457,13 +454,13 @@
         (cons 'requests requests)
         (cons 'problems (reverse problems))))
 
-(define (layout-items target items spec)
+(define (layout-flat-items target items spec)
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (define-values (segments rules wildcard) (parse-spec spec problem!))
-  (define units (flat-units (as-items items) rules wildcard))
+  (define units (flat-items->units (as-items items) rules wildcard))
   (define by-seg (place-exact-units units rules wildcard problem! 'unplaced))
-  (define units-by-seg (measuring-units (make-hash) by-seg segments))
+  (define units-by-seg (units-by-segment segments (make-hash) by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg #f #f problem!))
   (list (list 'phase 'measured)

@@ -1,28 +1,36 @@
 # amd64 expand-pseudo
 
-> 只做拼写规范化和分支形式选择；不解析标签，不判断指令合法性。
+## 作用
 
-## 输入输出
+把源码写法规范化成 `insn.rkt` 认识的真实 form。
 
 ```racket
 (rewrite-program items #:short-branches? [short? #f]) ; -> items
 ```
 
-## 规则
+## 相关 s-exp
 
-| 源码 | 规范化 |
+| 输入 | 输出 |
 | --- | --- |
 | `(jmp L)` | `(jmp-near L)` 或 `(jmp-short L)` |
 | `(jcc cc L)` | `(jcc-near cc L)` 或 `(jcc-short cc L)` |
 | `(call L)` | `(call-near L)` |
-| `(je L)` `(jz L)` | `(jcc-... e L)` |
-| `(jne L)` `(jnz L)` | `(jcc-... ne L)` |
-| `(jc L)` | `(jcc-... b L)` |
-| `(jnc L)` | `(jcc-... ae L)` |
-| `(li rd v)` | 整数展开成 `(mov rd v)`；地址表达式展开成 RIP-relative `lea` |
+| `(je L)` / `(jz L)` / `(jne L)` … | `(jcc-… e L)` 等规范条件码 |
+| `(li rd 整数)` | `(mov rd 整数)` |
+| `(li rd 地址表达式)` | `(lea rd (b64 (base rip) (disp 地址表达式)))` |
+| 其它 item / label / 数据 | 原样透传 |
 
-`#:short-branches?` 默认 `#f`，即第一版 near-only。后续打开 short 时只需把参数
-设为 `#t`，由 `relax` 负责升级。
+## 设计思路
 
-操作数是值，不递归改写；label/data item 原样透传。
-`rewrite-program` 之后 flow 会用 `pseudo-leftover?` 检查，伪指令不允许流入 layout/encode。
+- 只做拼写规范化和分支形式选择。
+- 操作数是值，不递归改写。
+- `jmp`/`jcc` 的 short/near 选择由参数决定；默认 near-only，flow 里用 short 起步，
+  交给 relax 升级。
+- `li` 的地址表达式统一变成 RIP-relative `lea`；是否可达由 layout 检查。
+- `pseudo-leftover?` 在 flow 里做最后检查，伪指令不能流入 layout/encode。
+
+## 边界
+
+- 不解析标签、不判断指令合法性、不算尺寸。
+- 不处理段/地址/编码。
+- 不处理 Loko 旧写法；那属于 `loko-compat`。

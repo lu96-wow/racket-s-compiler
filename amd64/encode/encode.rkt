@@ -33,7 +33,7 @@
 (define (value->bytes width expr symbols)
   (list->bytes (integer->bytes width (resolve-address symbols expr))))
 
-(define branch-forms '(jmp-short jmp-near jcc-short jcc-near call-near))
+(define control-transfer-forms '(jmp-short jmp-near jcc-short jcc-near call-near))
 
 (define (resolve-mem m here size symbols)
   (define d (mem-disp m))
@@ -66,7 +66,7 @@
                                (cdr inner))))
      (encode-instruction 'prefix (list pname inner*))]
 
-    [(memq name branch-forms)
+    [(memq name control-transfer-forms)
      (let* ([target (last operands)]
             [size (instruction-size name operands)]
             [address (resolve-symbol symbols target)]

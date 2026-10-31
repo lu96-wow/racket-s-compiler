@@ -30,7 +30,7 @@
   (andmap (lambda (c) (hash-has-key? symbols c))
           (address-expr-chains expr)))
 
-(define (check-values segments symbols)
+(define (check-value-widths segments symbols)
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (for ([seg (in-list segments)])
@@ -70,7 +70,7 @@
          (list 'symbol chain seg offset (+ (field 'start s) offset))]
         [_ (error 'bind-labels "bad anchor: ~e" a)])))
   (define table (symbol-table symbols))
-  (define extra (check-values segments table))
+  (define extra (check-value-widths segments table))
   (list (list 'phase 'bound)
         (cons 'segments segments)
         (cons 'anchors anchors)

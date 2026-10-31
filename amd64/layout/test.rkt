@@ -24,7 +24,7 @@
     (place data (data))))
 
 (define out
-  (layout-items
+  (layout-flat-items
    target-amd64
    '((label text)
      (align 4)

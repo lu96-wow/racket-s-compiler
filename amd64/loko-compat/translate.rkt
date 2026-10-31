@@ -76,18 +76,18 @@
 (define (record-problem! ctx p)
   (set-ctx-problems! ctx (cons p (ctx-problems ctx))))
 
-(define (problem-item ctx p)
+(define (record-problem-comment! ctx p)
   (record-problem! ctx p)
-  (list (problem->comment p)))
+  (list (problem->comment-form p)))
 
-(define (problem->comment p)
+(define (problem->comment-form p)
   (list 'comment (cons 'loko-compat-problem (cdr (problem->sexp p)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 来源
 ;; ---------------------------------------------------------------------------
 
-(define (source-parts src)
+(define (loko-source-parts src)
   (define fields
     (cond
       [(and (form? src) (eq? (car src) 'loko-source)) (cdr src)]
@@ -106,7 +106,7 @@
 
 (define (loko-source? src)
   (with-handlers ([exn:fail? (lambda (_) #f)])
-    (source-parts src)
+    (loko-source-parts src)
     #t))
 
 (define (translate-loko-text text)
@@ -189,7 +189,7 @@
 (struct scaled (index scale) #:transparent)
 
 (define (register-symbol? x)
-  (and (symbol? x) (register? x)))
+  (and (symbol? x) (register-name? x)))
 
 (define (register-width-of x)
   (and (register-symbol? x)
@@ -386,7 +386,7 @@
     [(eq? expr 'wordsize) 8]
     [(symbol? expr)
      (cond
-       [(register? expr) (problem 'register-in-expression expr)]
+       [(register-name? expr) (problem 'register-in-expression expr)]
        [else (label-path ctx expr)])]
     [(or (string? expr) (vector? expr)) (label-path ctx expr)]
     [(form? expr)
@@ -411,7 +411,7 @@
     [(exact-integer? op) op]
     [(symbol? op)
      (cond
-       [(register? op) op]
+       [(register-name? op) op]
        [(memq op '(fs gs rip)) op]
        [else (label-path ctx op)])]
     [(or (string? op) (vector? op)) (label-path ctx op)]
@@ -429,12 +429,12 @@
     ;; IN/OUT string forms are 16/32-bit only; Loko writes mem+ and expects
     ;; the 32-bit form in 64-bit mode.
     [(memq h '(ins outs)) 32]
-    [(set-head? h) 8]
+    [(setcc-head? h) 8]
     [(memq h '(movzx movsx)) 'ambiguous]
     [else
      (define regs
        (for/list ([op (in-list ops)]
-                  #:when (and (symbol? op) (register? op)))
+                  #:when (and (symbol? op) (register-name? op)))
          (reg-width (lookup-register op))))
      (cond
        [(pair? regs) (car regs)]
@@ -443,7 +443,7 @@
 (define (translate-label ctx item)
   (define args (cdr item))
   (cond
-    [(null? args) (problem-item ctx (problem 'empty-label item))]
+    [(null? args) (record-problem-comment! ctx (problem 'empty-label item))]
     [else
      (list (cons 'label
                  (append* (for/list ([a (in-list args)]) (label-path ctx a)))))])) 
@@ -453,15 +453,15 @@
     [(list n)
      (if (exact-positive-integer? n)
          (list (list 'align n))
-         (problem-item ctx (problem 'bad-align item)))]
+         (record-problem-comment! ctx (problem 'bad-align item)))]
     [(list n byte)
      (cond
        [(not (exact-positive-integer? n))
-        (problem-item ctx (problem 'bad-align item))]
+        (record-problem-comment! ctx (problem 'bad-align item))]
        [(not (eqv? byte 0))
-        (problem-item ctx (problem 'align-fill-not-supported item))]
+        (record-problem-comment! ctx (problem 'align-fill-not-supported item))]
        [else (list (list 'align n))])]
-    [_ (problem-item ctx (problem 'bad-align item))]))
+    [_ (record-problem-comment! ctx (problem 'bad-align item))]))
 
 (define (u-width h)
   (case h
@@ -472,7 +472,7 @@
     [(%u128) 16]
     [else #f]))
 
-(define (bytes-item bv)
+(define (bytes->item bv)
   (list (cons 'bytes (bytes->list bv))))
 
 (define (translate-u128 ctx expr)
@@ -480,15 +480,15 @@
       (let* ([low (bitwise-and expr (sub1 (expt 2 64)))]
              [high (arithmetic-shift expr -64)])
         (list (list 'value 8 low) (list 'value 8 high)))
-      (problem-item ctx (problem 'symbolic-u128 expr))))
+      (record-problem-comment! ctx (problem 'symbolic-u128 expr))))
 
 (define (translate-integer-value ctx width value)
   (cond
-    [(bytes? value) (bytes-item value)]
+    [(bytes? value) (bytes->item value)]
     [else
      (define e (translate-expr ctx value))
      (cond
-       [(problem? e) (problem-item ctx e)]
+       [(problem? e) (record-problem-comment! ctx e)]
        [(= width 16) (translate-u128 ctx e)]
        [else (list (list 'value width e))])]))
 
@@ -501,8 +501,8 @@
   (append*
    (for/list ([v (in-list (cdr item))])
      (if (bytes? v)
-         (bytes-item v)
-         (problem-item ctx (problem 'bad-vu8 v))))))
+         (bytes->item v)
+         (record-problem-comment! ctx (problem 'bad-vu8 v))))))
 
 (define (translate-utf8z ctx item)
   (append*
@@ -511,7 +511,7 @@
          (list (cons 'bytes
                      (append (for/list ([b (in-bytes (string->bytes/utf-8 v))]) b)
                              (list 0))))
-         (problem-item ctx (problem 'bad-utf8z v))))))
+         (record-problem-comment! ctx (problem 'bad-utf8z v))))))
 
 ;; 条件码别名：setcc/cmovcc 的旧拼写都落到同一张表。
 (define cc-alias
@@ -541,23 +541,23 @@
        (string=? (substring s 0 n) prefix)
        (string->symbol (substring s n))))
 
-(define (set-head? h)
+(define (setcc-head? h)
   (and (symbol? h) (head-tail h "set") #t))
 
-(define (set-head-cc h)
+(define (setcc-head-cc h)
   (define tail (head-tail h "set"))
   (and tail (hash-ref cc-alias tail #f)))
 
-(define (cmov-head? h)
+(define (cmovcc-head? h)
   (and (symbol? h) (head-tail h "cmov") #t))
 
-(define (cmov-head-cc h)
+(define (cmovcc-head-cc h)
   (define tail (head-tail h "cmov"))
   (and tail (hash-ref cc-alias tail #f)))
 
 ;; Loko writes lock.xadd / rep.movs as one mnemonic.  Turn the prefix into
 ;; an explicit form so the encoder sees a normal instruction inside.
-(define (prefix-head h)
+(define (split-prefixed-head h)
   (cond
     [(head-tail h "lock.") => (lambda (inner) (cons 'lock inner))]
     [(head-tail h "rep.") => (lambda (inner) (cons 'rep inner))]
@@ -567,8 +567,8 @@
   (define h (car item))
   (define default-width (memory-default-width item))
   (cond
-    [(prefix-head h)
-     (define p (prefix-head h))
+    [(split-prefixed-head h)
+     (define p (split-prefixed-head h))
      (define inner-out
        (translate-instruction ctx (cons (cdr p) (cdr item))))
      (cond
@@ -582,16 +582,16 @@
         (list (list 'prefix (car p) (car inner-out)))])]
 
     [(eq? h 'jmpf)
-     (problem-item ctx (problem 'far-jump-not-supported item))]
+     (record-problem-comment! ctx (problem 'far-jump-not-supported item))]
 
     [(eq? h 'setcc)
      (match (cdr item)
        [(list cc rm)
         (define op (translate-operand ctx rm 8))
         (if (problem? op)
-            (problem-item ctx op)
+            (record-problem-comment! ctx op)
             (list (list 'setcc (canonical-cc cc) op)))]
-       [_ (problem-item ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
 
     [(eq? h 'cmovcc)
      (match (cdr item)
@@ -599,34 +599,34 @@
         (define d (translate-operand ctx dst default-width))
         (define s* (translate-operand ctx src default-width))
         (cond
-          [(problem? d) (problem-item ctx d)]
-          [(problem? s*) (problem-item ctx s*)]
+          [(problem? d) (record-problem-comment! ctx d)]
+          [(problem? s*) (record-problem-comment! ctx s*)]
           [else (list (list 'cmovcc (canonical-cc cc) d s*))])]
-       [_ (problem-item ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
 
     [(memq h '(jcc jcc-short jcc-near))
      (match (cdr item)
        [(list cc target)
         (define t (translate-operand ctx target 64))
         (if (problem? t)
-            (problem-item ctx t)
+            (record-problem-comment! ctx t)
             (list (list h (canonical-cc cc) t)))]
-       [_ (problem-item ctx (problem 'bad-conditional item))])]
+       [_ (record-problem-comment! ctx (problem 'bad-conditional item))])]
 
-    [(and (set-head? h) (set-head-cc h))
+    [(and (setcc-head? h) (setcc-head-cc h))
      (define op (translate-operand ctx (cadr item) 8))
      (if (problem? op)
-         (problem-item ctx op)
-         (list (list 'setcc (set-head-cc h) op)))]
+         (record-problem-comment! ctx op)
+         (list (list 'setcc (setcc-head-cc h) op)))]
 
-    [(and (cmov-head? h) (cmov-head-cc h))
+    [(and (cmovcc-head? h) (cmovcc-head-cc h))
      (define ops
        (for/list ([op (in-list (cdr item))])
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (if p
-         (problem-item ctx p)
-         (list (cons 'cmovcc (cons (cmov-head-cc h) ops))))]
+         (record-problem-comment! ctx p)
+         (list (cons 'cmovcc (cons (cmovcc-head-cc h) ops))))]
 
     [else
      (define ops
@@ -634,12 +634,12 @@
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (cond
-       [p (problem-item ctx p)]
+       [p (record-problem-comment! ctx p)]
        [(and (memq h '(jmp call))
              (= 2 (length item))
              (or (loko-memory? (cadr item))
                  (and (symbol? (cadr item))
-                      (register? (cadr item)))))
+                      (register-name? (cadr item)))))
         (list (list (if (eq? h 'jmp) 'jmp-indirect 'call-indirect)
                     (car ops)))]
        [(eq? h 'sal) (list (cons 'shl ops))]
@@ -660,7 +660,7 @@
        [(%utf8z) (translate-utf8z ctx item)]
        [(%equiv) '()]
        [(%section %origin %comm %mode %call)
-        (problem-item ctx (problem 'directive-needs-image-layer item))]
+        (record-problem-comment! ctx (problem 'directive-needs-image-layer item))]
        [else (translate-instruction ctx item)])]))
 
 (define loko-directive?
@@ -674,7 +674,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (translate-loko-source src)
-  (define-values (text data) (source-parts src))
+  (define-values (text data) (loko-source-parts src))
   (let ([ctx (ctx (make-hash) (make-hash) (make-hash) '() 0)])
 
     ;; Definitions are collected first: code may refer to an alias that is
@@ -697,7 +697,7 @@
     (define aliases
       (for/list ([name (in-list alias-names)])
         (define v (resolve-alias ctx name '()))
-        (list 'alias name (if (problem? v) (problem->comment v) v))))
+        (list 'alias name (if (problem? v) (problem->comment-form v) v))))
 
     (list 'loko-compat
           (cons 'program-items program-items)

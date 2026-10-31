@@ -1,7 +1,24 @@
 # amd64 flow
 
-> 用 stage 表 + 选择器串起 amd64 各层。默认流包含 `relax`：expand-pseudo 先产生
-> short branch，relax 再按需要升成 near。
+## 作用
+
+用 stage 表 + 选择器把 amd64 各层串起来。默认流包含 relax：
+`expand-pseudo` 先产生 short branch，`relax` 再按需要升成 near。
+
+## 相关 s-exp / 在途值
+
+| 名字 | 形状 | 谁产 |
+| --- | --- | --- |
+| `loko-source` | `(loko-source (text …) (data …))` | seed |
+| `loko-aliases` | `(alias 名字 值) …` | `loko-compat` |
+| `rich-data` | rich 数据 | seed |
+| `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
+| `program-items` | 扁平程序 item | seed / `flatten` / `expand-pseudo` / `loko-compat` |
+| `names` | 完整链 → 位置 | `flatten` |
+| `program` | `(struct program blocks flows)` | `analyze` / `dce` |
+| `measured-layout` | segments + anchors + requests + problems | `layout` / `relax` |
+| `bound-layout` | measured + symbols | `bind-labels` |
+| `build` | 每段字节 | `encode` |
 
 ## stage 表
 
@@ -18,27 +35,34 @@
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
 
-默认流：
+## 设计思路
 
-```racket
-'(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
-```
+- 默认流：
 
-Loko 兼容流：
+  ```racket
+  '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
+  ```
 
-```racket
-'(loko-compat expand-pseudo analyze dce relax bind-labels encode)
-```
+- Loko 兼容流：
 
-对应阶段组是 `'loko`。`loko-compat` 只把旧写法变成核心 item；`%section` /
-`%comm` / `%origin` / `%mode` / `%call` 留给 image 层，当前会作为 problem 报错。
+  ```racket
+  '(loko-compat expand-pseudo analyze dce relax bind-labels encode)
+  ```
 
-## 说明
+  对应阶段组是 `'loko`。
 
-- `loko-compat` 是非强制入口；核心流不认识 Loko 的 `memN+` / `%label` 等拼写。
-- `layout` 直接消费 `program` 的 blocks + flows 和 data runs；检查 placement、段、fallthrough、RIP/disp32 范围。
-- `layout-items` 只是扁平 item 的兼容入口，不消费 flows。
+- `layout` 与 `relax` 平层：`relax` 自己反复驱动 `layout`。
+- `layout` 直接消费 `program` 的 blocks + flows 和 data runs。
+- `layout-flat-items` 只是扁平 item 的兼容入口，不消费 flows。
 - `measured-layout` 只有 anchors，没有绝对地址。
-- `relax` 和 `layout` 平层：自己反复驱动 layout，消费 `needs-near`。
 - `bind-labels` 才产生 symbols / 绝对地址。
 - `encode` 只吃 bound-layout；有 requests/problems 就拒绝。
+- stage 名字是契约；目录名不是流的一部分。
+- 选择器支持单层、层组和任意片段；组只是预定义列表，没有额外语义。
+
+## 边界
+
+- 不实现任何层语义，只做组合。
+- 不替层隐藏依赖；缺 requires 直接报错并列出 providers。
+- `loko-compat` 的 image 层指令（`%section` / `%comm` / `%origin` / `%mode` /
+  `%call`）在 flow 里作为问题报错。

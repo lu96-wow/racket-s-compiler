@@ -5,9 +5,9 @@
 
 (provide (struct-out reg)
          lookup-register
-         register?
-         gpr?
-         xmm?
+         register-name?
+         gpr-register?
+         xmm-register?
          reg-class
          reg-width
          reg-index
@@ -131,6 +131,6 @@
      (error 'lookup-register "unknown amd64 register: ~e" name)]
     [else default]))
 
-(define (register? name) (and (hash-ref registers name #f) #t))
-(define (gpr? r) (and (reg? r) (eq? (reg-class r) 'gpr)))
-(define (xmm? r) (and (reg? r) (eq? (reg-class r) 'xmm)))
+(define (register-name? name) (and (hash-ref registers name #f) #t))
+(define (gpr-register? r) (and (reg? r) (eq? (reg-class r) 'gpr)))
+(define (xmm-register? r) (and (reg? r) (eq? (reg-class r) 'xmm)))

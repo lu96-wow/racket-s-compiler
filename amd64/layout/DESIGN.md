@@ -73,7 +73,7 @@ requests 里的 `origin` 是：
 ```text
 (code 块下标 项下标)
 (data run下标 项下标)
-(flat unit下标 项下标)      ; layout-items 兼容入口
+(flat unit下标 项下标)      ; layout-flat-items 兼容入口
 ```
 
 relax 只消费 `needs-near` 的 `(code ...)` origin。
@@ -82,4 +82,4 @@ relax 只消费 `needs-near` 的 `(code ...)` origin。
 
 - `place` 没有 region 语法；region 是通过“块跟随当前段”实现的。
 - 还没有 far form / trampoline / scratch-fill。
-- `layout-items` 是兼容入口，不消费 flows，不做 fallthrough 检查。
+- `layout-flat-items` 是兼容入口，不消费 flows，不做 fallthrough 检查。
