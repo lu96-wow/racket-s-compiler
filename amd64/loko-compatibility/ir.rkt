@@ -7,6 +7,7 @@
 ;;;     (origin 地址|#f)
 ;;;     (symbols (symbol start end section misc) ...)
 ;;;     (comms (comm name size align) ...)
+;;;     (image-plan (entry ...) (load ...) (section ...) (symbol ...))
 ;;;     (sections
 ;;;       (section (name 名字)
 ;;;                (kind code|data|bss)
@@ -40,11 +41,12 @@
   (define p (ir-field ir key))
   (and p (cdr p)))
 
-(define (make-loko-ir origin symbols comms sections)
+(define (make-loko-ir origin symbols comms sections [image-plan '()])
   (list 'loko-ir
         (list 'origin origin)
         (cons 'symbols symbols)
         (cons 'comms comms)
+        (cons 'image-plan image-plan)
         (cons 'sections sections)))
 
 (define (section? x)

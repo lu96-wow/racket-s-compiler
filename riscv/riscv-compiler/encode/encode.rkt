@@ -18,8 +18,12 @@
 ;;;   bytes     原样
 ;;;   fill n b  n 个 b
 ;;;   value w v w 字节, 端序由 target.rkt 定; v 是整数或地址表达式
+;;;   reserve n hole 段里的"n 字节位置": 不写字节
 ;;;   真指令    riscv-asm 编码; 目标地址 = 符号表 + 加数, 分支/跳转取相对偏移
 ;;;   远形式 / li / la   先由 riscv-help 展开成几条真指令, 再逐条编码
+;;;
+;;; kind = hole 的段走另一条路: 地址范围存在, 文件里没有字节,
+;;; 产物是 (size n) + (bytes #"")。洞的内容不归本产物定义。
 ;;;
 ;;; (offset k ...) 是**断言**: 写出去的字节数必须正好让它落在 k。
 ;;; 不符说明 layout 和 encode 对尺寸的理解不一致, 直接报错(这是抓这类 bug 的地方)。
@@ -135,7 +139,38 @@
 ;; 段
 ;; ---------------------------------------------------------------------------
 
-(define (encode-segment target seg symbols)
+;; hole 段: 地址范围存在, 文件里没有字节。
+;; 本层**不解释**这些地址里放的是什么 —— 由加载器 / 程序 / 硬件定义, 与产物无关;
+;; 这里只保证"位置"被完整推进了, 然后交出一段空字节。
+;; items 只可能是 label / reserve(layout 已把 align 归一化成 reserve)。
+;; 出现别的说明 layout 和 encode 对"这段是不是洞"的理解不一致, 直接报错。
+(define (encode-hole-segment seg)
+  (define name (segment-field seg 'name))
+  (define size (segment-field seg 'size))
+  (define cursor 0)
+  (for ([entry (in-list (segment-items seg))])
+    (define at (cadr entry))
+    (define it (caddr entry))
+    (unless (= at cursor)
+      (error 'encode
+             "段 ~a 的偏移不一致: layout 说 ~a, encode 算到 ~a (item ~e)"
+             name at cursor it))
+    (cond
+      [(label-form? it) (void)]
+      [(reserve-form? it) (set! cursor (+ cursor (reserve-size it)))]
+      [else (error 'encode
+                   "hole 段 ~a 里出现了要写字节的 item(洞的内容不归本产物定义): ~e"
+                   name it)]))
+  (unless (= cursor size)
+    (error 'encode "段 ~a 的尺寸不一致: 产物说 ~a, 位置只推进了 ~a" name size cursor))
+  (list 'segment
+        (list 'name name)
+        (list 'kind 'hole)
+        (list 'start (segment-field seg 'start))
+        (list 'size size)
+        (list 'bytes #"")))
+
+(define (encode-materialized-segment target seg symbols)
   (define name (segment-field seg 'name))
   (define kind (segment-field seg 'kind))
   (define start (segment-field seg 'start))
@@ -177,6 +212,13 @@
         (list 'start start)
         (list 'size size)
         (list 'bytes (list->bytes (append* (reverse chunks))))))
+
+;; 两种段两种写法: 材料化的逐条落字节; hole 只推进位置。
+;; 没有第三个分支 —— "洞从哪儿开始" 不作为状态存在, 它由段的 kind 声明。
+(define (encode-segment target seg symbols)
+  (if (eq? (segment-field seg 'kind) 'hole)
+      (encode-hole-segment seg)
+      (encode-materialized-segment target seg symbols)))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口

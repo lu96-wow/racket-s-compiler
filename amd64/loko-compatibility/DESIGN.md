@@ -34,6 +34,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
   (aliases (alias 名字 值) ...)
   (symbols (symbol start end section misc) ...)
   (comms (comm name size align) ...)
+  (image-plan (entry ...) (load ...) (section ...) (symbol ...))
   (origin 地址|#f)
   (sections
     (section (name 名字) (kind code|data|bss)
@@ -47,6 +48,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 - `aliases` 是 `%equiv` 解析后的常量/地址表达式，供 image 层或调试使用。
 - `symbols` 保留 Loko `%label` 的符号元数据：start/end 路径、section、misc。
 - `comms` 保留 `%comm` 的原始声明；`translate.rkt` 已把它展开到 bss section。
+- `image-plan` 是 `%elf` 的显式声明，交给 `amd64-elf` 消费；不是过程。
 - `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
   `modes` 记录 mode 切换点的 item 下标。
@@ -66,6 +68,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 | `(%comm name size align)` | `(comm name size align)` + bss 段里的 `(align) (label) (reserve)` | 按 size 升序展开到第一个 bss section 开头 |
 | `(%init-bss)` | 64 位：`cld` + `li` + `sub` + `xor` + `rep stosb` | 显式源码 marker；默认 `bss`/`bss-end`，clobber `rax rcx rdi` |
 | `(%init-bss start end)` | 同上 | 自定义 BSS 起止 label |
+| `(%elf (entry ...) (load ...) (section ...) (symbol ...))` | `image-plan` | 显式 ELF 计划；表达式保留到 `amd64-elf` 求值 |
 | `(%comment ...)` | `(comment ...)` | 零尺寸注记 |
 | `(%align n)` / `(%align n 0)` | `(align n)` | 显式非零填充字节暂不支持 |
 | `(%u8 v)` / `(%u16 v)` / `(%u32 v)` / `(%u64 v)` | `(value 1/2/4/8 v)` | 一条可展开成多条 |
@@ -161,6 +164,8 @@ loko-compatibility/
   lower/               ; 已有：伪寄存器 / liveness / 图着色 / call save；见 lower/DESIGN.md
   image/layout-spec.rkt ; 已有：loko-ir -> layout-spec；见 image/DESIGN.md
   image/                ; 计划：%call
+
+ELF writer 在 ../../amd64-elf/。
 ```
 
 lower 目前还缺 spill 和 frame allocation；详细缺口见

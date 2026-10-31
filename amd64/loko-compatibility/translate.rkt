@@ -73,16 +73,17 @@
 ;; origin:            %origin 设置的整体起址
 ;; current-mode:      当前 %mode（16/32/64，未设置时 #f）
 ;; comms:             %comm 收集（逆序）
+;; image-plan:       %elf 收集（逆序）
 (struct ctx (labels raw-aliases aliases problems counter section-name symbols
                 sections-table section-order current-section-state origin
-                current-mode comms)
+                current-mode comms image-plan)
   #:mutable)
 
 (struct section-state (name kind items modes) #:mutable)
 
 (define (make-empty-ctx)
   (ctx (make-hash) (make-hash) (make-hash) '() 0
-       'text '() (make-hash) '() #f #f #f '()))
+       'text '() (make-hash) '() #f #f #f '() '()))
 
 ;; Internal problems are records so they cannot collide with a label path
 ;; whose name happens to be `problem`.  They become tagged lists only at the
@@ -785,6 +786,93 @@
     [(list start end) (expand start end)]
     [_ (record-problem-as-comment! ctx (problem 'bad-init-bss item))]))
 
+(define (plan-field fields key)
+  (cond ((assq key fields) => cadr)
+        [else #f]))
+
+(define (known-plan-fields? fields allowed)
+  (andmap (lambda (f) (memq (car f) allowed)) fields))
+
+(define (translate-elf-load ctx fields)
+  (define name (plan-field fields 'name))
+  (define flags (plan-field fields 'flags))
+  (define align (plan-field fields 'align))
+  (cond
+    [(not (symbol? name)) (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
+    [(not (known-plan-fields? fields '(name flags align)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
+    [(and flags (not (symbol? flags)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-load-flags flags))]
+    [(and align (not (exact-positive-integer? align)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-load-align align))]
+    [else
+     (list (append (list 'load (list 'name name))
+                   (if flags (list (list 'flags flags)) '())
+                   (if align (list (list 'align align)) '())))]))
+
+(define (translate-elf-section ctx fields)
+  (define segment (plan-field fields 'segment))
+  (define name (plan-field fields 'name))
+  (define type (plan-field fields 'type))
+  (define flags (plan-field fields 'flags))
+  (define align (plan-field fields 'align))
+  (cond
+    [(not (symbol? segment))
+     (record-problem-as-comment! ctx (problem 'bad-elf-section fields))]
+    [(not (or (symbol? name) (string? name)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-section-name name))]
+    [(not (known-plan-fields? fields '(segment name type flags align)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-section fields))]
+    [(and align (not (exact-positive-integer? align)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-section-align align))]
+    [else
+     (list (append (list 'section (list 'segment segment))
+                   (if name (list (list 'name name)) '())
+                   (if type (list (list 'type type)) '())
+                   (if flags (list (list 'flags flags)) '())
+                   (if align (list (list 'align align)) '())))]))
+
+(define (translate-elf-symbol ctx fields)
+  (define name (plan-field fields 'name))
+  (define size (plan-field fields 'size))
+  (define type (plan-field fields 'type))
+  (define bind (plan-field fields 'bind))
+  (define section (plan-field fields 'section))
+  (define name* (and name (label-ref-path ctx name)))
+  (cond
+    [(not name*)
+     (record-problem-as-comment! ctx (problem 'bad-elf-symbol-name name))]
+    [(not (known-plan-fields? fields '(name size type bind section)))
+     (record-problem-as-comment! ctx (problem 'bad-elf-symbol fields))]
+    [else
+     (define size* (if size (translate-expr ctx size) #f))
+     (cond
+       [(problem? size*) (record-problem-as-comment! ctx size*)]
+       [else
+        (list (append (list 'symbol (list 'name name*))
+                      (if size* (list (list 'size size*)) '())
+                      (if type (list (list 'type type)) '())
+                      (if bind (list (list 'bind bind)) '())
+                      (if section (list (list 'section section)) '())))])]))
+
+(define (translate-elf-clause ctx clause)
+  (match clause
+    [(list 'entry expr)
+     (define e (translate-expr ctx expr))
+     (if (problem? e)
+         (record-problem-as-comment! ctx e)
+         (list (list 'entry e)))]
+    [(cons 'load fields) (translate-elf-load ctx fields)]
+    [(cons 'section fields) (translate-elf-section ctx fields)]
+    [(cons 'symbol fields) (translate-elf-symbol ctx fields)]
+    [_ (record-problem-as-comment! ctx (problem 'bad-elf-clause clause))]))
+
+(define (translate-elf ctx item)
+  (define clauses (append* (for/list ([c (in-list (cdr item))])
+                             (translate-elf-clause ctx c))))
+  (set-ctx-image-plan! ctx (append (reverse clauses) (ctx-image-plan ctx)))
+  '())
+
 (define (translate-item ctx item)
   (cond
     [(not (form? item)) (list item)]
@@ -824,6 +912,7 @@
           [_ (record-problem-as-comment! ctx (problem 'bad-mode item))])]
        [(%init-bss) (translate-init-bss ctx item)]
        [(%comm) (translate-comm ctx item)]
+       [(%elf) (translate-elf ctx item)]
        [(%call)
         (record-problem-as-comment! ctx (problem 'directive-needs-image-layer item))]
        [else (translate-instruction ctx item)])]))
@@ -831,7 +920,7 @@
 (define loko-directive?
   (let ([hs '(%label %comment %align %u8 %u16 %u32 %u64 %u128
                %vu8 %utf8z %equiv %section %origin %comm %mode %call
-               %init-bss)])
+               %init-bss %elf)])
     (lambda (x)
       (and (form? x) (memq (car x) hs) #t))))
 
@@ -936,6 +1025,7 @@
           (cons 'aliases aliases)
           (cons 'symbols (reverse (ctx-symbols ctx)))
           (cons 'comms (reverse (ctx-comms ctx)))
+          (cons 'image-plan (reverse (ctx-image-plan ctx)))
           (list 'origin (ctx-origin ctx))
           (cons 'sections (map section-state->sexp sections))
           (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))

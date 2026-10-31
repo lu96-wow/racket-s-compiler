@@ -84,11 +84,15 @@
 (define nop-word     #x00000013)   ; addi x0, x0, 0
 (define c-nop-word   #x0001)       ; c.addi x0, 0
 
+;; 只回答材料化段的“补什么字节”。
+;; hole 段不进这里: 它补出来的是 (reserve n), 根本不产生字节。
 (define (padding-bytes target kind n)
   (case kind
     [(code) (code-padding-bytes target n)]
     [(data) (make-list n 0)]
-    [else (error 'padding-bytes "unknown segment kind: ~a" kind)]))
+    [else (error 'padding-bytes
+                 "kind ~a 没有填充材料: code 填 nop / data 填 0 / hole 不产生字节"
+                 kind)]))
 
 (define (code-padding-bytes target n)
   (define quads (quotient n 4))

@@ -282,6 +282,38 @@
 (check-equal? (field 'comms comm-with-vector)
               '((comm (loko-label-0) 8 8)))
 
+;; %elf is captured as an explicit image-plan.
+(define elf-plan
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%elf
+       (entry text)
+       (load (name text) (flags r-x) (align 4096))
+       (load (name data) (flags rw-) (align 4096))
+       (load (name bss) (flags rw-) (align 4096))
+       (section (segment text) (name .text) (type progbits)
+                (flags (alloc exec)) (align 16))
+       (section (segment data) (name .data) (type progbits)
+                (flags (alloc write)) (align 8))
+       (section (segment bss) (name .bss) (type nobits)
+                (flags (alloc write)) (align 8))
+       (symbol (name text) (size 1) (type func) (bind global))))
+     (data))))
+(check-equal? (field 'problems elf-plan) '())
+(check-equal? (field 'image-plan elf-plan)
+              '((entry (text))
+                (load (name text) (flags r-x) (align 4096))
+                (load (name data) (flags rw-) (align 4096))
+                (load (name bss) (flags rw-) (align 4096))
+                (section (segment text) (name .text) (type progbits)
+                         (flags (alloc exec)) (align 16))
+                (section (segment data) (name .data) (type progbits)
+                         (flags (alloc write)) (align 8))
+                (section (segment bss) (name .bss) (type nobits)
+                         (flags (alloc write)) (align 8))
+                (symbol (name (text)) (size 1) (type func) (bind global))))
+
 (displayln "amd64 loko-compat tests: ok")
 
 ;; value references to vector labels use the same path as %label

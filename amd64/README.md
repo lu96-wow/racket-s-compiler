@@ -103,6 +103,7 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - Loko `%comm` 收集与 bss section 展开
 - `loko-ir` -> 自动 `layout-spec`（sections/origin/bss，粗布局上界）
 - `build` + symbols -> 静态 ELF64（单 PT_LOAD、NOBITS BSS、symtab/strtab）
+- `%elf` / `image-plan`：显式 entry、load 权限、section、symbol size，支持多 PT_LOAD
 
 未实现：
 

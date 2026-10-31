@@ -22,7 +22,7 @@
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
 (require (only-in "../../loko-compatibility/translate.rkt" translate-loko-source)
-         (only-in "../../loko-compatibility/ir.rkt" make-loko-ir)
+         (only-in "../../loko-compatibility/ir.rkt" make-loko-ir ir-list)
          (only-in "../../loko-compatibility/lower/ir.rkt" lower-loko-ir)
          (only-in "../../loko-compatibility/image/layout-spec.rkt" build-layout-spec)
          (only-in "../../amd64-elf/writer.rkt" write-elf)
@@ -86,7 +86,8 @@
                   'loko-ir (make-loko-ir (cadr (assq 'origin fields))
                                          (cdr (assq 'symbols fields))
                                          (cdr (assq 'comms fields))
-                                         (cdr (assq 'sections fields)))))
+                                         (cdr (assq 'sections fields))
+                                         (cdr (assq 'image-plan fields)))))
           "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols/comms）")
 
    'loko-lower
@@ -184,12 +185,13 @@
           "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")
 
    'loko-elf
-   (stage 'loko-elf '(build bound-layout) '(image)
+   (stage 'loko-elf '(build bound-layout loko-ir) '(image)
           (lambda (_target in)
             (define symbols
               (cdr (assq 'symbols (hash-ref in 'bound-layout))))
-            (hash 'image (write-elf (hash-ref in 'build) symbols)))
-          "build + symbols -> ELF64 image")))
+            (define plan (ir-list (hash-ref in 'loko-ir) 'image-plan))
+            (hash 'image (write-elf (hash-ref in 'build) symbols #:plan plan)))
+          "build + symbols + image-plan -> ELF64 image")))
 
 ;; ---------------------------------------------------------------------------
 ;; 查询

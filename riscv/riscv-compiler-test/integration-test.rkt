@@ -260,6 +260,45 @@
               '(#x78 #x00))
 
 ;; ---------------------------------------------------------------------------
+;; hole 段: 参与布局和符号绑定, 不产生文件字节
+;;
+;; 本层不管洞里的内容是谁清的(加载器 / 程序 / 硬件): 产物只说"这段地址存在,
+;; 文件里没有它"。所以这里能验的只有两件事: 符号有地址, bytes 为空。
+;; ---------------------------------------------------------------------------
+
+(define bss-items
+  '((label bss) (reserve 8)
+    (align 16) (label buf) (reserve 16)
+    (label bss-end)))
+
+(define bss-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+              (segment (name b) (kind hole) (start #x2000) (end #x2100) (align 8)))
+    (place c (main))
+    (place b (bss) (buf) (bss-end))))
+
+;; 跳过 expand-data: hole 的 item 直接当 data-items seed 进来
+(define bss-out
+  (run-flow '(flatten expand-pseudo analyze dce relax bind-labels encode)
+            (list (cons 'program-items '((label main) (jalr x0 ra 0)))
+                  (cons 'data-items bss-items)
+                  (cons 'layout-spec bss-spec))))
+
+(define bss-build (flow-value bss-out 'build))
+
+(check-equal? (layout-problems (flow-value bss-out 'bound-layout)) '())
+(check-equal? (build-size bss-build 'b) 32)
+(check-equal? (build-bytes bss-build 'b) '())
+(check-equal? (cadr (assoc 'kind (cdr (build-segment bss-build 'b)))) 'hole)
+
+;; 洞里的符号照样拿到绝对地址 = 段 start + 偏移
+(check-equal? (cdr (assoc 'symbols (flow-value bss-out 'bound-layout)))
+              '((symbol (main) c 0 #x1000)
+                (symbol (bss) b 0 #x2000)
+                (symbol (buf) b 16 #x2010)
+                (symbol (bss-end) b 32 #x2020)))
+
+;; ---------------------------------------------------------------------------
 ;; 错误: 未定义目标 / 空槽 不允许出产物
 ;; ---------------------------------------------------------------------------
 

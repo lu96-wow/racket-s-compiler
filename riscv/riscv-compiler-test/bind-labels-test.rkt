@@ -93,6 +93,31 @@
 (check-equal? (problems-of overflow) '())
 (check-true (has-problem? (bind-labels overflow) 'segment-overflow))
 
+;; hole 段也受同一套容量检查: 洞的尺寸不能超过声明的范围
+(define hole-overflow
+  (lay (analyze '((label main) (jalr x0 ra 0)))
+       '((label bss) (reserve 64))
+       '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                   (segment (name b) (kind hole) (start #x2000) (end #x2010) (align 8)))
+         (place c (main)) (place b (bss)))))
+
+(check-equal? (problems-of hole-overflow) '())
+(check-true (has-problem? (bind-labels hole-overflow) 'segment-overflow))
+
+;; hole 段里的 label 照常拿到绝对地址
+(define hole-symbols
+  (layout-symbols
+   (bind-labels
+    (lay (analyze '((label main) (jalr x0 ra 0)))
+         '((label bss) (reserve 8) (label buf) (reserve 8))
+         '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                     (segment (name b) (kind hole) (start #x2000) (end #x2010) (align 8)))
+           (place c (main)) (place b (bss) (buf)))))))
+
+(check-equal? (map symbol-address
+                   (filter (lambda (row) (eq? (caddr row) 'b)) hole-symbols))
+              '(#x2000 #x2008))
+
 ;; ---------------------------------------------------------------------------
 ;; requests / problems 原样带过去
 ;; ---------------------------------------------------------------------------

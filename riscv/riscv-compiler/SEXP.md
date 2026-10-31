@@ -40,7 +40,7 @@
 | 类型 | 形状 / 作用 |
 | --- | --- |
 | rich 数据 | `(b8 v)` / `(b16 v)` / `(bN-array n v…)` / `(utf-string[s] "…")` |
-| 核心数据 item | `(value w v)` / `(bytes …)` / `(fill n b)` / `(pad n)` / `(align n)` / `(label 链…)` |
+| 核心数据 item | `(value w v)` / `(bytes …)` / `(fill n b)` / `(pad n)` / `(align n)` / `(reserve n)` / `(label 链…)` |
 | 伪指令 | `(move …)` / `(load-32 …)` / `(ble …)` 等，由表替换 |
 | 控制转移 | `(bge a b L)` / `(jal rd L)` / `(branch-far …)` / `(branch-indirect …)` / `(jump-far …)` |
 | `(la rd [tmp] 表达式)` | 取地址；近形式 8 字节 |
@@ -52,3 +52,25 @@
 | measured-layout | `((phase measured) (segments …) (anchors …) (requests …) (problems …))` |
 | bound-layout | `((phase bound) (segments …) (anchors …) (symbols …) (requests …) (problems …))` |
 | `build` | `(build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
+
+## 段 kind
+
+`kind` 只回答两件事：**这一段收哪些 item**、**对齐补出来的空间怎么落**。
+它不表达权限、不表达“里面放什么数据”。
+
+| kind | 收的 item | `(align n)` 的产物 | 文件字节 |
+| --- | --- | --- | --- |
+| `code` | `label` / `align` / `pad` / 指令 | `(pad n)`，填 `nop` | 有 |
+| `data` | `label` / `align` / `pad` / `bytes` / `fill` / `value` | `(pad n)`，填 0 | 有 |
+| `hole` | `label` / `align` / `reserve` | `(reserve n)` | **没有** |
+
+```scheme
+(segment (name bss) (kind hole) (start #x2000) (end #x2100) (align 8))
+```
+
+`hole` 段只回答“这些地址存在”；内容不由本产物定义（加载器 / 程序 / 硬件决定），
+所以 `build` 里它的 `bytes` 是 `#""`，`size` 照旧。谁把它清成 0、什么时候清，
+是前端/平台的事，后端不参与。guard page、MMIO 窗口也是 `hole`，不需要额外语法。
+
+`(reserve n)` 只在 `hole` 段合法；`hole` 段不接受 `bytes` / `fill` / `value` / `pad` / 指令
+（否则地址和文件字节的对应关系就不成立了）。

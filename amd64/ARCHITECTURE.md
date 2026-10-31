@@ -46,7 +46,7 @@ rich data -> expand-data -> flatten -> program-items / data-items
 | --- | --- | --- |
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
 | `loko-image`（可选） | `loko-ir` | `program-items` `data-items` `layout-spec` |
-| `loko-elf`（可选） | `build` `bound-layout` | `image` |
+| `loko-elf`（可选） | `build` `bound-layout` `loko-ir` | `image` |
 | `loko-lower` | `loko-ir` | `loko-ir` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |

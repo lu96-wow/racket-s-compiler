@@ -17,9 +17,14 @@
 ;;;             blocks : ((block <头 label 链列表> item ...) ...)   ; 身份 + 程序
 ;;;             flows  : ((flow (succ id ...) (fallthrough id|#f) (root? bool)) ...)
 ;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b)
-;;;                              (value 宽度 值) (align n) ...)
+;;;                              (value 宽度 值) (align n) (reserve n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
 ;;;              (place 段名 链 ...) ...)
+;;;
+;;; 段 kind 只回答两个问题: 收哪些 item 类、对齐补出来的空间怎么落（见 forms.rkt）。
+;;;   code/data -> (align n) 变 (pad n)，要材料化
+;;;   hole      -> (align n) 变 (reserve n)，只推进位置，文件里没有字节
+;;; 所以 hole 段的 items 永远只含 label / reserve; 清不清零不是本层的事。
 ;;;
 ;;; 代码里没有 section: 段归属只写在 layout 的 place 行里。
 ;;;
@@ -104,7 +109,10 @@
   (unless (= (length names) (length (remove-duplicates names)))
     (problem! `(segment-name-duplicated ,names)))
   (for ([s (in-list segs)])
-    (unless (< (segment-start s) (segment-end s))
+    ;; 空段只在 hole 上允许: 洞可以不占任何地址, 要材料化的段不行。
+    (unless (if (eq? (segment-kind s) 'hole)
+                (<= (segment-start s) (segment-end s))
+                (< (segment-start s) (segment-end s)))
       (problem! `(segment-bad-range ,(segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
       (problem! `(segment-misaligned ,(segment-name s) ,(segment-start s) ,(segment-align s)))))
@@ -230,13 +238,22 @@
 
   (define origins (make-hash))
 
+  ;; item 类别的合法性只有一张表(forms.rkt 的 allowed-item-kind?);
+  ;; 这里只把"不合法"翻译成本层的问题名, 不在这里塞策略。
+  (define (check-item-kind! it)
+    (define ik (item-kind it))
+    (unless (allowed-item-kind? seg-kind ik)
+      (problem!
+       (cond
+         [(eq? seg-kind 'hole) `(hole-materialized-item ,seg-name ,cursor ,it)]
+         [(eq? ik 'space)      `(reserve-outside-hole ,seg-name ,cursor ,it)]
+         [(and (eq? ik 'materialized) (eq? seg-kind 'code))
+          `(code-data-mixed ,seg-name ,cursor ,it)]
+         [else `(data-code-mixed ,seg-name ,cursor ,it)]))))
+
   (define (emit! it sz [origin #f])
     (when origin (hash-set! origins cursor origin))
-    (cond
-      [(and (eq? (item-kind it) 'data) (eq? seg-kind 'code))
-       (problem! `(code-data-mixed ,seg-name ,cursor ,it))]
-      [(and (eq? (item-kind it) 'code) (not (eq? seg-kind 'code)))
-       (problem! `(data-code-mixed ,seg-name ,cursor ,it))])
+    (check-item-kind! it)
     (set! out (cons (list 'offset cursor it) out))
     (set! cursor (+ cursor sz)))
 
@@ -248,10 +265,14 @@
        ;; align 是**绝对地址**对齐: 段 start 不一定被 item 的 n 整除,
        ;; 所以用 (start + cursor) 算, 不能只用段内 cursor。
        ;;
-       ;; 产物里写**事实**不写请求: (align 8) -> (pad 补出来的字节数)。
-       ;; 这样 encode 不需要再算一遍对齐公式, 只需要决定这 n 个字节填什么。
+       ;; 产物里写**事实**不写请求, 但补出来的空间算不算文件字节由段 kind 定:
+       ;;   code / data -> (pad k)       要材料化(nop / 0)
+       ;;   hole        -> (reserve k)   只推进位置, 文件里没有
+       ;; 这一句就是本层唯一的 kind 分叉: 它让 hole 段的 items 永远只含
+       ;; label / reserve, encode 不用再判"洞从哪儿开始"。
        (define pad (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))
-       (emit! (list 'pad pad) pad origin)]
+       (emit! (if (eq? seg-kind 'hole) (list 'reserve pad) (list 'pad pad))
+              pad origin)]
       [else (emit! it (item-size target it) origin)]))
 
   (for ([e (in-list blks)])

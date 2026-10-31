@@ -112,17 +112,43 @@
 (check-false (scratch-hole? '(la t0 (l))))
 
 (check-equal? (item-kind '(label a)) 'marker)
-(check-equal? (item-kind '(align 8)) 'both)
-;; (pad n) 是产物侧的事实: 尺寸就是 n
-(check-equal? (item-kind '(pad 5)) 'both)
+(check-equal? (item-kind '(align 8)) 'align)
+;; (pad n) 是产物侧的事实: 尺寸就是 n, 而且是**要写字节**的
+(check-equal? (item-kind '(pad 5)) 'pad)
 (check-equal? (item-size '(pad 5)) 5)
 (check-true  (pad-form? '(pad 0)))
 (check-false (pad-form? '(pad -1)))
 (check-false (pad-form? '(pad)))
-(check-equal? (item-kind '(bytes 1)) 'data)
-(check-equal? (item-kind '(fill 4 0)) 'data)
-(check-equal? (item-kind '(value 8 (d t))) 'data)
+(check-equal? (item-kind '(bytes 1)) 'materialized)
+(check-equal? (item-kind '(fill 4 0)) 'materialized)
+(check-equal? (item-kind '(value 8 (d t))) 'materialized)
 (check-equal? (item-kind '(addi a0 a0 1)) 'code)
+
+;; (reserve n): 只推进位置, 不产生文件字节
+(check-true  (reserve-form? '(reserve 4)))
+(check-true  (reserve-form? '(reserve 0)))
+(check-false (reserve-form? '(reserve -1)))
+(check-false (reserve-form? '(reserve)))
+(check-false (reserve-form? '(fill 4 0)))
+(check-equal? (reserve-size '(reserve 4)) 4)
+(check-equal? (item-size '(reserve 4)) 4)
+(check-equal? (item-kind '(reserve 4)) 'space)
+
+;; 段 kind 只回答"收哪些 item 类"
+(check-true  (allowed-item-kind? 'code 'code))
+(check-true  (allowed-item-kind? 'code 'pad))
+(check-false (allowed-item-kind? 'code 'materialized))   ; RISC-V 的 code 段不收数据
+(check-true  (allowed-item-kind? 'data 'materialized))
+(check-true  (allowed-item-kind? 'data 'pad))
+(check-false (allowed-item-kind? 'data 'code))
+(check-true  (allowed-item-kind? 'hole 'space))
+(check-true  (allowed-item-kind? 'hole 'marker))
+(check-true  (allowed-item-kind? 'hole 'align))
+(check-false (allowed-item-kind? 'hole 'materialized))
+(check-false (allowed-item-kind? 'hole 'pad))
+(check-false (allowed-item-kind? 'hole 'code))
+(check-false (allowed-item-kind? 'code 'space))
+(check-false (allowed-item-kind? 'data 'space))
 
 ;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
 (check-true  (compressed-form? '(c.addi a0 1)))
@@ -552,7 +578,7 @@
 (check-equal? (for/list ([it (in-list d1-items)] #:when (fill-form? it)) (item-size it))
               '(4096))
 (check-equal? (for/list ([it (in-list d1-items)] #:unless (label-form? it)) (item-kind it))
-              '(data data data data data data data both))
+              '(materialized materialized materialized materialized materialized materialized materialized align))
 (check-equal? (for/list ([it (in-list d1-items)] #:unless (or (label-form? it) (align-form? it)))
                        (item-size it))
               '(1 2 4 8 8 3 4096))

@@ -86,6 +86,61 @@
 
 (check-equal? (cadr (assq 'size (cdr image))) (bytes-length bytes*))
 
+;; explicit image-plan: per-segment PT_LOADs, flags, section metadata, symbol size
+(define plan-source
+  '(loko-source
+    (text
+     (%origin #x200000)
+     (%mode 64)
+     (%section text)
+     (%label text)
+     (ret)
+     (%elf
+      (entry text)
+      (load (name text) (flags r-x) (align 4096))
+      (load (name data) (flags rw-) (align 4096))
+      (load (name bss) (flags rw-) (align 4096))
+      (section (segment text) (name .text) (type progbits)
+               (flags (alloc exec)) (align 16))
+      (section (segment data) (name .data) (type progbits)
+               (flags (alloc write)) (align 8))
+      (section (segment bss) (name .bss) (type nobits)
+               (flags (alloc write)) (align 8))
+      (symbol (name text) (size 1) (type func) (bind global))))
+    (data
+     (%label data)
+     (%u64 #x1234)
+     (%label bss)
+     (%section bss)
+     (reserve 16)
+     (%label bss-end))))
+(define plan-image
+  (compile-image target-amd64 (list (cons 'loko-source plan-source))))
+(define plan-bytes (cadr (assq 'bytes (cdr plan-image))))
+(check-equal? (cadr (assq 'entry (cdr plan-image))) #x200000)
+(check-equal? (u16 plan-bytes 56) 4)      ; text + data + bss + GNU_STACK
+(check-equal? (u32 plan-bytes 68) #x5)    ; text: R|X
+(check-equal? (u32 plan-bytes 124) #x6)   ; data: R|W
+(check-equal? (u32 plan-bytes 180) #x6)   ; bss: R|W
+(check-equal? (u32 plan-bytes 232) #x6474e551)
+(define plan-sections (cdr (assq 'sections (cdr plan-image))))
+(define (find-plan-section name)
+  (for/first ([s (in-list plan-sections)]
+              #:when (equal? (section-field s 'name) name))
+    s))
+(check-equal? (section-field (find-plan-section ".text") 'flags) #x6)
+(check-equal? (section-field (find-plan-section ".data") 'flags) #x3)
+(check-equal? (section-field (find-plan-section ".bss") 'type) 'nobits)
+(define (symbol-field sym key)
+  (cadr (assq key (cdr sym))))
+(define text-symbol
+  (for/first ([sym (in-list (cdr (assq 'symbols (cdr plan-image))))]
+              #:when (equal? (symbol-field sym 'name) "text"))
+    sym))
+(check-equal? (symbol-field text-symbol 'size) 1)
+(check-equal? (symbol-field text-symbol 'type) 'func)
+(check-equal? (symbol-field text-symbol 'bind) 'global)
+
 ;; flow stage integration: compile-image uses the 'elf group
 (define image2
   (compile-image target-amd64 (list (cons 'loko-source source))))

@@ -38,7 +38,7 @@
 | `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
-| `loko-elf` | `build` `bound-layout` | `image` |
+| `loko-elf` | `build` `bound-layout` `loko-ir` | `image` |
 
 ## 设计思路
 

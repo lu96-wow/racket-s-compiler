@@ -24,6 +24,14 @@ test.rkt     header / program header / section / symtab 检查
 
 (symbol chain segment offset address)
 ...
+
+;; 可选，来自 loko-ir 的显式计划
+(image-plan
+  (entry ...)
+  (load (name text) (flags r-x) (align 4096))
+  (section (segment text) (name .text)
+           (type progbits) (flags (alloc exec)) (align 16))
+  (symbol (name (text)) (size ...) (type func) (bind global)))
 ```
 
 输出：
@@ -38,13 +46,14 @@ test.rkt     header / program header / section / symtab 检查
 
 ## 3. 当前布局
 
-- 一个 `PT_LOAD`，覆盖最小段起点到最大段终点的连续虚拟内存；
+- 没有 plan 时：一个 `PT_LOAD`，覆盖最小段起点到最大段终点的连续虚拟内存；
+- 有 plan `load` 时：每个 build segment 一个 `PT_LOAD`，权限/对齐来自 plan；
 - 末尾的 bss 是 `p_filesz < p_memsz` 的零填充区；
 - 另加 `PT_GNU_STACK`；
 - `.text` / `.data` / `.bss` / `.symtab` / `.strtab` / `.shstrtab` section headers；
 - `.bss` 使用 `SHT_NOBITS`；
-- 符号名做简单 mangle；
-- 入口默认找 `elf-entry`，没有则回退第一个 code segment 起点。
+- 符号名做简单 mangle；plan 可以覆盖 `size` / `type` / `bind` / `section`；
+- 入口优先 plan entry，其次 `elf-entry`，再回退第一个 code segment 起点。
 
 ## 4. 边界
 

@@ -420,4 +420,47 @@
                              '(size 1)))
                  '()))))
 
+;; ---------------------------------------------------------------------------
+;; hole 段: 地址范围存在, 文件里没有字节
+;;
+;; encode 不解释洞的内容(由加载器 / 程序 / 硬件定义), 只保证位置被完整推进,
+;; 然后交出一段空字节。items 只可能是 label / reserve。
+;; ---------------------------------------------------------------------------
+
+(define (hole-segment items size)
+  (list 'segment
+        '(name b) '(kind hole) '(start #x2000) '(end #x2100) '(align 8)
+        (cons 'items items)
+        (list 'size size)))
+
+(define bss-build
+  (encode-layout
+   (laid (list (hole-segment '((offset 0  (label bss))
+                               (offset 0  (reserve 8))
+                               (offset 8  (reserve 24))
+                               (offset 32 (label big))
+                               (offset 32 (reserve 16)))
+                             48))
+         '())))
+
+;; 位置齐全, 但一个字节也不写; size 保留
+(check-equal? (build-size bss-build 'b) 48)
+(check-equal? (build-bytes bss-build 'b) '())
+(check-equal? (cadr (assoc 'kind (cdr (build-segment bss-build 'b)))) 'hole)
+(check-equal? (cadr (assoc 'start (cdr (build-segment bss-build 'b)))) #x2000)
+
+;; hole 段里出现要写字节的 item: layout/encode 对"这段是不是洞"理解不一致
+(check-error "hole 段里有 pad"
+             (lambda ()
+               (encode-layout (laid (list (hole-segment '((offset 0 (pad 4))) 4)) '()))))
+(check-error "hole 段里有 bytes"
+             (lambda ()
+               (encode-layout (laid (list (hole-segment '((offset 0 (bytes 1 2))) 2)) '()))))
+(check-error "hole 段的 size 与 reserve 之和不符"
+             (lambda ()
+               (encode-layout (laid (list (hole-segment '((offset 0 (reserve 8))) 16)) '()))))
+(check-error "hole 段的 offset 对不上"
+             (lambda ()
+               (encode-layout (laid (list (hole-segment '((offset 4 (reserve 8))) 8)) '()))))
+
 (finish-tests "encode")

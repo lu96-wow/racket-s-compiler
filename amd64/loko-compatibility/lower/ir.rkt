@@ -30,5 +30,6 @@
   (values (make-loko-ir (ir-value ir 'origin)
                         (ir-list ir 'symbols)
                         (ir-list ir 'comms)
-                        sections)
+                        sections
+                        (ir-list ir 'image-plan))
           problems))

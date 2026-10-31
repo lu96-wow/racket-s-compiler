@@ -58,6 +58,7 @@ problems
 - 不做 DCE；因此 code section 的尺寸是保守上界，后续段起点可能留 gap。
 - 不做 short/near 精确收缩；放松只会让实际尺寸变小，不会导致 overflow。
 - 不生成 ELF；只生成 compiler 的 `layout-spec` 和扁平 items。
+- `loko-ir` 的 `image-plan` 不在这里消费；它直接交给 `amd64-elf`。
 - 不处理 `%call`；它仍是 `loko-compat` 的 problem。
 - 多个 code section 的边界目前依赖前一个 section 以 terminator 结束；
   还没有通用的 `boundary` item 来强制切断 CFG。

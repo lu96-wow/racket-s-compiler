@@ -66,11 +66,13 @@
              (lambda () (item-size* target-rv32-all '(li a0 #x100000000))))
 
 (check-equal? (item-kind '(label a)) 'marker)
-(check-equal? (item-kind '(align 8)) 'both)
-(check-equal? (item-kind '(pad 8)) 'both)
-(check-equal? (item-kind '(bytes 1)) 'data)
-(check-equal? (item-kind '(fill 1 0)) 'data)
-(check-equal? (item-kind '(value 1 0)) 'data)
+(check-equal? (item-kind '(align 8)) 'align)
+(check-equal? (item-kind '(pad 8)) 'pad)
+(check-equal? (item-kind '(bytes 1)) 'materialized)
+(check-equal? (item-kind '(fill 1 0)) 'materialized)
+(check-equal? (item-kind '(value 1 0)) 'materialized)
+(check-equal? (item-kind '(reserve 8)) 'space)
+(check-equal? (item-size '(reserve 8)) 8)
 (check-equal? (item-kind '(add a b c)) 'code)
 (check-equal? (item-kind '(c.addi a0 1)) 'code)
 
@@ -205,6 +207,94 @@
                   (segment (name d) (kind data) (start #x1080) (end #x1200) (align 4)))
         (place c (main))))
  'segment-overlap)
+
+;; ---------------------------------------------------------------------------
+;; hole 段: 有位置, 没有文件字节
+;;
+;; 归一化规则只有一个分叉: align 在 hole 段里变 reserve, 在 code/data 段里变 pad。
+;; 好处是 hole 段的 items 永远只含 label / reserve, encode 不用再判"洞从哪儿开始"。
+;; ---------------------------------------------------------------------------
+
+(define (hole-spec)
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+             (segment (name b) (kind hole) (start #x2000) (end #x2100) (align 8)))
+    (place c (main))
+    (place b (bss) (big) (bss-end))))
+
+(define hole-laid
+  (lay (one-block '((jalr x0 ra 0)))
+       '((label bss) (reserve 8)
+         (align 32) (label big) (reserve 16)
+         (label bss-end))
+       (hole-spec)))
+
+(check-equal? (layout-problem-list hole-laid) '())
+
+;; align(32) 在 0x2008 处要补 24 字节 —— 进产物是 (reserve 24), 不是 (pad 24)
+(check-equal? (layout-item-forms hole-laid 'b)
+              '((label bss) (reserve 8) (reserve 24)
+                (label big) (reserve 16) (label bss-end)))
+(check-equal? (layout-items hole-laid 'b)
+              '((offset 0  (label bss))
+                (offset 0  (reserve 8))
+                (offset 8  (reserve 24))
+                (offset 32 (label big))
+                (offset 32 (reserve 16))
+                (offset 48 (label bss-end))))
+(check-equal? (layout-size hole-laid 'b) 48)
+
+;; 不变量: hole 段里没有任何要写字节的 item
+(check-equal? (for/list ([it (in-list (layout-item-forms hole-laid 'b))]
+                         #:unless (label-form? it))
+                       (car it))
+              '(reserve reserve reserve))
+
+;; 符号照样拿到位置(绝对地址由 bind-labels 绑)
+(check-equal? (layout-anchor-list hole-laid)
+              '((anchor (main) c 0)
+                (anchor (bss) b 0) (anchor (big) b 32) (anchor (bss-end) b 48)))
+
+;; 空 hole 是合法的: 一个地址也不占
+(check-equal? (layout-problem-list
+               (lay (one-block '((jalr x0 ra 0))) '()
+                    '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                                (segment (name z) (kind hole) (start #x3000) (end #x3000) (align 16)))
+                      (place c (main)))))
+              '())
+(check-equal? (layout-size (lay (one-block '((jalr x0 ra 0))) '()
+                                '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                                            (segment (name z) (kind hole) (start #x3000) (end #x3000) (align 16)))
+                                  (place c (main))))
+                            'z)
+              0)
+
+;; hole 段不收要写字节的东西
+(check-problem
+ (lay (one-block '((jalr x0 ra 0)))
+      '((label bss) (bytes 1 2))
+      (hole-spec))
+ 'hole-materialized-item)
+
+(check-problem
+ (lay (one-block '((jalr x0 ra 0)))
+      '((label bss) (pad 4))
+      (hole-spec))
+ 'hole-materialized-item)
+
+(check-problem
+ (lay (one-block '((jalr x0 ra 0))) '()
+      '((segments (segment (name b) (kind hole) (start #x2000) (end #x2100) (align 8)))
+        (place b (main))))
+ 'hole-materialized-item)
+
+;; reserve 只属于 hole 段
+(check-problem
+ (lay (one-block '((jalr x0 ra 0)))
+      '((label d t) (reserve 8))
+      '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                  (segment (name d) (kind data) (start #x2000) (end #x2100) (align 8)))
+        (place c (main)) (place d (d t))))
+ 'reserve-outside-hole)
 
 ;; ---------------------------------------------------------------------------
 ;; 放置问题
