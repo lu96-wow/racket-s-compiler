@@ -155,7 +155,7 @@
 (define (encode-hole-segment seg)
   (define name (segment-field seg 'name))
   (define size (segment-field seg 'size))
-  (define cursor 0)
+  (define cursor 0)                 ; 已推进的内存偏移: 这里没有文件偏移
   (for ([entry (in-list (segment-items seg))])
     (define at (cadr entry))
     (define it (caddr entry))
