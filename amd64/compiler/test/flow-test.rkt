@@ -60,6 +60,33 @@
 (check-equal? (cddr (cadr (cdr bss-build)))
               '((kind bss) (start #x300000) (size 32) (bytes #"")))
 
+;; %comm is expanded into the bss section and respects size ordering/align
+(define comm-spec
+  '((segments
+     (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
+     (segment (name bss) (kind bss) (start #x300000) (end #x302000) (align 16)))
+    (place text (text))
+    (place bss (bss) (small) (large) (bss-end))))
+(define comm-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%comm large 4096 4096)
+                  (%comm small 8 8)
+                  (%section text)
+                  (%label text)
+                  (ret))
+                 (data
+                  (%label bss)
+                  (%section bss)
+                  (%label bss-end))))
+         (cons 'layout-spec comm-spec))
+   'loko))
+(check-equal? (cddr (cadr (cdr comm-build)))
+              '((kind bss) (start #x300000) (size 8192) (bytes #"")))
+
 (displayln "amd64 flow tests: ok")
 
 ;; short branch promoted by relax when the target is out of rel8 range

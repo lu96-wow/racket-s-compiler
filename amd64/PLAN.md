@@ -52,6 +52,8 @@
 - [x] 地址表达式支持 `$`（当前 item 地址）
 - [x] 通用 `reserve` / `kind bss` 段；encode 不生成 BSS 文件字节
 - [x] `cld` 与 64 位 `%init-bss` 展开
+- [x] `%comm` 收集、按 size 排序并展开到 bss section
+- [x] `program-items` / `data-items` 从 sections 按 kind 推导
 - [x] 地址表达式支持符号 `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field`
 - [x] lower 第一版：伪寄存器 `(reg N)`、uses/sets、liveness、图着色分配
 - [x] lower 的调用点 save/restore 注记展开

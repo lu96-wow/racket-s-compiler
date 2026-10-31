@@ -64,8 +64,10 @@
 ;; current-section: 当前 section-state
 ;; origin:      %origin 设置的整体起址
 ;; mode:        当前 %mode（16/32/64，未设置时 #f）
+;; comms:       %comm 收集（逆序）
 (struct ctx (labels raw-aliases aliases problems counter section symbols
-                sections section-order current-section origin mode) #:mutable)
+                sections section-order current-section origin mode comms)
+  #:mutable)
 
 (struct section-state (name kind items modes) #:mutable)
 
@@ -803,7 +805,8 @@
                (record-problem-comment! ctx (problem 'bad-mode item)))]
           [_ (record-problem-comment! ctx (problem 'bad-mode item))])]
        [(%init-bss) (translate-init-bss ctx item)]
-       [(%comm %call)
+       [(%comm) (translate-comm ctx item)]
+       [(%call)
         (record-problem-comment! ctx (problem 'directive-needs-image-layer item))]
        [else (translate-instruction ctx item)])]))
 
@@ -819,16 +822,62 @@
 ;; ---------------------------------------------------------------------------
 
 (define (translate-half ctx items)
-  (append*
-   (for/list ([it (in-list items)])
-     (define out (translate-item ctx it))
-     (add-section-items! ctx out)
-     out)))
+  (for ([it (in-list items)])
+    (add-section-items! ctx (translate-item ctx it))))
+
+(define (comm-size c) (caddr c))
+
+(define (expand-comms! ctx)
+  (define comms (reverse (ctx-comms ctx)))
+  (when (pair? comms)
+    (define bss
+      (for/first ([s (in-list (reverse (ctx-section-order ctx)))]
+                  #:when (eq? (section-state-kind s) 'bss))
+        s))
+    (cond
+      [(not bss) (record-problem! ctx (problem 'comm-without-bss-section))]
+      [else
+       (define sorted
+         (sort comms (lambda (a b) (< (comm-size a) (comm-size b)))))
+       (define generated
+         (append*
+          (for/list ([c (in-list sorted)])
+            (match c
+              [(list 'comm name size align)
+               (list (list 'align align)
+                     (cons 'label name)
+                     (list 'reserve size))]))))
+       ;; section items are stored in reverse order; prepend generated
+       ;; comm layout before the section's own items.
+       (set-section-state-items! bss
+                                 (append (section-state-items bss)
+                                         (reverse generated)))])))
+
+(define (translate-comm ctx item)
+  (match (cdr item)
+    [(list name size align)
+     (define name* (init-bss-target ctx name))
+     (define size* (translate-expr ctx size))
+     (define align* (translate-expr ctx align))
+     (cond
+       [(not name*) (record-problem-comment! ctx (problem 'bad-comm-name name))]
+       [(problem? size*) (record-problem-comment! ctx size*)]
+       [(problem? align*) (record-problem-comment! ctx align*)]
+       [(not (exact-nonnegative-integer? size*))
+        (record-problem-comment! ctx (problem 'bad-comm-size item size*))]
+       [(not (exact-positive-integer? align*))
+        (record-problem-comment! ctx (problem 'bad-comm-align item align*))]
+       [else
+        (set-ctx-comms! ctx
+                        (cons (list 'comm name* size* align*)
+                              (ctx-comms ctx)))
+        '()])]
+    [_ (record-problem-comment! ctx (problem 'bad-comm item))]))
 
 (define (translate-loko-source src)
   (define-values (text data) (loko-source-parts src))
   (let ([ctx (ctx (make-hash) (make-hash) (make-hash) '() 0 'text '()
-                  (make-hash) '() #f #f #f)])
+                  (make-hash) '() #f #f #f '())])
 
     ;; Definitions are collected first: code may refer to an alias that is
     ;; defined in the data half (e.g. codegen's initial-pcb-length).
@@ -843,9 +892,19 @@
       (when (problem? v) (record-problem! ctx v)))
 
     (select-section! ctx 'text)
-    (define program-items (translate-half ctx text))
+    (translate-half ctx text)
     (select-section! ctx 'data)
-    (define data-items (translate-half ctx data))
+    (translate-half ctx data)
+    (expand-comms! ctx)
+
+    (define ordered-sections (reverse (ctx-section-order ctx)))
+    (define (items-of-kind kinds)
+      (append*
+       (for/list ([s (in-list ordered-sections)]
+                  #:when (memq (section-state-kind s) kinds))
+         (reverse (section-state-items s)))))
+    (define program-items (items-of-kind '(code)))
+    (define data-items (items-of-kind '(data bss)))
 
     (define aliases
       (for/list ([name (in-list alias-names)])
@@ -857,6 +916,7 @@
           (cons 'data-items data-items)
           (cons 'aliases aliases)
           (cons 'symbols (reverse (ctx-symbols ctx)))
+          (cons 'comms (reverse (ctx-comms ctx)))
           (list 'origin (ctx-origin ctx))
-          (cons 'sections (map section->sexp (reverse (ctx-section-order ctx))))
+          (cons 'sections (map section->sexp ordered-sections))
           (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))

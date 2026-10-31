@@ -8,7 +8,7 @@
 | 位置 | 现状 | 缺口 |
 | --- | --- | --- |
 | `loko-compatibility/` | `translate.rkt` + `lower/`：符号元数据、sections/origin/mode、伪寄存器、liveness、图着色 | lower 还缺跨调用值 spill、frame allocation；image plan 尚未消费 sections |
-| `loko-compatibility/` | 同上 | 没有 `image/`：`%origin` / `%section` / `%comm` / `%call`、BSS/NOBITS、strtab/symtab、ELF |
+| `loko-compatibility/` | 同上 | 没有 `image/`：sections/comms -> layout-spec、`%call`、BSS/NOBITS、strtab/symtab、ELF |
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
 | `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/bss 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
@@ -36,12 +36,12 @@
 - `%comment liveness-information` -> GC 注记
 - peephole
 - 固定值表达式求值
-- `%comm` 收集与 bss section 展开
 
 ### `loko-compatibility/image/`
 
 - 消费 `loko-ir` 的 `origin` / `sections` / `modes`
 - `%origin` -> segment start
+- 把 `sections`/`comms` 转成带 bss segment 的 `layout-spec`
 - `%comm` -> BSS/NOBITS
 - `%call` -> 声明式 strtab/symtab，替代宿主回调
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）

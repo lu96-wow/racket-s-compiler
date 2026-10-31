@@ -88,7 +88,7 @@
 ;; directives that belong to the image/section layer are reported, not guessed
 (define unsupported
   (translate-loko-source
-   '(loko-source (text (%comm foo 8 8)) (data))))
+   '(loko-source (text (%call foo)) (data))))
 (check-true
  (for/or ([p (in-list (field 'problems unsupported))])
    (equal? (cadr p) 'directive-needs-image-layer)))
@@ -151,8 +151,9 @@
 (check-equal? (field 'problems sectioned) '())
 (check-equal? (field 'origin sectioned) '(#x200000))
 (check-equal? (field 'program-items sectioned)
-              '((label text) (mov rax 1) (label d) (value 8 1)))
-(check-equal? (field 'data-items sectioned) '((label b)))
+              '((label text) (mov rax 1)))
+(check-equal? (field 'data-items sectioned)
+              '((label d) (value 8 1) (label b)))
 (check-equal? (field 'symbols sectioned)
               '((symbol (text) (text) text ())
                 (symbol (d) (d) data ())
@@ -224,6 +225,51 @@
 (check-true
  (for/or ([p (in-list (field 'problems init-bss-data))])
    (eq? (cadr p) 'init-bss-not-in-code)))
+
+;; %comm is collected, sorted by size, and expanded at the bss section.
+(define comms
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%comm large 4096 4096)
+      (%comm small 8 8)
+      (%section text)
+      (%label text)
+      (ret))
+     (data
+      (%label bss)
+      (%section bss)
+      (%label bss-end)))))
+(check-equal? (field 'problems comms) '())
+(check-equal? (field 'comms comms)
+              '((comm (large) 4096 4096)
+                (comm (small) 8 8)))
+(check-equal? (field 'program-items comms)
+              '((label text) (ret)))
+(check-equal? (field 'data-items comms)
+              '((label bss)
+                (align 8) (label small) (reserve 8)
+                (align 4096) (label large) (reserve 4096)
+                (label bss-end)))
+(check-equal? (field 'sections comms)
+              '((section (name text) (kind code) (modes)
+                         (items (label text) (ret)))
+                (section (name data) (kind data) (modes)
+                         (items (label bss)))
+                (section (name bss) (kind bss) (modes)
+                         (items
+                          (align 8) (label small) (reserve 8)
+                          (align 4096) (label large) (reserve 4096)
+                          (label bss-end)))))
+
+(define comm-without-bss
+  (translate-loko-source
+   '(loko-source
+     (text (%comm foo 8 8) (%label text) (ret))
+     (data))))
+(check-true
+ (for/or ([p (in-list (field 'problems comm-without-bss))])
+   (eq? (cadr p) 'comm-without-bss-section)))
 
 (displayln "amd64 loko-compat tests: ok")
 

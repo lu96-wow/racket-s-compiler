@@ -80,6 +80,7 @@
                   'loko-ir (list 'loko-ir
                                  (assq 'origin fields)
                                  (assq 'symbols fields)
+                                 (assq 'comms fields)
                                  (assq 'sections fields))))
           "Loko 汇编写法 -> 核心 item + loko-ir（sections/origin/mode/symbols）")
 

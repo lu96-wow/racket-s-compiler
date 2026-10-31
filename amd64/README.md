@@ -88,6 +88,7 @@ Loko 旧汇编写法到核心 item 的纯变换，不处理 image/ELF。
   （不含 spill/frame allocation）
 - 通用 `reserve` / `kind bss` 段；BSS 不生成文件字节
 - Loko `%init-bss` 的 64 位显式展开（opt-in）
+- Loko `%comm` 收集与 bss section 展开
 
 未实现：
 

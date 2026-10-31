@@ -31,6 +31,7 @@
   (data-items item ...)
   (aliases (alias 名字 值) ...)
   (symbols (symbol start end section misc) ...)
+  (comms (comm name size align) ...)
   (origin 地址|#f)
   (sections
     (section (name 名字) (kind code|data|bss)
@@ -43,6 +44,8 @@
 - `program-items` / `data-items` 已经是本后端的核心 item。
 - `aliases` 是 `%equiv` 解析后的常量/地址表达式，供 image 层或调试使用。
 - `symbols` 保留 Loko `%label` 的符号元数据：start/end 路径、section、misc。
+- `comms` 保留 `%comm` 的原始声明；image 层会在 `%section bss` 处把它展开。
+- `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
   `modes` 记录 mode 切换点的 item 下标。
 - `problems` 是明确的问题列表；`flow/flow.rkt` 在非空时报错。
@@ -58,6 +61,7 @@
 | `(%section name)` | `sections` 里的 section run | text/data/bss/elf；按源顺序保留 |
 | `(%origin n)` | `(origin n)` | 整体起址；后续 image 层负责段布局 |
 | `(%mode n)` | `(modes (item下标 n) ...)` | 16/32/64；同一 section 可多次切换 |
+| `(%comm name size align)` | `(comm name size align)` + bss 段里的 `(align) (label) (reserve)` | 按 size 升序展开到第一个 bss section 开头 |
 | `(%init-bss)` | 64 位：`cld` + `li` + `sub` + `xor` + `rep stosb` | 显式源码 marker；默认 `bss`/`bss-end`，clobber `rax rcx rdi` |
 | `(%init-bss start end)` | 同上 | 自定义 BSS 起止 label |
 | `(%comment ...)` | `(comment ...)` | 零尺寸注记 |
@@ -110,15 +114,17 @@ push/pop 或改用自定义指令序列。
 
 ## 5. 边界：不在这里做的事
 
-`%section` / `%origin` / `%mode` 已采集到 `loko-ir`，但还没有生成布局/镜像。
+`%section` / `%origin` / `%mode` / `%comm` 已采集到 `loko-ir`，但还没有生成最终布局/镜像。
 `%init-bss` 是显式 opt-in：源码不写就不生成清零代码；当前只展开 64 位，
 32/16 位会报 `init-bss-mode-unsupported`。
+
+`%comm` 已按 Loko 旧 assembler 的规则展开到 bss section。
 
 以下写法仍反映 image/链接事实，当前显式报
 `(problem directive-needs-image-layer ...)`：
 
 ```text
-%comm  %call
+%call
 ```
 
 本层不猜 BSS 位置、不调用宿主过程；等 image 子层接上。
