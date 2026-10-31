@@ -303,6 +303,64 @@
     [(2) 'weak]
     [else n]))
 
+(define (section-name-string name)
+  (if (string? name) name (format "~a" name)))
+
+;; Regions declared only in the image plan: stack, heap, guard pages, and
+;; other loader/hardware-defined address ranges.  The compiler build has no
+;; bytes for them, so they must be reserved.
+(define (plan-only-regions plan segment-names)
+  (for/list ([p (in-list (plan-clauses plan 'region))]
+             #:unless (memq (plan-field p 'id) segment-names))
+    (define id (plan-field p 'id))
+    (define content (or (plan-field p 'content) 'reserved))
+    (define start (plan-field p 'start))
+    (define size (plan-field p 'size))
+    (unless (eq? content 'reserved)
+      (error 'write-elf "plan-only region ~a must be reserved" id))
+    (unless (and (exact-integer? start) (exact-integer? size) (>= size 0))
+      (error 'write-elf "plan-only reserved region ~a needs start and size" id))
+    (image-region id 'reserved
+                  (section-name-string (or (plan-field p 'section)
+                                           (format ".~a" id)))
+                  (or (plan-field p 'perm) 'rw-)
+                  (or (plan-field p 'align) 8)
+                  (or (plan-field p 'load) id)
+                  start size #"" 'hole)))
+
+(define (build-segment->region s plan single-default-load?)
+  (define id (elf-segment-name s))
+  (define kind (elf-segment-kind s))
+  (define p (plan-region-for plan id))
+  (define content
+    (or (and p (plan-field p 'content))
+        (default-content kind)))
+  (define perm
+    (or (and p (plan-field p 'perm))
+        (default-perm kind)))
+  (define section-name
+    (section-name-string (or (and p (plan-field p 'section))
+                             (format ".~a" id))))
+  (define align
+    (or (and p (plan-field p 'align))
+        (default-section-align kind)))
+  (define load-id
+    (or (and p (plan-field p 'load))
+        (if single-default-load? 'image id)))
+  (define bytes (elf-segment-bytes s))
+  (define size (elf-segment-size s))
+  (case content
+    [(materialized)
+     (unless (= (bytes-length bytes) size)
+       (error 'write-elf "materialized region ~a has ~a bytes, size is ~a"
+              id (bytes-length bytes) size))]
+    [(reserved)
+     (unless (zero? (bytes-length bytes))
+       (error 'write-elf "reserved region ~a has file bytes" id))]
+    [else (error 'write-elf "bad region content: ~e" content)])
+  (image-region id content section-name perm align load-id
+                (elf-segment-start s) size bytes kind))
+
 (define (normalize-regions segments plan)
   (define plan-regions (plan-clauses plan 'region))
   (define plan-loads (plan-clauses plan 'load))
@@ -310,45 +368,13 @@
     (and (null? plan-regions) (null? plan-loads)))
   (define segment-names
     (for/list ([s (in-list segments)]) (elf-segment-name s)))
-  (for ([p (in-list plan-regions)])
-    (unless (memq (plan-field p 'id) segment-names)
-      (error 'write-elf "plan region has unknown id: ~e" (plan-field p 'id))))
-  (for/list ([s (in-list segments)])
-    (define id (elf-segment-name s))
-    (define kind (elf-segment-kind s))
-    (define p (plan-region-for plan id))
-    (define content
-      (or (and p (plan-field p 'content))
-          (default-content kind)))
-    (define perm
-      (or (and p (plan-field p 'perm))
-          (default-perm kind)))
-    (define section-name
-      (or (and p (plan-field p 'section))
-          (format ".~a" id)))
-    (define section-name*
-      (if (string? section-name)
-          section-name
-          (format "~a" section-name)))
-    (define align
-      (or (and p (plan-field p 'align))
-          (default-section-align kind)))
-    (define load-id
-      (or (and p (plan-field p 'load))
-          (if single-default-load? 'image id)))
-    (define bytes (elf-segment-bytes s))
-    (define size (elf-segment-size s))
-    (case content
-      [(materialized)
-       (unless (= (bytes-length bytes) size)
-         (error 'write-elf "materialized region ~a has ~a bytes, size is ~a"
-                id (bytes-length bytes) size))]
-      [(reserved)
-       (unless (zero? (bytes-length bytes))
-         (error 'write-elf "reserved region ~a has file bytes" id))]
-      [else (error 'write-elf "bad region content: ~e" content)])
-    (image-region id content section-name* perm align load-id
-                  (elf-segment-start s) size bytes kind)))
+  (append
+   (for/list ([s (in-list segments)])
+     (build-segment->region s plan single-default-load?))
+   (plan-only-regions plan segment-names)))
+
+(define (image-load-file-size load)
+  (- (image-load-file-end load) (image-load-start load)))
 
 (define (normalize-loads regions plan)
   (define plan-loads (plan-clauses plan 'load))
@@ -547,7 +573,10 @@
     (for/list ([l (in-list loads)])
       (list 1
             (image-load-flags l)
-            (+ data-offset (- (image-load-start l) image-base))
+            (let ([filesz (image-load-file-size l)])
+              (if (zero? filesz)
+                  0
+                  (+ data-offset (- (image-load-start l) image-base))))
             (image-load-start l)
             (image-load-start l)
             (- (image-load-file-end l) (image-load-start l))

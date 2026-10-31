@@ -1,0 +1,1 @@
+("9.3" ta6le ("fd53628797fb2e516081a732102468d6cf31b0fa" . "17153b88101dfc03008d5fb70296b1f5a193c587") #"/home/lu96/work/racket-s-compiler/amd64/compiler/expand-data/expand.rkt" (collects #"racket" #"main.rkt") (collects #"racket" #"runtime-config.rkt") (collects #"rackunit" #"main.rkt"))

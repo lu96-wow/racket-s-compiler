@@ -1,0 +1,1 @@
+("9.3" ta6le ("e0d40ccc5e04246c1fc3e2954995b3c47224e557" . "7b22778e172eccb98ba3678f6b1f4263527515fe") #"/home/lu96/work/racket-s-compiler/amd64/tools/../amd64-elf/writer.rkt" #"/home/lu96/work/racket-s-compiler/amd64/tools/../loko-compatibility/image/plan.rkt" (collects #"racket" #"cmdline.rkt") (collects #"racket" #"main.rkt") (collects #"racket" #"runtime-config.rkt"))

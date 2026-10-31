@@ -53,10 +53,9 @@
     [(mem? op) (resolve-mem op here size symbols)]
     [(mem-form? op) (resolve-mem (parse-mem op) here size symbols)]
     ;; Prepared immediate wrapper whose payload is still symbolic.
-    [(and (form? op) (memq (car op) '(imm8 imm16 imm32 imm64))
-          (= 2 (length op))
-          (address-expr? (cadr op)) (not (exact-integer? (cadr op))))
-     (list (car op) (resolve-address symbols (cadr op) here))]
+    [(and (immediate-form op)
+          (symbolic-immediate? (cadr op)))
+     (list (immediate-form op) (resolve-address symbols (cadr op) here))]
     [(and (address-expr? op) (not (exact-integer? op)))
      (list 'imm32 (resolve-address symbols op here))]
     [else op]))
@@ -71,7 +70,7 @@
      ;; The prefix byte shifts the inner instruction by one byte, so
      ;; RIP-relative operands inside it use here+1 and the inner size.
      (define inner-size (instruction-size (car inner) (cdr inner)))
-     (define prepared (prepare-symbolic-immediates (car inner) (cdr inner)))
+     (define prepared (choose-symbolic-immediate-forms (car inner) (cdr inner)))
      (define inner* (cons (car inner)
                           (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbols))
                                prepared)))
@@ -86,7 +85,7 @@
        (encode-instruction name ops))]
 
     [else
-     (let* ([prepared (prepare-symbolic-immediates name operands)]
+     (let* ([prepared (choose-symbolic-immediate-forms name operands)]
             [size (instruction-size name operands)]
             [ops (map (lambda (op) (resolve-operand op here size symbols))
                       prepared)])

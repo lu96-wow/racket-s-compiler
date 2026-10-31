@@ -25,6 +25,7 @@
          (only-in "../../loko-compatibility/ir.rkt" make-loko-ir ir-list)
          (only-in "../../loko-compatibility/lower/ir.rkt" lower-loko-ir)
          (only-in "../../loko-compatibility/image/layout-spec.rkt" build-layout-spec)
+         (only-in "../../loko-compatibility/image/plan.rkt" loko-linux-image-plan-for)
          (only-in "../../amd64-elf/writer.rkt" write-elf)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
@@ -189,7 +190,10 @@
           (lambda (_target in)
             (define symbols
               (cdr (assq 'symbols (hash-ref in 'bound-layout))))
-            (define plan (ir-list (hash-ref in 'loko-ir) 'image-plan))
+            (define plan
+              (loko-linux-image-plan-for
+               symbols
+               (ir-list (hash-ref in 'loko-ir) 'image-plan)))
             (hash 'image (write-elf (hash-ref in 'build) symbols #:plan plan)))
           "build + symbols + image-plan -> ELF64 image")))
 

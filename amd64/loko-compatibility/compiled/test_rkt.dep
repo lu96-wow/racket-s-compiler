@@ -1,0 +1,1 @@
+("9.3" ta6le ("b8e446045d43fbc3478abdc6f6c64ef1477353e1" . "2d770c1f6bcff92b0c6a22ffd2b21f374fcac02d") #"/home/lu96/work/racket-s-compiler/amd64/loko-compatibility/translate.rkt" (collects #"racket" #"main.rkt") (collects #"racket" #"runtime-config.rkt") (collects #"rackunit" #"main.rkt"))

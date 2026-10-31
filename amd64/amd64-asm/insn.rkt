@@ -17,7 +17,9 @@
          instruction-size
          instruction-arity
          known-instruction?
-         prepare-symbolic-immediates)
+         immediate-form
+         symbolic-immediate?
+         choose-symbolic-immediate-forms)
 
 ;; ---------------------------------------------------------------------------
 ;; 寄存器/内存编码
@@ -308,33 +310,33 @@
     [(or (reg? op) (symbol? op)) (parse-xmm op)]
     [else (error 'parse-xmm-or-mem "expected XMM register or memory: ~e" op)]))
 
-(define (imm-value op)
+(define (immediate-value op)
   (cond
     [(exact-integer? op) op]
     [(and (form? op) (memq (car op) '(imm8 imm16 imm32 imm64)) (= 2 (length op)))
      (cadr op)]
     [else #f]))
 
-(define (imm-form op)
+(define (immediate-form op)
   (and (form? op) (memq (car op) '(imm8 imm16 imm32 imm64)) (= 2 (length op))
        (car op)))
 
-(define (symbolic-imm? op)
+(define (symbolic-immediate? op)
   (and (address-expr? op) (not (exact-integer? op))))
 
 ;; Choose one fixed immediate width for each unresolved address expression.
 ;; Layout and encode must agree on the form, so the choice is made once, here,
 ;; from the instruction and its operands -- never from the final value.
-(define (prepare-symbolic-immediates name operands)
+(define (choose-symbolic-immediate-forms name operands)
   (define (wrap op)
-    (if (symbolic-imm? op) (list 'imm32 op) op))
+    (if (symbolic-immediate? op) (list 'imm32 op) op))
   (cond
     [(eq? name 'prefix)
      (match operands
        [(list pname inner)
         (and (form? inner)
              (list pname (cons (car inner)
-                               (prepare-symbolic-immediates (car inner) (cdr inner)))))]
+                               (choose-symbolic-immediate-forms (car inner) (cdr inner)))))]
        [_ operands])]
     [(memq name '(jmp-short jmp-near jcc-short jcc-near call-near))
      operands]
@@ -342,7 +344,7 @@
      (match operands
        [(list dst src)
         (cond
-          [(symbolic-imm? src)
+          [(symbolic-immediate? src)
            (define dst* (and (rm-operand? dst) (parse-rm dst)))
            (list dst (if (and (reg? dst*) (= 64 (reg-width dst*)))
                          (list 'imm64 src)
@@ -454,10 +456,10 @@
           (error 'encode-mov "memory/register widths do not match: ~e ~e" dst src))
         (emit-rm (mem-width dst*) (list src*) (encode-rm dst* src*) '(#x89))]
 
-       [(and (reg? dst*) (imm-value src))
-        (let* ([value (imm-value src)]
+       [(and (reg? dst*) (immediate-value src))
+        (let* ([value (immediate-value src)]
                [width (reg-width dst*)]
-               [forced (imm-form src)]
+               [forced (immediate-form src)]
                [regs (list dst*)])
           (define (emit-imm8)
             (check-imm8 value 'encode-mov)
@@ -505,8 +507,8 @@
             [(imm32) (emit-imm32)]
             [(imm64) (emit-imm64)]
             [else (emit-by-value)]))]
-       [(and (mem? dst*) (imm-value src))
-        (let* ([value (imm-value src)]
+       [(and (mem? dst*) (immediate-value src))
+        (let* ([value (immediate-value src)]
                [width (mem-width dst*)]
                [regs '()])
           (case width
@@ -553,11 +555,11 @@
         (unless (= width (mem-width src))
           (error 'encode-alu "operand widths do not match: ~e ~e" dst src))
         (emit-rm width (list dst*) (encode-rm src dst*) (list op-reg-rm))]
-       [(imm-value src)
-        (define value (imm-value src))
+       [(immediate-value src)
+        (define value (immediate-value src))
         (define width (rm-width dst*))
         (define regs (regs-in-op dst*))
-        (define forced (imm-form src))
+        (define forced (immediate-form src))
         (define (small? x) (<= -128 x 127))
         (cond
           [(eq? forced 'imm8)
@@ -613,10 +615,10 @@
         (append (if (= width 16) (list #x66) '())
                 (if rex (list rex) '())
                 (u8 (+ #x50 (bitwise-and (reg-index r) #b111))))]
-       [(imm-value src)
-        (define v (imm-value src))
+       [(immediate-value src)
+        (define v (immediate-value src))
         (cond
-          [(and (not (eq? (imm-form src) 'imm8)) (<= -128 v 127))
+          [(and (not (eq? (immediate-form src) 'imm8)) (<= -128 v 127))
            (bytes* '(#x6a) (u8 v))]
           [else
            (check-imm32/signed v 'encode-push)
@@ -709,8 +711,8 @@
         (unless (= width (reg-width src*))
           (error 'encode-test "operand widths do not match: ~e ~e" dst src))
         (emit-rm width (list src*) (encode-rm dst* src*) '(#x85))]
-       [(imm-value src)
-        (define value (imm-value src))
+       [(immediate-value src)
+        (define value (immediate-value src))
         (define width (rm-width dst*))
         (define regs (regs-in-op dst*))
         (case width
@@ -761,8 +763,8 @@
         (emit-rm width (regs-in-op rm*)
                  (encode-rm rm* digit)
                  (list (if (= width 8) #xd2 #xd3)))]
-       [(imm-value count)
-        (define value (imm-value count))
+       [(immediate-value count)
+        (define value (immediate-value count))
         (check-imm8 value 'encode-shift)
         (emit-rm width (regs-in-op rm*)
                  (encode-rm rm* digit)
@@ -794,10 +796,10 @@
        (error 'encode-imul "operand widths do not match: ~e ~e" dst src))
      (unless (memq width '(16 32 64))
        (error 'encode-imul "three-operand imul needs 16/32/64-bit operands: ~e" operands))
-     (define value (or (imm-value imm)
+     (define value (or (immediate-value imm)
                        (error 'encode-imul "imul immediate must be an integer: ~e" imm)))
      (cond
-       [(and (not (eq? (imm-form imm) 'imm32)) (<= -128 value 127))
+       [(and (not (eq? (immediate-form imm) 'imm32)) (<= -128 value 127))
         (emit-rm width (list dst*) (encode-rm src* dst*) '(#x6b) (u8 value))]
        [else
         (case width
@@ -967,8 +969,8 @@
      (define regs (append (regs-in-op d) (list s)))
      (cond
        [(eq? count 'cl) (emit-rm width regs (encode-rm d s) '(#x0f #xad))]
-       [(imm-value count)
-        (define v (imm-value count))
+       [(immediate-value count)
+        (define v (immediate-value count))
         (check-imm8 v 'encode-shrd)
         (emit-rm width regs (encode-rm d s) '(#x0f #xac) (u8 v))]
        [else (error 'encode-shrd "shrd count must be imm8 or cl: ~e" count)])]
@@ -1022,8 +1024,8 @@
      (define p (if (= width 16) (list #x66) '()))
      (cond
        [(port-reg? port) (append p (list (if (= width 8) #xec #xed)))]
-       [(imm-value port)
-        (define v (imm-value port))
+       [(immediate-value port)
+        (define v (immediate-value port))
         (unless (<= 0 v 255) (error 'encode-in "port immediate out of range: ~e" port))
         (append p (list (if (= width 8) #xe4 #xe5)) (u8 v))]
        [else (error 'encode-in "port must be dx or imm8: ~e" port)])]
@@ -1037,8 +1039,8 @@
      (define p (if (= width 16) (list #x66) '()))
      (cond
        [(port-reg? port) (append p (list (if (= width 8) #xee #xef)))]
-       [(imm-value port)
-        (define v (imm-value port))
+       [(immediate-value port)
+        (define v (immediate-value port))
         (unless (<= 0 v 255) (error 'encode-out "port immediate out of range: ~e" port))
         (append p (list (if (= width 8) #xe6 #xe7)) (u8 v))]
        [else (error 'encode-out "port must be dx or imm8: ~e" port)])]
@@ -1269,7 +1271,7 @@
      (define d (parse-xmm dst))
      (define s (parse-xmm-or-mem src))
      (check-mem-width s 32 'encode-roundss)
-     (define v (or (imm-value imm)
+     (define v (or (immediate-value imm)
                    (error 'encode-roundss "roundss immediate must be an integer: ~e" imm)))
      (check-imm8 v 'encode-roundss)
      (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x3a #x0a) (u8 v))]
@@ -1459,9 +1461,9 @@
 
 ;; 布局阶段用的尺寸。符号 displacement 暂时拒绝: 还没有把"必须 disp32"
 ;; 这个选择固定到操作数里。等 layout/normalize 接上后再补。
-(define (size-safe-operand op)
+(define (operand-for-sizing op)
   (cond
-    [(mem-form? op) (size-safe-operand (parse-mem op))]
+    [(mem-form? op) (operand-for-sizing (parse-mem op))]
     [(and (mem? op) (not (exact-integer? (mem-disp op))))
      (case (mem-disp-width op)
        [(32) (struct-copy mem op [disp #x1000])]
@@ -1469,13 +1471,13 @@
         (error 'instruction-size
                "memory displacement must be resolved before sizing: ~e" op)])]
     ;; Prepared immediate wrapper with an unresolved payload.
-    [(and (imm-form op) (symbolic-imm? (cadr op)))
-     (list (imm-form op) #x1000)]
+    [(and (immediate-form op) (symbolic-immediate? (cadr op)))
+     (list (immediate-form op) #x1000)]
     [(and (address-expr? op) (not (exact-integer? op)))
      (list 'imm32 #x1000)]
     [else op]))
 
-(define (size-branch-operands name operands)
+(define (branch-operands-for-sizing name operands)
   (case name
     [(jcc-short jcc-near)
      (list (car operands) 0)]
@@ -1496,8 +1498,8 @@
      (define branch? (memq name '(jmp-short jmp-near
                                   jcc-short jcc-near
                                   call-near)))
-     (define prepared (prepare-symbolic-immediates name operands))
+     (define prepared (choose-symbolic-immediate-forms name operands))
      (define ops (if branch?
-                     (size-branch-operands name prepared)
-                     (map size-safe-operand prepared)))
+                     (branch-operands-for-sizing name prepared)
+                     (map operand-for-sizing prepared)))
      (bytes-length (encode-instruction name ops))]))
