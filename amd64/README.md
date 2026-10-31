@@ -76,10 +76,12 @@ amd64/
 - rich 数据展开、module/flatten 名字解析
 - 伪指令规范化：`jmp/jcc/call/li`、条件码别名
 - amd64 控制流分析、DCE
-- 扁平 item 布局 + program blocks 桥接
+- block-aware 布局：place/region/wildcard、data runs、fallthrough 检查
+- 段起始对齐/重叠、代码数据混放、RIP-relative/绝对 disp32 范围检查
 - 精确 `instruction-size`
 - `jmp-short/jcc-short -> near` 只增 relax
 - anchor -> symbol 绑定
+- bind-labels：anchors -> symbols + 最终 value 宽度检查
 - bound layout -> 段字节
 - 符号内存 displacement（固定 disp32，encode 时解析）
 - 整数 `li` -> `mov`，地址表达式 `li` -> RIP-relative `lea`
@@ -94,14 +96,11 @@ amd64/
 
 未实现：
 
-- `place` region / 通配 / unplaced problem
-- layout 消费 `flows` / `broken-fallthrough`
 - `needs-far` / far form / trampoline / scratch 寄存器
 - image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - 外部符号 / reloc / loader
 - `adc/sbb`、AVX、更多双精度/packed SSE
 - `jmpf`/`far`、16/32 位模式
-- `li` 超出 RIP-relative ±2GiB 的地址
 
 ## 测试
 

@@ -36,7 +36,8 @@ Loko 兼容流：
 ## 说明
 
 - `loko-compat` 是非强制入口；核心流不认识 Loko 的 `memN+` / `%label` 等拼写。
-- `layout` 当前是“program blocks -> 扁平 item”的桥接，再复用 `layout-items` 的段布局。
+- `layout` 直接消费 `program` 的 blocks + flows 和 data runs；检查 placement、段、fallthrough、RIP/disp32 范围。
+- `layout-items` 只是扁平 item 的兼容入口，不消费 flows。
 - `measured-layout` 只有 anchors，没有绝对地址。
 - `relax` 和 `layout` 平层：自己反复驱动 layout，消费 `needs-near`。
 - `bind-labels` 才产生 symbols / 绝对地址。

@@ -1,19 +1,35 @@
 #lang racket
 ;;; amd64/layout/layout.rkt
 ;;;
-;;; 第一版扁平 item 布局：显式 place 锚点切段，按 item-size 累加偏移，
-;;; align 变成 pad，记录 anchors。没有 CFG/blocks，也不做 relax。
+;;; 布局: program blocks + data runs + layout-spec -> measured-layout.
+;;;
+;;; 本层只做“放置 + 度量 + 问题”:
+;;;   - 按 place 把代码块/数据 run 放进段
+;;;   - 按块内/run 内顺序累加尺寸
+;;;   - align 换成 pad 事实
+;;;   - 记录 anchors、requests、problems
+;;;
+;;; 不改程序、不选远形式、不填 scratch、不生成绝对符号。
+;;; 绝对地址由 bind-labels 统一产生。
 
 (require "../sexp.rkt"
-         "../analyze/analyze.rkt"
-         "forms.rkt")
+         "../target.rkt"
+         "forms.rkt"
+         (only-in "../analyze/analyze.rkt"
+                  program? program-blocks program-flows
+                  block-head block-items flow-fallthrough))
 
 (provide layout-items
-         layout-program
-         program->layout-items)
+         layout-program)
 
-(define (field field-name fields)
-  (cond ((assq field-name fields) => cadr)
+;; ---------------------------------------------------------------------------
+;; 段 / 放置规则
+;; ---------------------------------------------------------------------------
+
+(struct segment (name kind start end align) #:transparent)
+
+(define (field key fields)
+  (cond ((assq key fields) => cadr)
         [else #f]))
 
 (define (parse-segment-form s)
@@ -28,151 +44,430 @@
   (unless (symbol? name) (error 'layout "segment needs name: ~e" s))
   (unless (memq kind '(code data)) (error 'layout "bad segment kind: ~e" s))
   (unless (exact-integer? start) (error 'layout "segment needs start: ~e" s))
-  (unless (or (not end) (exact-integer? end)) (error 'layout "bad segment end: ~e" s))
-  (unless (or (not align) (exact-positive-integer? align))
-    (error 'layout "bad segment align: ~e" s))
-  (list (cons 'name name)
-        (cons 'kind kind)
-        (cons 'start start)
-        (cons 'end end)
-        (cons 'align align)))
+  (unless (exact-integer? end) (error 'layout "segment needs end: ~e" s))
+  (unless (exact-positive-integer? align) (error 'layout "segment needs align: ~e" s))
+  (segment name kind start end align))
 
-(define (parse-spec spec)
+(define (validate-segments segments problem!)
+  (define names (map segment-name segments))
+  (unless (= (length names) (length (remove-duplicates names)))
+    (problem! (list 'segment-name-duplicated names)))
+  (for ([s (in-list segments)])
+    (unless (< (segment-start s) (segment-end s))
+      (problem! (list 'segment-bad-range (segment-name s))))
+    (unless (zero? (modulo (segment-start s) (segment-align s)))
+      (problem! (list 'segment-misaligned
+                      (segment-name s) (segment-start s) (segment-align s)))))
+  (define n (length segments))
+  (for* ([i (in-range n)] [j (in-range n)] #:when (< i j))
+    (define a (list-ref segments i))
+    (define b (list-ref segments j))
+    (when (and (< (segment-start a) (segment-end b))
+               (< (segment-start b) (segment-end a)))
+      (problem! (list 'segment-overlap (segment-name a) (segment-name b))))))
+
+;; rules: ((链 . 段名) ...); wildcard: 段名或 #f
+(define (parse-places spec segments problem!)
+  (define names (map segment-name segments))
+  (define rules '())
+  (define wildcard #f)
+  (for ([p (in-list spec)]
+        #:when (and (form? p) (eq? (car p) 'place)))
+    (match (cdr p)
+      [(cons seg chains)
+       (cond
+         [(not (memq seg names))
+          (problem! (list 'unknown-segment seg))]
+         [(null? chains)
+          (problem! (list 'bad-place p))]
+         [else
+          (for ([c (in-list chains)])
+            (cond
+              [(eq? c '*)
+               (if wildcard
+                   (problem! (list 'ambiguous-wildcard wildcard seg))
+                   (set! wildcard seg))]
+              [else
+               (define path (normalize-path c))
+               (if path
+                   (set! rules (cons (cons path seg) rules))
+                   (problem! (list 'bad-place-chain c)))]))])]
+      [_ (problem! (list 'bad-place p))]))
+  (values (reverse rules) wildcard))
+
+(define (parse-spec spec problem!)
   (define segments
     (map parse-segment-form
          (cdr (or (assq 'segments spec) '(segments)))))
-  (define places
-    (for/list ([p (in-list spec)]
-               #:when (and (form? p) (eq? (car p) 'place)))
-      (match p
-        [(list 'place seg chain) (cons chain seg)]
-        [_ (error 'layout "bad place line: ~e" p)])))
-  (values segments places))
+  (validate-segments segments problem!)
+  (define-values (rules wildcard) (parse-places spec segments problem!))
+  (values segments rules wildcard))
 
-(define (segment-name seg) (cdr (assq 'name seg)))
+;; ---------------------------------------------------------------------------
+;; 放置单位
+;;
+;;   code: analyze 的 block
+;;   data: 从一条 label 到下一条 label 的 run
+;;   flat: layout-items 的兼容输入，按 place 标签切分
+;; ---------------------------------------------------------------------------
 
-(define (find-place places chain)
-  (cond ((assoc chain places) => cdr)
-        [else #f]))
+(struct unit (id labels items) #:transparent)
 
-(define (partition-items indexed-items places segment-names)
-  ;; 先按 place 锚点把 item 分到段。每个 label 命中 place chain 时切段。
-  ;; entry = (index . item)
-  (define table (make-hash))
-  (for ([name (in-list segment-names)]) (hash-set! table name '()))
-  (define current #f)
-  (for ([entry (in-list indexed-items)])
-    (define item (cdr entry))
-    (when (and (label-form? item)
-               (find-place places (label-chain item)))
-      (set! current (find-place places (label-chain item))))
+(define (program-units prog)
+  (for/list ([b (in-list (program-blocks prog))] [i (in-naturals)])
+    (unit (list 'code i) (block-head b) (block-items b))))
+
+(define (split-data-units items)
+  (define out '())
+  (define labels '())
+  (define body '())
+  (define (flush!)
+    (when (or (pair? labels) (pair? body))
+      (set! out (cons (cons (reverse labels) (reverse body)) out))
+      (set! labels '())
+      (set! body '())))
+  (for ([it (in-list items)])
     (cond
-      [current (hash-update! table current (lambda (xs) (cons entry xs)) '())]
-      [else (void)]))
-  (for/hash ([(name xs) (in-hash table)])
-    (values name (reverse xs))))
+      [(label-form? it)
+       (when (pair? body) (flush!))
+       (set! labels (cons (label-chain it) labels))]
+      [else (set! body (cons it body))]))
+  (flush!)
+  (for/list ([r (in-list (reverse out))] [i (in-naturals)])
+    (unit (list 'data i) (car r) (cdr r))))
 
-(define (layout-segment target seg items)
-  (define name (cdr (assq 'name seg)))
-  (define kind (cdr (assq 'kind seg)))
-  (define start (cdr (assq 'start seg)))
-  (define end (cdr (assq 'end seg)))
+(define (placed-chain? rules wildcard chain)
+  (or wildcard
+      (for/or ([r (in-list rules)]) (equal? chain (car r)))))
+
+(define (flat-units items rules wildcard)
+  (define out '())
+  (define labels '())
+  (define body '())
+  (define (flush!)
+    (when (or (pair? labels) (pair? body))
+      (set! out (cons (cons (reverse labels) (reverse body)) out))
+      (set! labels '())
+      (set! body '())))
+  (for ([it (in-list items)])
+    (cond
+      [(label-form? it)
+       (define chain (label-chain it))
+       (cond
+         [(placed-chain? rules wildcard chain)
+          (if (and (pair? labels) (null? body))
+              ;; consecutive labels at the same position stay aliases
+              (set! labels (cons chain labels))
+              (begin
+                (flush!)
+                (set! labels (list chain))))]
+         [(null? body)
+          (set! labels (cons chain labels))]
+         [else
+          ;; non-place label inside an item sequence: keep it as a marker
+          (set! body (cons it body))])]
+      [else (set! body (cons it body))]))
+  (flush!)
+  (for/list ([r (in-list (reverse out))] [i (in-naturals)])
+    (unit (list 'flat i) (car r) (cdr r))))
+
+;; ---------------------------------------------------------------------------
+;; 放置
+;; ---------------------------------------------------------------------------
+
+(define (matching-segments rules labels)
+  (remove-duplicates
+   (for*/list ([chain (in-list labels)]
+               [r (in-list rules)]
+               #:when (equal? chain (car r)))
+     (cdr r))))
+
+(define (add-unit! table seg u)
+  (hash-update! table seg (lambda (xs) (append xs (list u))) '()))
+
+(define (place-code-units units rules wildcard problem!)
+  (define by-seg (make-hash))
+  (define current #f)
+  (for ([u (in-list units)])
+    (define labels (unit-labels u))
+    (define hits (matching-segments rules labels))
+    (cond
+      [(> (length hits) 1)
+       (problem! (list 'ambiguous-placement labels hits))]
+      [(= 1 (length hits))
+       (set! current (car hits))
+       (add-unit! by-seg current u)]
+      [current (add-unit! by-seg current u)]
+      [wildcard
+       (set! current wildcard)
+       (add-unit! by-seg current u)]
+      [else
+       (problem! (list 'unplaced-block (unit-id u) labels))]))
+  by-seg)
+
+(define (place-exact-units units rules wildcard problem! what)
+  (define by-seg (make-hash))
+  (for ([u (in-list units)])
+    (define labels (unit-labels u))
+    (cond
+      [(null? labels)
+       (problem! (list 'unlabeled-run (unit-id u) (unit-items u)))]
+      [else
+       (define hits (matching-segments rules labels))
+       (cond
+         [(> (length hits) 1)
+          (problem! (list 'ambiguous-placement labels hits))]
+         [(= 1 (length hits)) (add-unit! by-seg (car hits) u)]
+         [wildcard (add-unit! by-seg wildcard u)]
+         [else (problem! (list what (unit-id u) labels))])]))
+  by-seg)
+
+;; ---------------------------------------------------------------------------
+;; 度量
+;; ---------------------------------------------------------------------------
+
+(struct measured-segment (segment items size entries anchors units) #:transparent)
+;; entries: (list segment 段内偏移 item 尺寸 origin)
+
+(define (measure-segment target seg units problem!)
+  (define name (segment-name seg))
+  (define kind (segment-kind seg))
+  (define start (segment-start seg))
   (define cursor 0)
   (define out '())
   (define anchors '())
   (define entries '())
-  (define requests '())
-  (define problems '())
-  (for ([entry (in-list items)])
-    (define idx (car entry))
-    (define item (cdr entry))
+
+  (define (anchor! chain)
+    (set! anchors (cons (list 'anchor chain name cursor) anchors)))
+
+  (define (emit-item! it origin)
     (cond
-      [(label-form? item)
-       (set! anchors (cons (list 'anchor (label-chain item) name cursor) anchors))]
-      [(comment-form? item) (void)]
-      [(align-form? item)
-       (define n (align-pad (+ start cursor) (cadr item)))
+      [(label-form? it) (anchor! (label-chain it))]
+      [(comment-form? it) (void)]
+      [(align-form? it)
+       (define n (align-pad (+ start cursor) (cadr it)))
        (set! out (cons (list 'offset cursor (list 'pad n)) out))
        (set! cursor (+ cursor n))]
       [else
-       (define kind* (item-kind item))
-       (when (and (not (memq kind* '(marker both)))
-                  (not (eq? kind* kind)))
-         (set! problems (cons (list 'code-data-mixed name kind kind*) problems)))
-       (define size (item-size item))
-       (unless (exact-nonnegative-integer? size)
-         (error 'layout "cannot size item in segment ~a: ~e" name item))
-       (set! out (cons (list 'offset cursor item) out))
-       (set! entries (cons (list idx cursor item size) entries))
+       (define item-kind* (item-kind it))
+       (when (and (eq? item-kind* 'data) (not (eq? kind 'data)))
+         (problem! (list 'code-data-mixed name cursor it)))
+       (when (and (eq? item-kind* 'code) (not (eq? kind 'code)))
+         (problem! (list 'data-code-mixed name cursor it)))
+       (define size (item-size it))
+       (unless (and (exact-integer? size) (>= size 0))
+         (error 'layout "cannot size item in segment ~a: ~e" name it))
+       (set! out (cons (list 'offset cursor it) out))
+       (set! entries (cons (list seg cursor it size origin) entries))
        (set! cursor (+ cursor size))]))
-  (define anchor-map
-    (for/list ([a (in-list anchors)])
-      (cons (cadr a) (cadddr a))))
-  (for ([e (in-list (reverse entries))])
-    (define idx (car e))
-    (define offset (cadr e))
-    (define item (caddr e))
-    (define size (cadddr e))
-    (when (branch-form? item)
-      (define chain (normalize-path (branch-target item)))
-      (define target-offset (and chain (cdr (assoc chain anchor-map))))
+
+  (for ([u (in-list units)])
+    (for ([chain (in-list (unit-labels u))]) (anchor! chain))
+    (for ([it (in-list (unit-items u))] [i (in-naturals)])
+      (emit-item! it (append (unit-id u) (list i)))))
+
+  (measured-segment seg (reverse out) cursor (reverse entries) (reverse anchors) units))
+
+(define (all-units-by-segment segments code-by-seg data-by-seg)
+  (for/hash ([seg (in-list segments)])
+    (define name (segment-name seg))
+    (values name
+            (append (hash-ref code-by-seg name '())
+                    (hash-ref data-by-seg name '())))))
+
+;; ---------------------------------------------------------------------------
+;; 校验
+;; ---------------------------------------------------------------------------
+
+;; The measured layout carries segment starts in its own segment forms.
+(define (positions-of anchors measured-segments)
+  (define start-of
+    (for/hash ([m (in-list measured-segments)])
+      (values (segment-name (measured-segment-segment m))
+              (segment-start (measured-segment-segment m)))))
+  (for/hash ([a (in-list anchors)])
+    (define chain (cadr a))
+    (define seg (caddr a))
+    (define off (cadddr a))
+    (values chain (+ (hash-ref start-of seg) off))))
+
+(define (check-control entry positions problem! request!)
+  (define seg (car entry))
+  (define offset (cadr entry))
+  (define item (caddr entry))
+  (define size (cadddr entry))
+  (define origin (list-ref entry 4))
+  (when (branch-form? item)
+    (define target (normalize-path (branch-target item)))
+    (cond
+      [(not target)
+       (problem! (list 'undefined-target (segment-name seg) offset item))]
+      [else
+       (define addr (hash-ref positions target #f))
+       (cond
+         [(not addr)
+          (problem! (list 'undefined-target (segment-name seg) offset item))]
+         [else
+          (define here (+ (segment-start seg) offset))
+          (define disp (- addr (+ here size)))
+          (define range (branch-range item))
+          (when (and range
+                     (not (<= (car range) disp (cdr range))))
+            (request! (if (short-branch-form? item)
+                          (list 'needs-near origin (segment-name seg) offset item disp)
+                          (list 'needs-far origin (segment-name seg) offset item disp))))])])))
+
+(define (collect-mem-sites item here size)
+  (cond
+    [(mem-form? item) (list (list (parse-mem item) here size))]
+    [(and (form? item)
+          (eq? (car item) 'prefix)
+          (= 3 (length item))
+          (form? (caddr item)))
+     (collect-mem-sites (caddr item) (+ here 1) (- size 1))]
+    [(form? item)
+     (append* (for/list ([op (in-list (cdr item))])
+                (collect-mem-sites op here size)))]
+    [else '()]))
+
+(define (check-memory entry positions problem!)
+  (define seg (car entry))
+  (define offset (cadr entry))
+  (define item (caddr entry))
+  (define size (cadddr entry))
+  (define here (+ (segment-start seg) offset))
+  (for ([site (in-list (collect-mem-sites item here size))])
+    (define m (car site))
+    (define m-here (cadr site))
+    (define m-size (caddr site))
+    (define d (mem-disp m))
+    (unless (exact-integer? d)
+      (define chains (address-expr-chains d))
+      (define missing?
+        (for/or ([c (in-list chains)])
+          (not (hash-ref positions c #f))))
       (cond
-        [(not target-offset)
-         (set! problems (cons (list 'undefined-target idx chain) problems))]
+        [missing?
+         (problem! (list 'undefined-target (segment-name seg) offset item))]
         [else
-         (define disp (- target-offset (+ offset size)))
-         (define range (branch-range item))
-         (unless (<= (car range) disp (cdr range))
-           (if (short-branch-form? item)
-               (set! requests (cons (list 'needs-near idx name offset item disp) requests))
-               (set! problems (cons (list 'needs-far idx name offset item disp) problems))))])))
-  (when (and end (> cursor (- end start)))
-    (set! problems (cons (list 'segment-overflow name cursor (- end start)) problems)))
-  (list (cons 'name name)
-        (cons 'kind kind)
-        (cons 'start start)
-        (cons 'end end)
-        (cons 'items (reverse out))
-        (cons 'size cursor)
-        (cons 'problems (reverse problems))
-        (cons 'requests (reverse requests))
-        (cons 'anchors (reverse anchors))))
+         (define value (eval-address d (lambda (c) (hash-ref positions c))))
+         (cond
+           [(eq? (mem-base m) 'rip)
+            (define rel (- value (+ m-here m-size)))
+            (unless (<= (- (expt 2 31)) rel (sub1 (expt 2 31)))
+              (problem! (list 'rip-out-of-range
+                              (segment-name seg) offset item rel)))]
+           [else
+            (unless (<= (- (expt 2 31)) value (sub1 (expt 2 32)))
+              (problem! (list 'absolute-out-of-range
+                              (segment-name seg) offset item value)))])]))))
 
-(define (block->layout-items b)
-  (define labels
-    (for/list ([chain (in-list (block-head b))])
-      (cons 'label chain)))
-  (append labels (block-items b)))
+(define (check-value entry positions problem!)
+  (define seg (car entry))
+  (define offset (cadr entry))
+  (define item (caddr entry))
+  (when (value-form? item)
+    (define v (value-payload item))
+    (unless (exact-integer? v)
+      (for ([c (in-list (address-expr-chains v))])
+        (unless (hash-ref positions c #f)
+          (problem! (list 'undefined-target (segment-name seg) offset item)))))))
 
-(define (program->layout-items prog)
-  (append* (for/list ([b (in-list (program-blocks prog))])
-             (block->layout-items b))))
+(define (check-segment-overflow measured problem!)
+  (for ([m (in-list measured)])
+    (define seg (measured-segment-segment m))
+    (define capacity (- (segment-end seg) (segment-start seg)))
+    (when (> (measured-segment-size m) capacity)
+      (problem! (list 'segment-overflow
+                      (segment-name seg) (measured-segment-size m) capacity)))))
+
+(define (check-fallthrough code-by-seg flows problem!)
+  (for ([seg (in-list (hash-keys code-by-seg))])
+    (define units (hash-ref code-by-seg seg))
+    (for ([u (in-list units)] [i (in-naturals)])
+      (define id (unit-id u))
+      (when (eq? (car id) 'code)
+        (define bi (cadr id))
+        (define ft (flow-fallthrough (list-ref flows bi)))
+        (when ft
+          (define next (and (< (add1 i) (length units))
+                            (unit-id (list-ref units (add1 i)))))
+          (define next-bi (and next (eq? (car next) 'code) (cadr next)))
+          (unless (eqv? next-bi ft)
+            (problem! (list 'broken-fallthrough seg bi ft next-bi))))))))
+
+;; ---------------------------------------------------------------------------
+;; 输出
+;; ---------------------------------------------------------------------------
+
+(define (segment->sexp m)
+  (define seg (measured-segment-segment m))
+  (list 'segment
+        (list 'name (segment-name seg))
+        (list 'kind (segment-kind seg))
+        (list 'start (segment-start seg))
+        (list 'end (segment-end seg))
+        (cons 'items (measured-segment-items m))
+        (list 'size (measured-segment-size m))))
+
+(define (build-layout target segments units-by-seg code-by-seg flows problem!)
+  (define measured
+    (for/list ([seg (in-list segments)])
+      (measure-segment target seg
+                       (hash-ref units-by-seg (segment-name seg) '())
+                       problem!)))
+  (define anchors (append* (map measured-segment-anchors measured)))
+  (define entries (append* (map measured-segment-entries measured)))
+  (define positions (positions-of anchors measured))
+  (define requests '())
+  (define (request! r) (set! requests (cons r requests)))
+  (for ([e (in-list entries)])
+    (check-control e positions problem! request!)
+    (check-memory e positions problem!)
+    (check-value e positions problem!))
+  (check-segment-overflow measured problem!)
+  (when (and code-by-seg flows)
+    (check-fallthrough code-by-seg flows problem!))
+  (values measured anchors (reverse requests)))
+
+(define (measuring-units code-by-seg data-by-seg segments)
+  (all-units-by-segment segments code-by-seg data-by-seg))
+
+;; ---------------------------------------------------------------------------
+;; 入口
+;; ---------------------------------------------------------------------------
 
 (define (layout-program target prog data-items spec)
-  (layout-items target (append (program->layout-items prog) (as-items data-items)) spec))
+  (unless (program? prog)
+    (error 'layout-program "expected analyze/dce program: ~e" prog))
+  (define problems '())
+  (define (problem! p) (set! problems (cons p problems)))
+  (define-values (segments rules wildcard) (parse-spec spec problem!))
+  (define code-by-seg (place-code-units (program-units prog) rules wildcard problem!))
+  (define data-by-seg
+    (place-exact-units (split-data-units (as-items data-items))
+                       rules wildcard problem! 'unplaced-data))
+  (define units-by-seg (measuring-units code-by-seg data-by-seg segments))
+  (define-values (measured anchors requests)
+    (build-layout target segments units-by-seg code-by-seg (program-flows prog) problem!))
+  (list (list 'phase 'measured)
+        (cons 'segments (for/list ([m (in-list measured)]) (segment->sexp m)))
+        (cons 'anchors anchors)
+        (cons 'requests requests)
+        (cons 'problems (reverse problems))))
 
 (define (layout-items target items spec)
-  (define-values (segments places) (parse-spec spec))
-  (define names (map segment-name segments))
-  (define indexed
-    (for/list ([item (in-list (as-items items))] [i (in-naturals)])
-      (cons i item)))
-  (define by-segment (partition-items indexed places names))
-  (define built
-    (for/list ([seg (in-list segments)])
-      (layout-segment target seg (hash-ref by-segment (segment-name seg) '()))))
-  (define all-anchors (append* (map (lambda (s) (cdr (assq 'anchors s))) built)))
-  (define all-problems (append* (map (lambda (s) (cdr (assq 'problems s))) built)))
-  (define all-requests (append* (map (lambda (s) (cdr (assq 'requests s))) built)))
-  (list (cons 'segments
-              (for/list ([s (in-list built)])
-                (list 'segment
-                      (list 'name (cdr (assq 'name s)))
-                      (list 'kind (cdr (assq 'kind s)))
-                      (list 'start (cdr (assq 'start s)))
-                      (list 'end (cdr (assq 'end s)))
-                      (cons 'items (cdr (assq 'items s)))
-                      (list 'size (cdr (assq 'size s))))))
-        (cons 'anchors all-anchors)
-        (cons 'requests all-requests)
-        (cons 'problems all-problems)))
+  (define problems '())
+  (define (problem! p) (set! problems (cons p problems)))
+  (define-values (segments rules wildcard) (parse-spec spec problem!))
+  (define units (flat-units (as-items items) rules wildcard))
+  (define by-seg (place-exact-units units rules wildcard problem! 'unplaced))
+  (define units-by-seg (measuring-units (make-hash) by-seg segments))
+  (define-values (measured anchors requests)
+    (build-layout target segments units-by-seg #f #f problem!))
+  (list (list 'phase 'measured)
+        (cons 'segments (for/list ([m (in-list measured)]) (segment->sexp m)))
+        (cons 'anchors anchors)
+        (cons 'requests requests)
+        (cons 'problems (reverse problems))))

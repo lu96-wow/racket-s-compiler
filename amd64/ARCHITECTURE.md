@@ -122,7 +122,7 @@ symbols: (symbol chain segment offset address)
 | `problems` | layout / bind / encode | 不能继续出产物 |
 | `loko-problems` | loko-compat | 旧写法不能纯变换（image 指令、符号位运算等） |
 | `undefined-target` | layout | 分支目标找不到 |
-| `needs-far` | layout | near 也放不下，far form 未实现 |
+| `needs-far` | layout | near 也放不下，far form 未实现（request，由 encode 拒绝） |
 | `pseudo-leftover` | flow | 伪指令漏到 layout 前 |
 
 ## 8. 纯函数与状态

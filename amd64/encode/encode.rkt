@@ -107,6 +107,9 @@
        (emit! (value->bytes (value-width it) (value-payload it) symbols))]
       [else
        (emit! (encode-code (car it) (cdr it) here symbols))]))
+  (unless (= cursor size)
+    (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
+           name size cursor))
   (list 'segment
         (list 'name name)
         (list 'kind kind)

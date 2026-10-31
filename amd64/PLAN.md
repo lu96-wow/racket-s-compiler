@@ -32,7 +32,7 @@
 - [x] `amd64/insn.rkt`：第一版整数/控制流编码 + `instruction-size`（layout/encode 共享）
 - [x] `amd64/expand-pseudo/rewrite.rkt`：`jmp/jcc/call/li` 与条件码别名规范化
 - [x] 编码测试、expand-pseudo 测试、expand-data 测试、flatten 测试
-- [x] `layout` 精确尺寸与段布局（第一版扁平 item + program blocks 桥接）
+- [x] `layout` 精确尺寸与段布局（早期扁平 item；现已升级为 block-aware）
 - [x] `bind-labels`
 - [x] `encode-layout` 端到端字节输出
 - [x] `analyze` / `dce`（amd64 控制流分类）
@@ -52,7 +52,11 @@
 - [ ] `adc/sbb`、更多双精度/packed SSE
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
-- [ ] `place` region / 通配、外部 reloc
+- [x] block-aware layout：place/region/wildcard、data runs、fallthrough
+- [x] 段起始对齐/重叠、代码数据混放、RIP/绝对 disp32 范围检查
+- [x] relax 按 `(code 块下标 项下标)` origin 精确升级
+- [ ] `needs-far` / far form / trampoline / scratch
+- [ ] 外部 reloc
 
 ## 2. 总体流水线
 

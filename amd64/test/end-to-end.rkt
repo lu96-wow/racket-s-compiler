@@ -111,3 +111,11 @@
                 (start #x200000)
                 (size 10)
                 (bytes #"\xf3\x0f\x10\xca\x66\x0f\x7f\x04\x24\xc3")))
+
+;; bind-labels is the final value-width check
+(define bad-value-items '((label data) (value 1 300)))
+(define bad-value-measured (layout-items target-amd64 bad-value-items spec))
+(define bad-value-bound (bind-labels bad-value-measured))
+(check-true
+ (for/or ([p (in-list (cdr (assq 'problems bad-value-bound)))])
+   (eq? (car p) 'value-out-of-range)))
