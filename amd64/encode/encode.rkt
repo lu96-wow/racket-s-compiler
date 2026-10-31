@@ -11,11 +11,11 @@
 
 (provide encode-layout)
 
-(define (field key row)
+(define (field-value key row)
   (cond ((assq key (cdr row)) => cadr)
         [else #f]))
 
-(define (segment-field seg key) (field key seg))
+(define (segment-field seg key) (field-value key seg))
 (define (segment-items seg) (cdr (assq 'items (cdr seg))))
 
 (define (resolve-symbol symbols chain)

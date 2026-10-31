@@ -10,6 +10,8 @@
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层、依赖规则、不变量、错误模型 |
 | [`SEXP.md`](SEXP.md) | 程序/数据/内存/控制转移的 s-expression 形式 |
 | [`INSTRUCTIONS.md`](INSTRUCTIONS.md) | 指令类别、前缀、字符串指令、扩展顺序 |
+| [`TARGET.md`](TARGET.md) | target 事实与填充策略 |
+| [`REGISTERS.md`](REGISTERS.md) | 寄存器 class、编码事实 |
 | [`PLAN.md`](PLAN.md) | 目标、阶段计划和进度 |
 | [`loko-compat/DESIGN.md`](loko-compat/DESIGN.md) | Loko 旧汇编写法到核心 item 的纯变换 |
 | `*/DESIGN.md` | 每层的职责、输入输出、边界 |
@@ -80,9 +82,8 @@ amd64/
 - 段起始对齐/重叠、代码数据混放、RIP-relative/绝对 disp32 范围检查
 - 精确 `instruction-size`
 - `jmp-short/jcc-short -> near` 只增 relax
-- anchor -> symbol 绑定
 - bind-labels：anchors -> symbols + 最终 value 宽度检查
-- bound layout -> 段字节
+- encode：bound-layout -> build 字节
 - 符号内存 displacement（固定 disp32，encode 时解析）
 - 整数 `li` -> `mov`，地址表达式 `li` -> RIP-relative `lea`
 - 基本整数/控制流/内存指令编码

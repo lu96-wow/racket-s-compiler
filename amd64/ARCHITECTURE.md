@@ -13,8 +13,8 @@
 | `sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
 | `item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
 | `insn.rkt` | 真实指令表、前缀/字符串指令、`instruction-size`、`encode-instruction` |
-| `registers.rkt` | 寄存器名、宽度、编号、REX 属性 |
-| `target.rkt` | `target-amd64`、端序字节、填充策略 |
+| `registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`REGISTERS.md`](REGISTERS.md) |
+| `target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`TARGET.md`](TARGET.md) |
 
 `insn.rkt` 同时服务 layout 和 encode，避免两边各自维护尺寸。
 

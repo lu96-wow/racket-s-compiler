@@ -40,8 +40,8 @@
          "../item.rkt")
 
 (provide translate-loko-source
-         translate-loko-text
-         translate-loko-data
+         translate-loko-text-only
+         translate-loko-data-only
          loko-source?
          loko-memory?
          loko-memory-width
@@ -109,10 +109,10 @@
     (loko-source-parts src)
     #t))
 
-(define (translate-loko-text text)
+(define (translate-loko-text-only text)
   (translate-loko-source (list 'loko-source (cons 'text text) (cons 'data '()))))
 
-(define (translate-loko-data data)
+(define (translate-loko-data-only data)
   (translate-loko-source (list 'loko-source (cons 'text '()) (cons 'data data))))
 
 (define (loko-compat-fields out)
@@ -287,7 +287,7 @@
               e
               (loop (cdr terms) base index scale seg (cons e disp)))])])))
 
-(define (width-head w)
+(define (width->mem-head w)
   (case w
     [(8) 'b8]
     [(16) 'b16]
@@ -317,7 +317,7 @@
      (cond
        [(not width)
         (problem 'ambiguous-memory-width mem)]
-       [(not (width-head width))
+       [(not (width->mem-head width))
         (problem 'unsupported-memory-width mem width)]
        [else
         (define disp (mem-parts-disp parts))
@@ -327,7 +327,7 @@
            (if index (list (list 'index index) (list 'scale (mem-parts-scale parts))) '())
            (list (list 'disp disp))
            (if (mem-parts-seg parts) (list (list 'seg (mem-parts-seg parts))) '())))
-        (cons (width-head width) fields)])]))
+        (cons (width->mem-head width) fields)])]))
 
 ;; ---------------------------------------------------------------------------
 ;; 表达式
@@ -463,7 +463,7 @@
        [else (list (list 'align n))])]
     [_ (record-problem-comment! ctx (problem 'bad-align item))]))
 
-(define (u-width h)
+(define (integer-directive-width h)
   (case h
     [(%u8) 1]
     [(%u16) 2]
@@ -493,7 +493,7 @@
        [else (list (list 'value width e))])]))
 
 (define (translate-integer-data ctx item)
-  (define width (u-width (car item)))
+  (define width (integer-directive-width (car item)))
   (append* (for/list ([v (in-list (cdr item))])
              (translate-integer-value ctx width v))))
 

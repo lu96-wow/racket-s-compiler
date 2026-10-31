@@ -2,6 +2,8 @@
 
 > 目标：形状固定、尺寸可精确计算、编码器不偷偷改 form。
 > 总体计划见 [`PLAN.md`](PLAN.md)。
+> 共享事实层另有 [`TARGET.md`](TARGET.md)、[`REGISTERS.md`](REGISTERS.md)、
+> [`INSTRUCTIONS.md`](INSTRUCTIONS.md)。
 
 ## 1. 通用约定
 

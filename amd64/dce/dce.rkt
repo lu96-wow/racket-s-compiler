@@ -29,7 +29,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; kept : (listof (list 旧 id 块 流))
-(define (assemble kept)
+(define (rebuild-program kept)
   (define new-of (make-hash))
   (for ([e (in-list kept)] [new (in-naturals)])
     (hash-set! new-of (car e) new))
@@ -65,7 +65,7 @@
   (for ([e (in-list entries)] #:when (flow-root? (caddr e)))
     (visit! (car e)))
   (define kept (for/list ([e (in-list entries)] #:when (vector-ref seen (car e))) e))
-  (if (= (length kept) n) prog (assemble kept)))
+  (if (= (length kept) n) prog (rebuild-program kept)))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 2: 转移到紧邻下一块 -> 删掉, 直接落下去
@@ -73,7 +73,7 @@
 
 ;; 末尾的 (comment ...) 是零尺寸注记，不是块的控制流终止指令。
 ;; 判断块是否仍以转移结尾时要跳过注释。
-(define (last-item block)
+(define (last-block-item block)
   (let loop ([items (reverse (block-items block))])
     (cond
       [(null? items) #f]
@@ -81,7 +81,7 @@
       [else (car items)])))
 
 (define (transfer-to-next? block next-block)
-  (define last-insn (last-item block))
+  (define last-insn (last-block-item block))
   (and next-block
        (or (unconditional-jump? last-insn)
            (branch-instruction? last-insn))
@@ -101,14 +101,14 @@
         [else b])))
   (if (not (ormap values (vector->list changed)))
       prog
-      (assemble
+      (rebuild-program
        (for/list ([b (in-list new-blocks)] [f (in-list flows)] [i (in-naturals)])
          (cond
            ;; 删掉转移后只剩顺序边
            [(vector-ref changed i)
             (define next (and (< (add1 i) (length new-blocks)) (add1 i)))
             (list i b (make-flow (if next (list next) '()) next (flow-root? f)))]
-           ;; 没动的块: 流原样交给 assemble 重映射
+           ;; 没动的块: 流原样交给 rebuild-program 重映射
            [else (list i b f)])))))
 
 ;; ---------------------------------------------------------------------------
@@ -146,7 +146,7 @@
   (define all (append (reverse out) (reverse pending)))
   (if (not changed?)
       prog
-      (assemble
+      (rebuild-program
        (for/list ([e (in-list all)])
          (define f (caddr e))
          (define (fix id) (hash-ref redirect id id))

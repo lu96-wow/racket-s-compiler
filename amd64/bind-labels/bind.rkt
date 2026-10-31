@@ -14,7 +14,7 @@
 
 (provide bind-labels)
 
-(define (field key row)
+(define (field-value key row)
   (cond ((assq key (cdr row)) => cadr)
         [else #f]))
 
@@ -22,7 +22,7 @@
   (define bits (* 8 width))
   (<= (- (expt 2 (sub1 bits))) n (sub1 (expt 2 bits))))
 
-(define (symbol-table symbols)
+(define (symbols->addresses symbols)
   (for/hash ([s (in-list symbols)])
     (values (cadr s) (cadddr (cdr s)))))
 
@@ -34,7 +34,7 @@
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (for ([seg (in-list segments)])
-    (define seg-name (field 'name seg))
+    (define seg-name (field-value 'name seg))
     (define items-hit (assq 'items (cdr seg)))
     (for ([entry (in-list (if items-hit (cdr items-hit) '()))])
       (define offset (cadr entry))
@@ -60,16 +60,16 @@
   (define anchors (cdr (assq 'anchors measured)))
   (define segment-info
     (for/hash ([s (in-list segments)])
-      (values (field 'name s) s)))
+      (values (field-value 'name s) s)))
   (define symbols
     (for/list ([a (in-list anchors)])
       (match a
         [(list 'anchor chain seg offset)
          (define s (hash-ref segment-info seg #f))
          (unless s (error 'bind-labels "unknown segment in anchor: ~e" a))
-         (list 'symbol chain seg offset (+ (field 'start s) offset))]
+         (list 'symbol chain seg offset (+ (field-value 'start s) offset))]
         [_ (error 'bind-labels "bad anchor: ~e" a)])))
-  (define table (symbol-table symbols))
+  (define table (symbols->addresses symbols))
   (define extra (check-value-widths segments table))
   (list (list 'phase 'bound)
         (cons 'segments segments)

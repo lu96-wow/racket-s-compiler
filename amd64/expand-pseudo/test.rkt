@@ -4,13 +4,13 @@
 (require rackunit
          "rewrite.rkt")
 
-(define (rw #:short-branches? [short? #f] . items)
-  (rewrite-program items #:short-branches? short?))
+(define (rw #:short-transfers? [short? #f] . items)
+  (rewrite-program items #:short-transfers? short?))
 
 (check-equal? (rw '(jmp (done))) '((jmp-near (done))))
-(check-equal? (rw '(jmp (done)) #:short-branches? #t) '((jmp-short (done))))
+(check-equal? (rw '(jmp (done)) #:short-transfers? #t) '((jmp-short (done))))
 (check-equal? (rw '(jcc e (done))) '((jcc-near e (done))))
-(check-equal? (rw '(jcc e (done)) #:short-branches? #t) '((jcc-short e (done))))
+(check-equal? (rw '(jcc e (done)) #:short-transfers? #t) '((jcc-short e (done))))
 (check-equal? (rw '(call (foo))) '((call-near (foo))))
 
 (check-equal? (rw '(je (done))) '((jcc-near e (done))))

@@ -14,7 +14,7 @@
                   block-head block-items make-block))
 
 (provide relax
-         promote-short-branch
+         promote-short-control-transfer
          needs-near?)
 
 (define max-rounds 64)
@@ -25,7 +25,7 @@
        (let ([origin (cadr request)])
          (and (form? origin) (eq? (car origin) 'code)))))
 
-(define (promote-short-branch item)
+(define (promote-short-control-transfer item)
   (case (car item)
     [(jmp-short) (cons 'jmp-near (cdr item))]
     [(jcc-short) (cons 'jcc-near (cdr item))]
@@ -35,7 +35,7 @@
   (for/list ([r (in-list requests)] #:when (needs-near? r))
     (define origin (cadr r))
     (cons (list (cadr origin) (caddr origin))
-          (promote-short-branch (list-ref r 4)))))
+          (promote-short-control-transfer (list-ref r 4)))))
 
 (define (apply-edits prog edits)
   (define table (make-hash))

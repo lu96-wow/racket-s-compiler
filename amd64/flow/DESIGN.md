@@ -16,6 +16,7 @@
 | `program-items` | 扁平程序 item | seed / `flatten` / `expand-pseudo` / `loko-compat` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
+| `layout-spec` | `(segments …) (place …)` | seed |
 | `measured-layout` | segments + anchors + requests + problems | `layout` / `relax` |
 | `bound-layout` | measured + symbols | `bind-labels` |
 | `build` | 每段字节 | `encode` |

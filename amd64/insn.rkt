@@ -238,7 +238,7 @@
 
 ;; `extra-prefixes` are mandatory legacy prefixes such as F3 for POPCNT.
 ;; They go after 0x66 and before REX.
-(define (emit-rm/base width regs rm-enc opcode imm extra-prefixes)
+(define (emit-rm-with-prefixes width regs rm-enc opcode imm extra-prefixes)
   (append
    (if (rm-encoding-seg rm-enc) (list (rm-encoding-seg rm-enc)) '())
    (if (= width 16) (list #x66) '())
@@ -255,7 +255,7 @@
    imm))
 
 (define (emit-rm width regs rm-enc opcode [imm '()])
-  (emit-rm/base width regs rm-enc opcode imm '()))
+  (emit-rm-with-prefixes width regs rm-enc opcode imm '()))
 
 (define (rm-width op)
   (cond
@@ -627,7 +627,7 @@
      (bytes* '(#xe8) (u32 off))]
     [_ (error 'encode-call-near "call-near takes one offset: ~e" operands)]))
 
-(define (encode-indirect-transfer opcode operands name)
+(define (encode-indirect-transfer name opcode operands)
   (match operands
     [(list rm)
      (define rm* (parse-rm rm))
@@ -883,7 +883,7 @@
      (case name
        [(bsf) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbc))]
        [(bsr) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbd))]
-       [(popcnt) (emit-rm/base width (list d) (encode-rm s d)
+       [(popcnt) (emit-rm-with-prefixes width (list d) (encode-rm s d)
                                '(#x0f #xb8) '() (list #xf3))]
        [else (error name "unknown bit-scan instruction: ~e" name)])]
     [_ (error name "~a takes two operands: ~e" name operands)]))
@@ -921,7 +921,7 @@
               (if (= width 8) eight-op wide-op))]
     [_ (error name "~a takes dst, src: ~e" name operands)]))
 
-(define (encode-rdrand digit name operands)
+(define (encode-random-seed name digit operands)
   (match operands
     [(list rm)
      (define r (parse-rm rm))
@@ -1100,7 +1100,7 @@
     (error who "memory width must be b~a: ~e" width op)))
 
 (define (emit-sse prefix width regs rm-enc opcode [imm '()])
-  (emit-rm/base width regs rm-enc opcode imm prefix))
+  (emit-rm-with-prefixes width regs rm-enc opcode imm prefix))
 
 (define (encode-movss operands)
   (match operands
@@ -1221,7 +1221,7 @@
                (list d) (encode-rm s d) '(#x0f #x2a))]
     [_ (error 'encode-cvtsi2ss "cvtsi2ss takes dst, src: ~e" operands)]))
 
-(define (encode-mxcsr digit name operands)
+(define (encode-mxcsr name digit operands)
   (match operands
     [(list m)
      (define m* (parse-rm m))
@@ -1235,24 +1235,24 @@
 ;; PC 系统描述符 / MSR
 ;; ---------------------------------------------------------------------------
 
-(define (encode-descriptor-table opcode digit name operands)
+(define (encode-descriptor-table name opcode digit operands)
   (match operands
     [(list m)
      (define m* (parse-rm m))
      (unless (mem? m*)
        (error name "~a needs a memory operand: ~e" name m))
-     (emit-rm/base 32 (regs-in-op m*) (encode-rm m* digit)
+     (emit-rm-with-prefixes 32 (regs-in-op m*) (encode-rm m* digit)
                    (list #x0f opcode) '() '())]
     [_ (error name "~a takes one memory operand: ~e" name operands)]))
 
-(define (encode-system-rm16 digit name operands)
+(define (encode-system-rm16 name digit operands)
   (match operands
     [(list rm)
      (define r (parse-rm rm))
      (define width (if (mem? r) (mem-width r) (reg-width r)))
      (unless (= width 16)
        (error name "~a needs a 16-bit operand: ~e" name rm))
-     (emit-rm/base 32 (regs-in-op r) (encode-rm r digit)
+     (emit-rm-with-prefixes 32 (regs-in-op r) (encode-rm r digit)
                    '(#x0f #x00) '() '())]
     [_ (error name "~a takes one operand: ~e" name operands)]))
 
@@ -1280,8 +1280,8 @@
    'jcc-short  (insn-def 2 encode-jcc-short)
    'jcc-near   (insn-def 2 encode-jcc-near)
    'call-near  (insn-def 1 encode-call-near)
-   'call-indirect (insn-def 1 (lambda (ops) (encode-indirect-transfer 2 ops 'call-indirect)))
-   'jmp-indirect  (insn-def 1 (lambda (ops) (encode-indirect-transfer 4 ops 'jmp-indirect)))
+   'call-indirect (insn-def 1 (lambda (ops) (encode-indirect-transfer 'call-indirect 2 ops)))
+   'jmp-indirect  (insn-def 1 (lambda (ops) (encode-indirect-transfer 'jmp-indirect 4 ops)))
    'test       (insn-def 2 encode-test)
    'inc        (insn-def 1 (lambda (ops) (encode-unary 'inc ops)))
    'dec        (insn-def 1 (lambda (ops) (encode-unary 'dec ops)))
@@ -1309,8 +1309,8 @@
    'xadd       (insn-def 2 (lambda (ops)
                              (encode-binary-atomic 'xadd
                                                    '(#x0f #xc0) '(#x0f #xc1) ops)))
-   'rdrand     (insn-def 1 (lambda (ops) (encode-rdrand 6 'rdrand ops)))
-   'rdseed     (insn-def 1 (lambda (ops) (encode-rdrand 7 'rdseed ops)))
+   'rdrand     (insn-def 1 (lambda (ops) (encode-random-seed 'rdrand 6 ops)))
+   'rdseed     (insn-def 1 (lambda (ops) (encode-random-seed 'rdseed 7 ops)))
    'clflush    (insn-def 1 encode-clflush)
    'in         (insn-def 2 encode-in)
    'out        (insn-def 2 encode-out)
@@ -1331,15 +1331,15 @@
    'cvtsd2ss   (insn-def 2 (lambda (ops) (encode-sse-scalar 'cvtsd2ss #x5a (list #xf2) 64 ops)))
    'roundss    (insn-def 3 encode-roundss)
    'cvtsi2ss   (insn-def 2 encode-cvtsi2ss)
-   'ldmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 2 'ldmxcsr ops)))
-   'stmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 3 'stmxcsr ops)))
+   'ldmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 'ldmxcsr 2 ops)))
+   'stmxcsr    (insn-def 1 (lambda (ops) (encode-mxcsr 'stmxcsr 3 ops)))
    'xorps      (insn-def 2 (lambda (ops) (encode-sse-scalar 'xorps #x57 '() 128 ops)))
    'xorpd      (insn-def 2 (lambda (ops) (encode-sse-scalar 'xorpd #x57 (list #x66) 128 ops)))
    'orps       (insn-def 2 (lambda (ops) (encode-sse-scalar 'orps #x56 '() 128 ops)))
-   'lgdt       (insn-def 1 (lambda (ops) (encode-descriptor-table #x01 2 'lgdt ops)))
-   'lidt       (insn-def 1 (lambda (ops) (encode-descriptor-table #x01 3 'lidt ops)))
-   'lldt       (insn-def 1 (lambda (ops) (encode-system-rm16 2 'lldt ops)))
-   'ltr        (insn-def 1 (lambda (ops) (encode-system-rm16 3 'ltr ops)))
+   'lgdt       (insn-def 1 (lambda (ops) (encode-descriptor-table 'lgdt #x01 2 ops)))
+   'lidt       (insn-def 1 (lambda (ops) (encode-descriptor-table 'lidt #x01 3 ops)))
+   'lldt       (insn-def 1 (lambda (ops) (encode-system-rm16 'lldt 2 ops)))
+   'ltr        (insn-def 1 (lambda (ops) (encode-system-rm16 'ltr 3 ops)))
    'rdmsr      (insn-def 0 (make-fixed-encoder 'rdmsr '(#x0f #x32)))
    'wrmsr      (insn-def 0 (make-fixed-encoder 'wrmsr '(#x0f #x30)))
    'swapgs     (insn-def 0 (make-fixed-encoder 'swapgs '(#x0f #x01 #xf8)))

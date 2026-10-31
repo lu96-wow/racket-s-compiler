@@ -42,7 +42,7 @@
          run-flow
          run-stage
          compile
-         flow-value
+         context-value
          default-flow)
 
 ;; ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@
           (lambda (_target in)
             (define items
               (rewrite-program (hash-ref in 'program-items)
-                               #:short-branches? #t))
+                               #:short-transfers? #t))
             (when (pseudo-leftover? items)
               (error 'expand-pseudo "pseudo instruction survived expansion: ~e" items))
             (hash 'program-items items))
@@ -263,11 +263,11 @@
   (for/hash ([v (in-list (stage-provides st))])
     (values v (hash-ref ctx v))))
 
-(define (flow-value ctx name)
+(define (context-value ctx name)
   (hash-ref ctx name
-            (lambda () (error 'flow-value "流里没有 `~a`（有的: ~a）" name (hash-keys ctx)))))
+            (lambda () (error 'context-value "流里没有 `~a`（有的: ~a）" name (hash-keys ctx)))))
 
 ;; 统一编译入口: target + seed (+ 可选 flow) -> build。
 ;; 只做组合, 不增加任何层语义。
 (define (compile target seeds [flow default-flow])
-  (flow-value (run-flow target flow seeds) 'build))
+  (context-value (run-flow target flow seeds) 'build))

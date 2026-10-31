@@ -28,7 +28,7 @@
 
 (struct segment (name kind start end align) #:transparent)
 
-(define (field key fields)
+(define (field-value key fields)
   (cond ((assq key fields) => cadr)
         [else #f]))
 
@@ -36,11 +36,11 @@
   (unless (and (form? s) (eq? (car s) 'segment))
     (error 'layout "bad segment form: ~e" s))
   (define fields (cdr s))
-  (define name (field 'name fields))
-  (define kind (field 'kind fields))
-  (define start (field 'start fields))
-  (define end (field 'end fields))
-  (define align (field 'align fields))
+  (define name (field-value 'name fields))
+  (define kind (field-value 'kind fields))
+  (define start (field-value 'start fields))
+  (define end (field-value 'end fields))
+  (define align (field-value 'align fields))
   (unless (symbol? name) (error 'layout "segment needs name: ~e" s))
   (unless (memq kind '(code data)) (error 'layout "bad segment kind: ~e" s))
   (unless (exact-integer? start) (error 'layout "segment needs start: ~e" s))
@@ -298,8 +298,8 @@
   (define item (caddr entry))
   (define size (cadddr entry))
   (define origin (list-ref entry 4))
-  (when (branch-form? item)
-    (define target (normalize-path (branch-target item)))
+  (when (control-transfer-form? item)
+    (define target (normalize-path (control-transfer-target item)))
     (cond
       [(not target)
        (problem! (list 'undefined-target (segment-name seg) offset item))]
@@ -311,10 +311,10 @@
          [else
           (define here (+ (segment-start seg) offset))
           (define disp (- addr (+ here size)))
-          (define range (branch-range item))
+          (define range (control-transfer-range item))
           (when (and range
                      (not (<= (car range) disp (cdr range))))
-            (request! (if (short-branch-form? item)
+            (request! (if (short-control-transfer-form? item)
                           (list 'needs-near origin (segment-name seg) offset item disp)
                           (list 'needs-far origin (segment-name seg) offset item disp))))])])))
 

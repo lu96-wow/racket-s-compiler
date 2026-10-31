@@ -14,8 +14,8 @@
          value-width value-payload
          item-kind item-size
          align-pad
-         branch-form? short-branch-form? near-branch-form?
-         branch-target branch-range)
+         control-transfer-form? short-control-transfer-form? near-control-transfer-form?
+         control-transfer-target control-transfer-range)
 
 (define (item-size x)
   (cond
@@ -31,20 +31,25 @@
 (define (align-pad absolute-address alignment)
   (modulo (- alignment (modulo absolute-address alignment)) alignment))
 
-(define branch-mnemonics '(jmp-short jmp-near jcc-short jcc-near call-near))
+(define control-transfer-mnemonics
+  '(jmp-short jmp-near jcc-short jcc-near call-near))
 
-(define (branch-form? x)
-  (and (form? x) (memq (car x) branch-mnemonics) #t))
+(define (control-transfer-form? x)
+  (and (form? x) (memq (car x) control-transfer-mnemonics) #t))
 
-(define (short-branch-form? x)
-  (and (branch-form? x) (memq (car x) '(jmp-short jcc-short)) #t))
+(define (short-control-transfer-form? x)
+  (and (control-transfer-form? x)
+       (memq (car x) '(jmp-short jcc-short))
+       #t))
 
-(define (near-branch-form? x)
-  (and (branch-form? x) (memq (car x) '(jmp-near jcc-near call-near)) #t))
+(define (near-control-transfer-form? x)
+  (and (control-transfer-form? x)
+       (memq (car x) '(jmp-near jcc-near call-near))
+       #t))
 
-(define (branch-target x) (last x))
+(define (control-transfer-target x) (last x))
 
-(define (branch-range x)
+(define (control-transfer-range x)
   (case (car x)
     [(jmp-short jcc-short) '(-128 . 127)]
     [(jmp-near jcc-near call-near) '(-2147483648 . 2147483647)]

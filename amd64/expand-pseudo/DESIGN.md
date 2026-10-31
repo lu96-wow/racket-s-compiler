@@ -5,7 +5,7 @@
 把源码写法规范化成 `insn.rkt` 认识的真实 form。
 
 ```racket
-(rewrite-program items #:short-branches? [short? #f]) ; -> items
+(rewrite-program items #:short-transfers? [short? #f]) ; -> items
 ```
 
 ## 相关 s-exp

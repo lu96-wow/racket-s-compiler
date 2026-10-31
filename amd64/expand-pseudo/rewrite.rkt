@@ -50,7 +50,7 @@
 (define (branch-form cc target short?)
   (if short? (list 'jcc-short cc target) (list 'jcc-near cc target)))
 
-(define (rewrite-item item #:short-branches? [short? #f])
+(define (rewrite-item item #:short-transfers? [short? #f])
   (cond
     [(not (form? item)) item]
     [else
@@ -90,8 +90,8 @@
              [_ item])]
           [else item])])]))
 
-(define (rewrite-program items #:short-branches? [short? #f])
-  (map (lambda (item) (rewrite-item item #:short-branches? short?))
+(define (rewrite-program items #:short-transfers? [short? #f])
+  (map (lambda (item) (rewrite-item item #:short-transfers? short?))
        (as-items items)))
 
 (define (pseudo-leftover? x)

@@ -18,7 +18,7 @@
 分开 `text` / `data` 是有意的：Loko 的 `%section` / `%comm` / `%call` 属于
 image 层，不属于“写法兼容”。本层只接 codegen 能产生的普通 text/data。
 
-`translate-loko-text` / `translate-loko-data` 是单边便利入口；如果代码引用了
+`translate-loko-text-only` / `translate-loko-data-only` 是单边便利入口；如果代码引用了
 另一边的 `%equiv`，用 `translate-loko-source`。
 
 ## 3. 相关 s-exp：输出
@@ -40,7 +40,7 @@ image 层，不属于“写法兼容”。本层只接 codegen 能产生的普�
 | Loko 写法 | 核心写法 | 说明 |
 | --- | --- | --- |
 | `(mem64+ ...)` / `(mem32+ ...)` / `(mem+ ...)` | `(b64 ...)` / `(b32 ...)` / `(bN ...)` | `mem+` 从兄弟寄存器或基址推断宽度 |
-| `(mem128+ ...)` | `(b128 ...)` | 只是宽度事实，SSE 编码仍未实现 |
+| `(mem128+ ...)` | `(b128 ...)` | 用于 `movdqa` 等 SSE 内存操作数 |
 | `(%label x)` | `(label x)` | symbol/string/number 保留原名；vector 等映射为 `loko-label-N` |
 | `(%label a b)` | `(label a b)` | 同地址多名字；end/section metadata 留给 image 层 |
 | `(%comment ...)` | `(comment ...)` | 零尺寸注记 |
