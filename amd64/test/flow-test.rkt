@@ -67,3 +67,28 @@
 (check-equal? (cddr text3)
               '((kind code) (start #x200000) (size 8)
                 (bytes #"H\x8d\x05\xf9\xff\x0f\x00\xc3")))
+
+;; loko-compat: old Loko spelling -> core items -> the normal backend flow
+(define loko-build
+  (compile
+   target-amd64
+   (list (cons 'loko-source
+               '(loko-source
+                 (text
+                  (%label text)
+                  (mov rax (mem64+ rbp -8))
+                  (jmp done)
+                  (%label done)
+                  (ret))
+                 (data
+                  (%label data)
+                  (%u64 #x1234))))
+         (cons 'layout-spec spec))
+   'loko))
+
+(check-equal? loko-build
+              '(build
+                (segment (name text) (kind code) (start #x200000) (size 5)
+                         (bytes #"H\x8bE\xf8\xc3"))
+                (segment (name data) (kind data) (start #x300000) (size 8)
+                         (bytes #"\x34\x12\x00\x00\x00\x00\x00\x00"))))

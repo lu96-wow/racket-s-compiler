@@ -9,7 +9,7 @@
 | 模块 | 内容 |
 | --- | --- |
 | `sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
-| `item.rkt` | `label` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
+| `item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / item-kind |
 | `insn.rkt` | 真实指令表、`instruction-size`、`encode-instruction` |
 | `registers.rkt` | 寄存器名、宽度、编号、REX 属性 |
 | `target.rkt` | `target-amd64`、端序字节、填充策略 |
@@ -19,16 +19,22 @@
 ## 2. 流水线
 
 ```text
-expand-data -> flatten -> expand-pseudo -> analyze -> dce
+loko-source -> loko-compat -> program-items / data-items
+  -> expand-pseudo -> analyze -> dce
   -> relax (内部反复 layout) -> bind-labels -> encode
+
+rich data -> expand-data -> flatten -> program-items / data-items
+  -> 同一后半段
 ```
 
 `layout` 是可单独选择的 stage；默认流不直接写 `layout`。
+`loko-compat` 只做旧写法到核心 item 的纯变换，不处理 image 层。
 
 ## 3. 层契约
 
 | stage | requires | provides |
 | --- | --- | --- |
+| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -42,6 +48,7 @@ expand-data -> flatten -> expand-pseudo -> analyze -> dce
 允许的跨层依赖：
 
 - `dce -> analyze`：消费 `program` struct。
+- `loko-compat -> sexp/item/registers`：只消费共享形状和寄存器事实。
 - `layout -> analyze`：消费 `program` struct。
 - `relax -> layout`：驱动布局。
 - `flow -> 所有 stage`：组合根。
@@ -111,6 +118,7 @@ symbols: (symbol chain segment offset address)
 | `requests` | layout | 交给 relax 或未来寄存器层 |
 | `needs-near` | layout | short 越界，relax 可消费 |
 | `problems` | layout / bind / encode | 不能继续出产物 |
+| `loko-problems` | loko-compat | 旧写法不能纯变换（image 指令、符号位运算等） |
 | `undefined-target` | layout | 分支目标找不到 |
 | `needs-far` | layout | near 也放不下，far form 未实现 |
 | `pseudo-leftover` | flow | 伪指令漏到 layout 前 |
@@ -119,6 +127,7 @@ symbols: (symbol chain segment offset address)
 
 - 各层入口是纯函数；内部局部状态只用于遍历/累加。
 - 不使用动态参数或全局 current-target。
+- `loko-compat` 的标签/别名索引是本次调用的局部状态，不跨调用。
 - `flow` 的 hash context 是组合层局部状态。
 - `layout` / `relax` 不修改输入的 program/data/spec。
 

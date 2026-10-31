@@ -9,6 +9,7 @@
 
 (provide form? name? path? normalize-path
          label-form? label-chain
+         comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
          value-width value-payload
          item-kind item-size
@@ -19,6 +20,7 @@
 (define (item-size x)
   (cond
     [(label-form? x) 0]
+    [(comment-form? x) 0]
     [(align-form? x) #f]
     [(pad-form? x) (cadr x)]
     [(bytes-form? x) (length (cdr x))]

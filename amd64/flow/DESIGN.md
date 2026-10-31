@@ -7,6 +7,7 @@
 
 | stage | requires | provides |
 | --- | --- | --- |
+| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -23,8 +24,18 @@
 '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
 ```
 
+Loko 兼容流：
+
+```racket
+'(loko-compat expand-pseudo analyze dce relax bind-labels encode)
+```
+
+对应阶段组是 `'loko`。`loko-compat` 只把旧写法变成核心 item；`%section` /
+`%comm` / `%origin` / `%mode` / `%call` 留给 image 层，当前会作为 problem 报错。
+
 ## 说明
 
+- `loko-compat` 是非强制入口；核心流不认识 Loko 的 `memN+` / `%label` 等拼写。
 - `layout` 当前是“program blocks -> 扁平 item”的桥接，再复用 `layout-items` 的段布局。
 - `measured-layout` 只有 anchors，没有绝对地址。
 - `relax` 和 `layout` 平层：自己反复驱动 layout，消费 `needs-near`。

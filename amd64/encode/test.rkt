@@ -84,5 +84,6 @@
 (check-equal? (enc 'movsx 'rax 'al) (bytes #x48 #x0f #xbe #xc0))
 (check-equal? (enc 'movsx 'rax 'eax) (bytes #x48 #x63 #xc0))
 (check-equal? (enc 'setcc 'e 'al) (bytes #x0f #x94 #xc0))
+(check-equal? (enc 'cmovcc 'e 'rax 'rbx) (bytes #x48 #x0f #x44 #xc3))
 (check-equal? (enc 'cqo) (bytes #x48 #x99))
 (check-equal? (enc 'cdq) (bytes #x99))

@@ -89,6 +89,7 @@
     (cond
       [(label-form? item)
        (set! anchors (cons (list 'anchor (label-chain item) name cursor) anchors))]
+      [(comment-form? item) (void)]
       [(align-form? item)
        (define n (align-pad (+ start cursor) (cadr item)))
        (set! out (cons (list 'offset cursor (list 'pad n)) out))

@@ -42,6 +42,9 @@
 - [x] 基本整数指令扩展（test/inc/dec/neg/not/shift/imul/div/idiv/movzx/movsx/setcc/cqo/cdq）
 - [x] 结构清理：`item.rkt` / `insn.rkt` 共享事实；layout 不再依赖 encode；target 显式传参；flow 检查伪指令残留
 - [x] `li` 整数 -> mov，地址表达式 -> RIP-relative lea
+- [x] `loko-compat`：Loko 旧汇编写法 -> 核心 item 的纯变换
+- [x] `comment` 零尺寸 item、`cmovcc`、`b128` 内存宽度事实
+- [ ] image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - [ ] `place` region / 通配、外部 reloc
 
 ## 2. 总体流水线
@@ -165,6 +168,7 @@ amd64/
 | --- | --- |
 | `target.rkt` | `target-amd64`、指针宽度、代码段 NOP padding、端序 |
 | `sexp.rkt` | item / chain / 地址表达式；amd64 内存操作数判定 |
+| `loko-compat` | Loko 旧汇编写法（memN+、%label、%uN 等）-> 核心 item |
 | `expand-data` | 先复用 RISC-V 的数据展开规则 |
 | `flatten` | 名字解析，可复用 RISC-V 实现 |
 | `expand-pseudo` | `jmp/jcc/call`、`ret`、`nop`、`li`、常见 mov/算术别名 |

@@ -22,6 +22,7 @@
 
 ```scheme
 (label main)
+(comment liveness-information)
 (value 8 (data))
 (bytes 1 2 3)
 (fill 16 0)
@@ -54,7 +55,8 @@ xmm:    xmm0 ... xmm15
 (b64 (base rax) (seg fs))
 ```
 
-`b8` / `b16` / `b32` / `b64` 表示内存访问宽度。暂不支持 `b128`。
+`b8` / `b16` / `b32` / `b64` / `b128` 表示内存访问宽度。`b128` 目前只是宽度事实，
+SSE/AVX 编码还没实现。
 字段可以按规范顺序写；解析时按字段名取值，不靠位置猜。
 
 字段：
@@ -237,7 +239,8 @@ register
 (cqo)
 (push rax)
 (pop rax)
-(sete al)
+(setcc e al)
+(cmovcc e rax rbx)
 (nop)
 (ud2)
 ```
@@ -251,7 +254,7 @@ inc dec neg not
 shl shr sar
 imul div idiv cqo cdq
 push pop
-setcc
+setcc cmovcc
 nop ud2
 ```
 
@@ -263,7 +266,6 @@ nop ud2
 ```text
 adc sbb
 mul div
-cmovcc
 bsf bsr
 popcnt
 SSE/AVX

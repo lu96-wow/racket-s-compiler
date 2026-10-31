@@ -16,7 +16,8 @@
 ;;; 改完统一重新编号(位置即 id), succ/fallthrough 跟着重映射。
 
 (require "../analyze/analyze.rkt"
-         "../analyze/insn.rkt")
+         "../analyze/insn.rkt"
+         (only-in "../item.rkt" comment-form?))
 
 (provide passes
          pass-names
@@ -70,7 +71,14 @@
 ;; pass 2: 转移到紧邻下一块 -> 删掉, 直接落下去
 ;; ---------------------------------------------------------------------------
 
-(define (last-item block) (and (pair? (block-items block)) (last (block-items block))))
+;; 末尾的 (comment ...) 是零尺寸注记，不是块的控制流终止指令。
+;; 判断块是否仍以转移结尾时要跳过注释。
+(define (last-item block)
+  (let loop ([items (reverse (block-items block))])
+    (cond
+      [(null? items) #f]
+      [(comment-form? (car items)) (loop (cdr items))]
+      [else (car items)])))
 
 (define (transfer-to-next? block next-block)
   (define last-insn (last-item block))

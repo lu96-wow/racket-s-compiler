@@ -2,6 +2,7 @@
 ;;; amd64/item.rkt
 ;;;
 ;;; 程序/数据 item 的共享形状。这里只有形状，不含指令编码，也不含布局策略。
+;;; item: (label …) (comment …) (bytes …) (fill …) (pad …) (align …) (value …) 或指令。
 ;;;
 ;;; layout 和 encode 都依赖这一层，避免 layout -> encode / encode -> layout。
 
@@ -9,6 +10,7 @@
 
 (provide form? name? path? normalize-path
          label-form? label-chain
+         comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
          value-width value-payload
          item-kind)
@@ -17,6 +19,11 @@
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
 
 (define (label-chain x) (cdr x))
+
+;; (comment datum ...) 是零尺寸注记：给后面的层留事实（Loko 用 %comment
+;; 记录 liveness），但不产生字节。
+(define (comment-form? x)
+  (and (form? x) (eq? (car x) 'comment)))
 
 (define (align-form? x)
   (and (form? x) (eq? (car x) 'align) (= 2 (length x))
@@ -44,7 +51,7 @@
 
 (define (item-kind x)
   (cond
-    [(label-form? x) 'marker]
+    [(or (label-form? x) (comment-form? x)) 'marker]
     [(or (align-form? x) (pad-form? x)) 'both]
     [(or (bytes-form? x) (fill-form? x) (value-form? x)) 'data]
     [else 'code]))

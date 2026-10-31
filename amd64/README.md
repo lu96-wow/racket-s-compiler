@@ -10,6 +10,7 @@
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层、依赖规则、不变量、错误模型 |
 | [`SEXP.md`](SEXP.md) | 程序/数据/内存/控制转移的 s-expression 形式 |
 | [`PLAN.md`](PLAN.md) | 目标、阶段计划和进度 |
+| [`loko-compat/DESIGN.md`](loko-compat/DESIGN.md) | Loko 旧汇编写法到核心 item 的纯变换 |
 | `*/DESIGN.md` | 每层的职责、输入输出、边界 |
 
 ## 当前流水线
@@ -28,6 +29,18 @@ rich data
 
 `layout` 可以单独选择，默认流通过 `relax` 间接使用它。
 
+Loko 兼容入口是另一条纯前端：
+
+```text
+loko-source (text/data)
+  -> loko-compat
+  -> program-items + data-items
+  -> expand-pseudo -> analyze -> ...
+```
+
+它只做写法变换；`%section` / `%comm` / `%origin` / `%mode` / `%call` 属于
+image 层，当前显式报问题。
+
 ## 目录
 
 ```text
@@ -37,6 +50,7 @@ amd64/
   insn.rkt           真实指令表 + instruction-size + encode-instruction
   registers.rkt      寄存器事实
   target.rkt         目标事实 + 填充
+  loko-compat/       Loko 旧汇编写法 -> 核心 item
   expand-data/
   flatten/
   expand-pseudo/
@@ -57,6 +71,7 @@ amd64/
 
 已实现：
 
+- Loko 汇编写法兼容层（`loko-compat`）
 - rich 数据展开、module/flatten 名字解析
 - 伪指令规范化：`jmp/jcc/call/li`、条件码别名
 - amd64 控制流分析、DCE
@@ -68,19 +83,22 @@ amd64/
 - 符号内存 displacement（固定 disp32，encode 时解析）
 - 整数 `li` -> `mov`，地址表达式 `li` -> RIP-relative `lea`
 - 基本整数/控制流/内存指令编码
+- `comment` 零尺寸 item、`cmovcc`、`b128` 内存宽度事实
 
 未实现：
 
 - `place` region / 通配 / unplaced problem
 - layout 消费 `flows` / `broken-fallthrough`
 - `needs-far` / far form / trampoline / scratch 寄存器
+- image 层：`%section` / `%comm` / `%origin` / `%mode` / `%call`
 - 外部符号 / reloc / loader
-- `imul` 三操作数、`shift by cl`、`adc/sbb/cmovcc`、SSE/AVX
+- `imul` 三操作数、`shift by cl`、`adc/sbb`、SSE/AVX
 - `li` 超出 RIP-relative ±2GiB 的地址
 
 ## 测试
 
 ```sh
+racket amd64/loko-compat/test.rkt
 racket amd64/encode/test.rkt
 racket amd64/expand-pseudo/test.rkt
 racket amd64/expand-data/test.rkt

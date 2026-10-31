@@ -21,7 +21,8 @@
 ;;;
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
-(require (only-in "../expand-data/expand.rkt" expand-data)
+(require (only-in "../loko-compat/translate.rkt" translate-loko-source)
+         (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program pseudo-leftover?)
          (only-in "../analyze/analyze.rkt" analyze)
@@ -47,6 +48,8 @@
 ;; ---------------------------------------------------------------------------
 ;; 在途值（名字就是契约）
 ;;
+;;   loko-source    Loko 汇编写法 (loko-source (text ...) (data ...))
+;;   loko-aliases   %equiv 解析后的 (alias 名字 值) 列表
 ;;   rich-data      人写的 rich 数据（expand-data 的输入）
 ;;   data-items     核心数据 item（label / bytes / fill / value / align / pad）
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
@@ -63,6 +66,19 @@
 
 (define stage-table
   (hash
+   'loko-compat
+   (stage 'loko-compat '(loko-source) '(program-items data-items loko-aliases)
+          (lambda (_target in)
+            (define out (translate-loko-source (hash-ref in 'loko-source)))
+            (define fields (cdr out))
+            (define problems (cdr (assq 'problems fields)))
+            (when (pair? problems)
+              (error 'loko-compat "~e" problems))
+            (hash 'program-items (cdr (assq 'program-items fields))
+                  'data-items (cdr (assq 'data-items fields))
+                  'loko-aliases (cdr (assq 'aliases fields))))
+          "Loko 汇编写法 -> 核心 item（纯变换；不处理段/ELF/%call）")
+
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
           (lambda (_target in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
@@ -158,6 +174,7 @@
 ;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
 (define stage-groups
   (hash
+   'loko     '(loko-compat expand-pseudo analyze dce relax bind-labels encode)
    'frontend '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
    'backend  '(relax bind-labels encode)

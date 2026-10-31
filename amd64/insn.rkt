@@ -632,6 +632,20 @@
               (list #x0f (+ #x90 (cc-index cc))))]
     [_ (error 'encode-setcc "setcc takes a condition and an operand: ~e" operands)]))
 
+(define (encode-cmovcc operands)
+  (match operands
+    [(list cc dst src)
+     (define dst* (parse-reg dst))
+     (define src* (parse-rm src))
+     (define width (reg-width dst*))
+     (unless (memq width '(16 32 64))
+       (error 'encode-cmovcc "cmovcc requires a 16/32/64-bit destination: ~e" dst))
+     (unless (= width (rm-width src*))
+       (error 'encode-cmovcc "operand widths do not match: ~e ~e" dst src))
+     (emit-rm width (list dst*) (encode-rm src* dst*)
+              (list #x0f (+ #x40 (cc-index cc))))]
+    [_ (error 'encode-cmovcc "cmovcc takes cc, dst, src: ~e" operands)]))
+
 (define (encode-cqo operands)
   (unless (null? operands) (error 'encode-cqo "cqo takes no operands: ~e" operands))
   '(#x48 #x99))
@@ -691,6 +705,7 @@
    'movzx      (insn-def 2 (lambda (ops) (encode-movx #f ops)))
    'movsx      (insn-def 2 (lambda (ops) (encode-movx #t ops)))
    'setcc      (insn-def 2 encode-setcc)
+   'cmovcc     (insn-def 3 encode-cmovcc)
    'cqo        (insn-def 0 encode-cqo)
    'cdq        (insn-def 0 encode-cdq)
    'ret        (insn-def 0 encode-ret)

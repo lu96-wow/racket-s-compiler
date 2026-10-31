@@ -8,6 +8,7 @@
 
 (check-equal? (item-size '(value 8 1)) 8)
 (check-equal? (item-size '(pad 5)) 5)
+(check-equal? (item-size '(comment liveness)) 0)
 (check-equal? (item-size '(align 16)) #f)
 (check-equal? (item-size '(mov rax rbx)) 3)
 (check-equal? (item-size '(jmp-near (done))) 5)

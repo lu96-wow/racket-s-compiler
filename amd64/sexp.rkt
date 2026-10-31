@@ -93,7 +93,7 @@
 
 (struct mem (width base index scale disp seg disp-width) #:transparent)
 
-(define mem-heads '(b8 b16 b32 b64))
+(define mem-heads '(b8 b16 b32 b64 b128))
 (define mem-field-keys '(base index scale disp seg))
 
 (define (mem-head-width head)
@@ -102,6 +102,7 @@
     [(b16) 16]
     [(b32) 32]
     [(b64) 64]
+    [(b128) 128]
     [else #f]))
 
 (define (mem-field? x)
