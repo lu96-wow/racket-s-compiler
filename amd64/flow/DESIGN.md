@@ -1,6 +1,7 @@
 # amd64 flow
 
-> 用 stage 表 + 选择器串起 amd64 各层。当前默认流不包含 `relax`（分支先固定 near）。
+> 用 stage 表 + 选择器串起 amd64 各层。默认流包含 `relax`：expand-pseudo 先产生
+> short branch，relax 再按需要升成 near。
 
 ## stage 表
 

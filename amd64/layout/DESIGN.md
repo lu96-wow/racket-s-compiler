@@ -23,7 +23,7 @@
 
 - `place` 的链命中 `label` 时切换当前段；未命中当前段的 item 被忽略。
 - `align n` 按**绝对地址** `start + cursor` 算成精确的 `(pad n)`。
-- 代码 item 的尺寸来自 `encode/insn.rkt` 的 `instruction-size`。
+- 代码 item 的尺寸来自共享的 `amd64/insn.rkt` 的 `instruction-size`；layout 不依赖 encode 层。
 - 数据 item：`value` / `bytes` / `fill` / `pad`。
 - 产物：
 

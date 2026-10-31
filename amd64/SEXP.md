@@ -128,7 +128,9 @@ xmm:    xmm0 ... xmm15
 其它 64 位值          -> movabs r64, imm64    10 字节
 ```
 
-`(li rd (链))` 只有在目标地址范围已知时才允许；未知外部符号需要 reloc，暂不支持。
+`(li rd 整数)` 展开成 `(mov rd 整数)`。
+`(li rd 地址表达式)` 展开成 `(lea rd (b64 (base rip) (disp 表达式)))`。
+目前只支持 RIP-relative 可达的内部标签；超出 ±2GiB 的情况还没有 far 形式/reloc。
 
 ## 5. 控制转移
 

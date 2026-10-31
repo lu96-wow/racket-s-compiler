@@ -30,3 +30,10 @@
 (check-true (pseudo-leftover? '(je (x))))
 
 (displayln "amd64 expand-pseudo tests: ok")
+
+(check-equal? (rw '(li rax (data)))
+              '((lea rax (b64 (base rip) (disp (data))))))
+(check-equal? (rw '(li rax (+ (data) 8)))
+              '((lea rax (b64 (base rip) (disp (+ (data) 8))))))
+(check-exn exn:fail?
+           (lambda () (rw '(li rax "not-an-address"))))

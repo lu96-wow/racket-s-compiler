@@ -2,6 +2,7 @@
 ;;; amd64/layout/test.rkt
 
 (require rackunit
+         "../target.rkt"
          "layout.rkt"
          "forms.rkt")
 
@@ -22,6 +23,7 @@
 
 (define out
   (layout-items
+   target-amd64
    '((label text)
      (align 4)
      (mov rax rbx)

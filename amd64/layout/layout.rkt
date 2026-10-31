@@ -5,7 +5,6 @@
 ;;; align 变成 pad，记录 anchors。没有 CFG/blocks，也不做 relax。
 
 (require "../sexp.rkt"
-         "../target.rkt"
          "../analyze/analyze.rkt"
          "forms.rkt")
 
@@ -149,9 +148,9 @@
              (block->layout-items b))))
 
 (define (layout-program target prog data-items spec)
-  (layout-items (append (program->layout-items prog) (as-items data-items)) spec))
+  (layout-items target (append (program->layout-items prog) (as-items data-items)) spec))
 
-(define (layout-items items spec)
+(define (layout-items target items spec)
   (define-values (segments places) (parse-spec spec))
   (define names (map segment-name segments))
   (define indexed
@@ -160,7 +159,7 @@
   (define by-segment (partition-items indexed places names))
   (define built
     (for/list ([seg (in-list segments)])
-      (layout-segment target-amd64 seg (hash-ref by-segment (segment-name seg) '()))))
+      (layout-segment target seg (hash-ref by-segment (segment-name seg) '()))))
   (define all-anchors (append* (map (lambda (s) (cdr (assq 'anchors s))) built)))
   (define all-problems (append* (map (lambda (s) (cdr (assq 'problems s))) built)))
   (define all-requests (append* (map (lambda (s) (cdr (assq 'requests s))) built)))

@@ -14,6 +14,7 @@
 
 (define (integer->bytes width value)
   (define bits (* 8 width))
+  ;; 允许有符号负数和完整无符号上界，例如 width=1 时 -128..255。
   (unless (<= (- (expt 2 (sub1 bits))) value (sub1 (expt 2 bits)))
     (error 'integer->bytes "value ~a does not fit in ~a byte(s)" value width))
   (for/list ([i (in-range width)])

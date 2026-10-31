@@ -1,5 +1,5 @@
 #lang racket
-;;; amd64/encode/registers.rkt
+;;; amd64/registers.rkt
 ;;;
 ;;; 寄存器名、宽度和编码编号。只放事实，不做分配。
 

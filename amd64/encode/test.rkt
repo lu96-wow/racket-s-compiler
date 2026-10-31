@@ -4,7 +4,7 @@
 ;;; 第一版编码 golden test。只测已经实现的 form。
 
 (require rackunit
-         "insn.rkt")
+         "../insn.rkt")
 
 (define (enc name . operands)
   (encode-instruction name operands))

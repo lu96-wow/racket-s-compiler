@@ -1,5 +1,5 @@
 #lang racket
-;;; amd64/encode/insn.rkt
+;;; amd64/insn.rkt
 ;;;
 ;;; 单条 amd64 指令 -> 字节。第一版只覆盖整数/控制流的一小撮形式。
 ;;;
@@ -10,7 +10,7 @@
 ;;;
 ;;; 这是一个可执行的起点，不是完整 x86 编码器。表里没有的 form 直接报错。
 
-(require "../sexp.rkt"
+(require "sexp.rkt"
          "registers.rkt")
 
 (provide encode-instruction

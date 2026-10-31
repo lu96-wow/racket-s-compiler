@@ -6,8 +6,8 @@
 
 (require "../sexp.rkt"
          "../target.rkt"
-         "../layout/forms.rkt"
-         "insn.rkt")
+         "../item.rkt"
+         "../insn.rkt")
 
 (provide encode-layout)
 

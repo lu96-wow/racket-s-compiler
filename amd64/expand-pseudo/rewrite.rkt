@@ -70,7 +70,17 @@
           [_ item])]
        [(li)
         (match item
-          [(list 'li dst value) (list 'mov dst value)]
+          [(list 'li dst (? exact-integer? value))
+           (list 'mov dst value)]
+          [(list 'li dst (? address-expr? value))
+           ;; 内部标签用 RIP-relative LEA 装载地址；跨 ±2GiB 的情况
+           ;; 留给 layout/problem，不在这一层猜绝对地址。
+           (list 'lea dst (list 'b64
+                                (list 'base 'rip)
+                                (list 'disp value)))]
+          [(list 'li _ value)
+           (error 'rewrite "li value is neither an integer nor an address expression: ~e"
+                  value)]
           [_ item])]
        [else
         (cond

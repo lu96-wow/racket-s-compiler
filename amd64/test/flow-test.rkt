@@ -52,3 +52,18 @@
 (define text2 (cadr build2))
 (check-equal? (cadr (assq 'size (cdr text2))) 207)
 (check-equal? (subbytes (cadr (assq 'bytes (cdr text2))) 0 2) (bytes #x0f #x84))
+
+;; li with a label expands to RIP-relative lea
+(define build3
+  (compile
+   target-amd64
+   (list (cons 'rich-data '((label data) (b64 #x1234)))
+         (cons 'program-items
+               '((label text)
+                 (li rax (data))
+                 (ret)))
+         (cons 'layout-spec spec))))
+(define text3 (cadr build3))
+(check-equal? (cddr text3)
+              '((kind code) (start #x200000) (size 8)
+                (bytes #"H\x8d\x05\xf9\xff\x0f\x00\xc3")))

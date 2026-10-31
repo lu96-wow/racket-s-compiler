@@ -21,7 +21,7 @@
      (ret))
    '()))
 
-(define before (layout-items (program->layout-items prog) spec))
+(define before (layout-items target-amd64 (program->layout-items prog) spec))
 (check-true (for/or ([r (in-list (cdr (assq 'requests before)))])
               (eq? (car r) 'needs-near)))
 

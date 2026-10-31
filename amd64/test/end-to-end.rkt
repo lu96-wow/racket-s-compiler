@@ -24,7 +24,7 @@
     (place text (text))
     (place data (data))))
 
-(define measured (layout-items items spec))
+(define measured (layout-items target-amd64 items spec))
 (check-equal? (cdr (assq 'problems measured)) '())
 
 (define bound (bind-labels measured))
@@ -55,7 +55,7 @@
     (ret)
     (label data)
     (value 8 #x1234)))
-(define sym-measured (layout-items sym-items spec))
+(define sym-measured (layout-items target-amd64 sym-items spec))
 (check-equal? (cdr (assq 'requests sym-measured)) '())
 (check-equal? (cdr (assq 'problems sym-measured)) '())
 (define sym-bound (bind-labels sym-measured))
@@ -65,3 +65,14 @@
                 (start #x200000)
                 (size 16)
                 (bytes #"H\x8b\x05\xf9\xff\x0f\x00H\x8b\x1c%\x00\x00\x30\x00\xc3")))
+
+
+;; full unsigned data byte range
+(define byte-items '((label data) (value 1 255)))
+(define byte-measured (layout-items target-amd64 byte-items spec))
+(define byte-bound (bind-labels byte-measured))
+(define byte-build (encode-layout target-amd64 byte-bound))
+(check-equal? (cddr (car (cdr byte-build)))
+              '((kind code) (start #x200000) (size 0) (bytes #"")))
+(check-equal? (cddr (cadr (cdr byte-build)))
+              '((kind data) (start #x300000) (size 1) (bytes #"\xff")))

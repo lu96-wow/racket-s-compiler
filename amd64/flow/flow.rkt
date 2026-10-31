@@ -23,7 +23,7 @@
 
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
-         (only-in "../expand-pseudo/rewrite.rkt" rewrite-program)
+         (only-in "../expand-pseudo/rewrite.rkt" rewrite-program pseudo-leftover?)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
@@ -82,9 +82,12 @@
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
           (lambda (_target in)
-            (hash 'program-items
-                  (rewrite-program (hash-ref in 'program-items)
-                                   #:short-branches? #t)))
+            (define items
+              (rewrite-program (hash-ref in 'program-items)
+                               #:short-branches? #t))
+            (when (pseudo-leftover? items)
+              (error 'expand-pseudo "pseudo instruction survived expansion: ~e" items))
+            (hash 'program-items items))
           "伪指令 -> 真指令（短分支起步，交 relax 升级）")
 
    'analyze

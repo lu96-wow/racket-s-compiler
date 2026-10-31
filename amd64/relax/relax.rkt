@@ -32,7 +32,7 @@
   (define items
     (append (program->layout-items program) (as-items data-items)))
   (let loop ([items items] [round 0])
-    (define measured (layout-items items spec))
+    (define measured (layout-items target items spec))
     (define requests (cdr (or (assq 'requests measured) '(requests))))
     (define near* (filter needs-near? requests))
     (cond

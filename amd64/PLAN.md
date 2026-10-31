@@ -1,7 +1,8 @@
 # amd64 后端计划
 
-> 与 `riscv/riscv-compiler` 分离实现，先完成 amd64 汇编/编码后端，再逐步接入数据、CFG、
-> 布局和完整 flow。本文只定计划；s-exp 形状见 [`SEXP.md`](SEXP.md)。
+> 与 `riscv/riscv-compiler` 分离实现。
+> 当前架构见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，s-exp 形状见 [`SEXP.md`](SEXP.md)，
+> 总索引见 [`README.md`](README.md)。
 
 ## 1. 目标
 
@@ -27,8 +28,8 @@
 - [x] `amd64/sexp.rkt`：通用形状 + 内存操作数解析
 - [x] `amd64/expand-data`：rich 数据 -> 核心数据 item（复用 RISC-V 的 target-neutral 实现）
 - [x] `amd64/flatten`：module/provide/require 名字解析（复用 RISC-V 的 target-neutral 实现）
-- [x] `amd64/encode/registers.rkt`：寄存器表
-- [x] `amd64/encode/insn.rkt`：第一版整数/控制流编码 + `instruction-size`
+- [x] `amd64/registers.rkt`：寄存器表（共享事实）
+- [x] `amd64/insn.rkt`：第一版整数/控制流编码 + `instruction-size`（layout/encode 共享）
 - [x] `amd64/expand-pseudo/rewrite.rkt`：`jmp/jcc/call/li` 与条件码别名规范化
 - [x] 编码测试、expand-pseudo 测试、expand-data 测试、flatten 测试
 - [x] `layout` 精确尺寸与段布局（第一版扁平 item + program blocks 桥接）
@@ -39,6 +40,8 @@
 - [x] `relax`（short -> near 只增）
 - [x] 符号 memory displacement（归一化为固定 disp32，encode 时解析）
 - [x] 基本整数指令扩展（test/inc/dec/neg/not/shift/imul/div/idiv/movzx/movsx/setcc/cqo/cdq）
+- [x] 结构清理：`item.rkt` / `insn.rkt` 共享事实；layout 不再依赖 encode；target 显式传参；flow 检查伪指令残留
+- [x] `li` 整数 -> mov，地址表达式 -> RIP-relative lea
 - [ ] `place` region / 通配、外部 reloc
 
 ## 2. 总体流水线
