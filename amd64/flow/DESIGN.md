@@ -1,0 +1,31 @@
+# amd64 flow
+
+> 用 stage 表 + 选择器串起 amd64 各层。当前默认流不包含 `relax`（分支先固定 near）。
+
+## stage 表
+
+| stage | requires | provides |
+| --- | --- | --- |
+| `expand-data` | `rich-data` | `data-items` |
+| `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
+| `expand-pseudo` | `program-items` | `program-items` |
+| `analyze` | `program-items` `data-items` | `program` |
+| `dce` | `program` | `program` |
+| `layout` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `bind-labels` | `measured-layout` | `bound-layout` |
+| `encode` | `bound-layout` | `build` |
+
+默认流：
+
+```racket
+'(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
+```
+
+## 说明
+
+- `layout` 当前是“program blocks -> 扁平 item”的桥接，再复用 `layout-items` 的段布局。
+- `measured-layout` 只有 anchors，没有绝对地址。
+- `relax` 和 `layout` 平层：自己反复驱动 layout，消费 `needs-near`。
+- `bind-labels` 才产生 symbols / 绝对地址。
+- `encode` 只吃 bound-layout；有 requests/problems 就拒绝。

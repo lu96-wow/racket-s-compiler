@@ -1,0 +1,166 @@
+#lang racket
+;;; expand-data/test.rkt -- 数据定义: rich 数据 -> 核心数据 item
+
+(require rackunit
+         "expand.rkt")
+
+(define (ex x) (expand-data x))
+
+;; ---------------------------------------------------------------------------
+;; 宽度/值: 只交出"宽度 + 值"; **端序不归本层**(encode 落字节时才定)
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((b8 32))) '((value 1 32)))
+(check-equal? (ex '((b16 258))) '((value 2 258)))
+(check-equal? (ex '((b32 #x12345678))) '((value 4 #x12345678)))
+(check-equal? (ex '((b64 -1))) '((value 8 -1)))
+
+;; 值域: 有符号/无符号都收
+(check-equal? (ex '((b8 -128))) '((value 1 -128)))
+(check-equal? (ex '((b8 255))) '((value 1 255)))
+(check-exn exn:fail? (lambda () (ex '((b8 256)))))
+(check-exn exn:fail? (lambda () (ex '((b8 -129)))))
+(check-exn exn:fail? (lambda () (ex '((b16 1.5)))))
+(check-exn exn:fail? (lambda () (ex '((b32 "x")))))
+
+;; ---------------------------------------------------------------------------
+;; 地址表达式: 整数 | (链) | (+ …) | (- …)  —— 只查形状, 求值等 layout / encode
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((b32 (+ (d t) 8)))) '((value 4 (+ (d t) 8))))
+(check-equal? (ex '((b32 (- (d t) 8)))) '((value 4 (- (d t) 8))))
+(check-equal? (ex '((b64 (d t)))) '((value 8 (d t))))              ; 裸链 = 地址
+(check-equal? (ex '((b32 (- (d end) (d start)))))
+              '((value 4 (- (d end) (d start)))))
+(check-equal? (ex '((b32 (+ (- (d end) (d start)) 4))))
+              '((value 4 (+ (- (d end) (d start)) 4))))
+(check-equal? (ex '((b32 (+ 1 2)))) '((value 4 (+ 1 2))))          ; 纯整数表达式也行
+
+;; 错误: 形状不对
+(check-exn exn:fail? (lambda () (ex '((b64 (+ (d t)))))))          ; + 至少两个操作数
+(check-exn exn:fail? (lambda () (ex '((b64 (+))))))
+(check-exn exn:fail? (lambda () (ex '((b64 (* (d t) 8))))))        ; 只认 + 和 -
+(check-exn exn:fail? (lambda () (ex '((b64 (+ (d t) "x"))))))      ; 操作数只能是整数/链/表达式
+(check-equal? (ex '((b32 (+ (a) (b) (c))))) '((value 4 (+ (a) (b) (c)))))  ; 多个操作数也合法
+(check-exn exn:fail? (lambda () (ex '((b32 99999999999)))))        ; 整数越界
+
+;; ---------------------------------------------------------------------------
+;; 字符串: 在 expand-data 落成 bytes(UTF-8 是定序字节, 不涉及端序)
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((utf-string "abc"))) '((bytes 97 98 99)))
+(check-equal? (ex '((utf-string "é"))) '((bytes #xC3 #xA9)))
+(check-equal? (ex '((utf-string ""))) '((bytes)))
+(check-equal? (ex '((utf-stringz "abc"))) '((bytes 97 98 99 0)))
+(check-equal? (ex '((utf-stringz ""))) '((bytes 0)))
+(check-exn exn:fail? (lambda () (ex '((utf-string 42)))))
+(check-exn exn:fail? (lambda () (ex '((utf-string "a" "b")))))
+
+;; ---------------------------------------------------------------------------
+;; 数组: 只有"与端序无关"的能压成一条 fill, 其余一个元素一条 (value …)
+;; ---------------------------------------------------------------------------
+
+;; 宽度 1: 一个元素就是一个字节 -> 压
+(check-equal? (ex '((b8-array 4096 0))) '((fill 4096 0)))
+(check-equal? (ex '((b8-array 4096 7))) '((fill 4096 7)))
+(check-equal? (ex '((b8-array 4096 -1))) '((fill 4096 #xFF)))
+;; 值全 0: 两种端序下都是全 0 -> 压
+(check-equal? (ex '((b32-array 1000000 0))) '((fill 4000000 0)))
+;; 宽度 > 1 且值非 0: 字节序没定, 不能合并
+(check-equal? (ex '((b16-array 3 258))) '((value 2 258) (value 2 258) (value 2 258)))
+;; 前 k 个给定, 剩下用最后一个
+(check-equal? (ex '((b8-array 5 1 2))) '((value 1 1) (value 1 2) (fill 3 2)))
+(check-equal? (ex '((b16-array 3 1 2)))
+              '((value 2 1) (value 2 2) (value 2 2)))
+;; 地址数组(跳转表): 每个元素一条 value
+(check-equal? (ex '((b64-array 2 (f))))
+              '((value 8 (f)) (value 8 (f))))
+(check-equal? (ex '((b64-array 3 (f) 7)))
+              '((value 8 (f)) (value 8 7) (value 8 7)))
+;; 空数组
+(check-equal? (ex '((b8-array 0))) '((bytes)))
+;; 幂等
+(check-equal? (ex (ex '((b8-array 4096 0)))) '((fill 4096 0)))
+(check-equal? (ex (ex '((b16-array 3 258)))) '((value 2 258) (value 2 258) (value 2 258)))
+
+;; 错误
+(check-exn exn:fail? (lambda () (ex '((b8-array)))))            ; 没给总数
+(check-exn exn:fail? (lambda () (ex '((b8-array 5)))))          ; 没给初始化值
+(check-exn exn:fail? (lambda () (ex '((b8-array 2 1 2 3)))))    ; 初始化值过多
+(check-exn exn:fail? (lambda () (ex '((b8-array -1 0)))))       ; 总数非法
+(check-exn exn:fail? (lambda () (ex '((b8-array 2 1 300)))))    ; 值越界
+(check-exn exn:fail? (lambda () (ex '((b8-array 0 1)))))        ; size 0 却有值
+(check-equal? (ex '((b32-array 2 1 (+ (d t) 4))))
+              '((value 4 1) (value 4 (+ (d t) 4))))
+
+;; ---------------------------------------------------------------------------
+;; (module …) 是结构壳: 递归展开内容, 名字前缀留给 flatten
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((module m (label d t) (b16 258))))
+              '((module m (label d t) (value 2 258))))
+;; 嵌套
+(check-equal? (ex '((module a (module b (b8 1)))))
+              '((module a (module b (value 1 1)))))
+;; 一条 rich item 展开成多条也要铺在壳里(数组)
+(check-equal? (ex '((module m (label d t) (b16-array 2 1 2))))
+              '((module m (label d t) (value 2 1) (value 2 2))))
+;; 壳里的地址字照常归一
+(check-equal? (ex '((module m (b64 (- (d t) 8)))))
+              '((module m (value 8 (- (d t) 8)))))
+;; (pad n) 是产物侧词汇, 源码也能写(精确插 n 字节); 本层只透传
+(check-equal? (ex '((label d t) (bytes 1) (pad 5) (bytes 2)))
+              '((label d t) (bytes 1) (pad 5) (bytes 2)))
+(check-exn exn:fail? (lambda () (ex '((pad -1)))))
+(check-exn exn:fail? (lambda () (ex '((pad)))))
+
+;; 模块子句 provide/require 原样透传(名字解析是 flatten 的事)
+(check-equal? (ex '((module m (provide t) (require d) (label d t))))
+              '((module m (provide t) (require d) (label d t))))
+
+;; 壳里出现不认识的形式 -> 照样报错
+(check-exn exn:fail? (lambda () (ex '((module m (word 1))))))
+(check-exn exn:fail? (lambda () (ex '((module)))))          ; 没名字
+
+;; ---------------------------------------------------------------------------
+;; 核心形式: 透传 / 幂等
+;; ---------------------------------------------------------------------------
+
+(check-equal? (ex '((label d t) (bytes 1 2) (align 8)))
+              '((label d t) (bytes 1 2) (align 8)))
+(check-equal? (ex (ex '((b32 5) (utf-string "x") (label d t) (align 4))))
+              (ex '((b32 5) (utf-string "x") (label d t) (align 4))))
+
+;; 旧壳
+(check-equal? (ex '(quote ((b8 1)))) '((value 1 1)))
+(check-equal? (ex '(begin (b8 1))) '((value 1 1)))
+(check-equal? (ex '()) '())
+
+;; 词汇封闭: 段/放置/未知形式都不是本层的词汇
+(check-exn exn:fail? (lambda () (ex '((segment (name d) (kind data) (start 0) (end 1) (align 1))))))
+(check-exn exn:fail? (lambda () (ex '((segments (segment (name d) (kind data) (start 0) (end 1) (align 1)))))))
+(check-exn exn:fail? (lambda () (ex '((place d (d t))))))
+(check-exn exn:fail? (lambda () (ex '((word 1)))))
+(check-exn exn:fail? (lambda () (ex '((b8)))))
+(check-exn exn:fail? (lambda () (ex '((bytes 999)))))
+
+;; 输出词汇封闭: 只会出现 label / bytes / fill / value / align
+(define (core-item? it)
+  (and (pair? it) (memq (car it) '(label bytes fill value align)) #t))
+(for ([it (in-list (ex '((label d t) (b8 1) (utf-string "x") (b16-array 4 2 3)
+                         (b8-array 4096 0) (align 8) (bytes 3))))])
+  (check-true (core-item? it)))
+(check-equal? (filter (lambda (it) (not (core-item? it)))
+                      (ex '((label d t) (b8 1) (b64 -1) (b32-array 9 0)
+                            (utf-string "x") (align 8) (bytes 3))))
+              '())
+
+;; fill / value 也是本层的核心形式: 透传 + 幂等(形状判定归 layout, 见 layout/test.rkt)
+(check-equal? (ex '((fill 5 0))) '((fill 5 0)))
+(check-equal? (ex (ex '((b32-array 8 0)))) '((fill 32 0)))
+(check-equal? (ex '((value 4 (d t)))) '((value 4 (d t))))
+
+;; 宽度表
+(check-equal? (map width-of '((b8 0) (b16 0) (b32 0) (b64 0))) '(1 2 4 8))
+
+(displayln "expand-data tests: ok")
