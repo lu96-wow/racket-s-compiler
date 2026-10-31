@@ -113,12 +113,13 @@
 ;; (jump-far link [s] L): link 非零时它自己就是 auipc 的落点
 (define (encode-far-jump it here symbols)
   (define link (cadr it))
-  ;; 空槽 = 少一个 scratch **且** link 是零寄存器; link 非零时它自己就是 auipc 的落点。
-  (define hole? (and (= 3 (length it)) (zero-register? link)))
   (define target (normalize-path (last it)))
   (define d (- (resolve-symbol symbols target 0) here))
   (cond
-    [hole? (error 'encode "(jump-far ~a …) 的空槽没人填, 不能编码" link)]
+    ;; 空槽没人填。判据用 forms 的 scratch-hole?, 和 layout 报 scratch-hole
+    ;; request 用的是同一个: 不再在这里拄一份"少一个且 link 是零寄存器"。
+    [(scratch-hole? it)
+     (error 'encode "(jump-far ~a …) 的空槽没人填, 不能编码" link)]
     [(zero-register? link)
      (jump-auipc-jalr 'zero d #:scratch (list (caddr it)))]
     [else (jump-auipc-jalr (abi-name link) d)]))
