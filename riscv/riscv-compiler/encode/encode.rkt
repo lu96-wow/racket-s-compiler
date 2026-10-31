@@ -49,6 +49,14 @@
 (define (segment-field seg key) (cadr (assoc key (cdr seg))))
 (define (segment-items seg) (cdr (assoc 'items (cdr seg))))
 
+;; (offset k ...) 是断言: 走到这条 item 时, 已落的位置必须正好是 k。
+;; 两种段(材料化 / hole)共用同一条断言, 所以两边的报错不会分叉。
+(define (check-offset! name at reached it)
+  (unless (= at reached)
+    (error 'encode
+           "段 ~a 的偏移不一致: layout 说 ~a, encode 算到 ~a (item ~e)"
+           name at reached it)))
+
 ;; 符号行是 (symbol 链 段名 偏移 绝对地址); 查找/取地址复用 bind-labels 的实现
 (define (resolve-symbol symbols chain addend)
   (define row (symbol-row symbols chain))
@@ -151,10 +159,7 @@
   (for ([entry (in-list (segment-items seg))])
     (define at (cadr entry))
     (define it (caddr entry))
-    (unless (= at cursor)
-      (error 'encode
-             "段 ~a 的偏移不一致: layout 说 ~a, encode 算到 ~a (item ~e)"
-             name at cursor it))
+    (check-offset! name at cursor it)
     (cond
       [(label-form? it) (void)]
       [(reserve-form? it) (set! cursor (+ cursor (reserve-size it)))]
@@ -187,10 +192,7 @@
     (define at (cadr entry))
     (define it (caddr entry))
     (define here (+ start at))
-    (unless (= at cursor)
-      (error 'encode
-             "段 ~a 的偏移不一致: layout 说 ~a, encode 算到 ~a (item ~e)"
-             name at cursor it))
+    (check-offset! name at cursor it)
     (cond
       [(label-form? it) (void)]
       ;; (pad n): layout 已经把"对齐请求"换算成"要补多少个字节"

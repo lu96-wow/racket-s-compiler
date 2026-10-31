@@ -135,20 +135,20 @@
 (check-equal? (item-kind '(reserve 4)) 'space)
 
 ;; 段 kind 只回答"收哪些 item 类"
-(check-true  (allowed-item-kind? 'code 'code))
-(check-true  (allowed-item-kind? 'code 'pad))
-(check-false (allowed-item-kind? 'code 'materialized))   ; RISC-V 的 code 段不收数据
-(check-true  (allowed-item-kind? 'data 'materialized))
-(check-true  (allowed-item-kind? 'data 'pad))
-(check-false (allowed-item-kind? 'data 'code))
-(check-true  (allowed-item-kind? 'hole 'space))
-(check-true  (allowed-item-kind? 'hole 'marker))
-(check-true  (allowed-item-kind? 'hole 'align))
-(check-false (allowed-item-kind? 'hole 'materialized))
-(check-false (allowed-item-kind? 'hole 'pad))
-(check-false (allowed-item-kind? 'hole 'code))
-(check-false (allowed-item-kind? 'code 'space))
-(check-false (allowed-item-kind? 'data 'space))
+(check-true  (item-kind-allowed-in? 'code 'code))
+(check-true  (item-kind-allowed-in? 'pad 'code))
+(check-false (item-kind-allowed-in? 'materialized 'code))   ; RISC-V 的 code 段不收数据
+(check-true  (item-kind-allowed-in? 'materialized 'data))
+(check-true  (item-kind-allowed-in? 'pad 'data))
+(check-false (item-kind-allowed-in? 'code 'data))
+(check-true  (item-kind-allowed-in? 'space 'hole))
+(check-true  (item-kind-allowed-in? 'marker 'hole))
+(check-true  (item-kind-allowed-in? 'align 'hole))
+(check-false (item-kind-allowed-in? 'materialized 'hole))
+(check-false (item-kind-allowed-in? 'pad 'hole))
+(check-false (item-kind-allowed-in? 'code 'hole))
+(check-false (item-kind-allowed-in? 'space 'code))
+(check-false (item-kind-allowed-in? 'space 'data))
 
 ;; 压缩形式: 2 字节; 控制转移按 C 扩展的范围
 (check-true  (compressed-form? '(c.addi a0 1)))

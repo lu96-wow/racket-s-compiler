@@ -104,15 +104,20 @@
 ;; 段表自检
 ;; ---------------------------------------------------------------------------
 
+;; 段范围是否成立。空段只在 hole 上合法: 洞可以不占任何地址,
+;; 要材料化的段则必须真的留出位置。
+(define (segment-range-ok? s)
+  (cond
+    [(> (segment-start s) (segment-end s)) #f]
+    [(= (segment-start s) (segment-end s)) (eq? (segment-kind s) 'hole)]
+    [else #t]))
+
 (define (validate-segments segs problem!)
   (define names (map segment-name segs))
   (unless (= (length names) (length (remove-duplicates names)))
     (problem! `(segment-name-duplicated ,names)))
   (for ([s (in-list segs)])
-    ;; 空段只在 hole 上允许: 洞可以不占任何地址, 要材料化的段不行。
-    (unless (if (eq? (segment-kind s) 'hole)
-                (<= (segment-start s) (segment-end s))
-                (< (segment-start s) (segment-end s)))
+    (unless (segment-range-ok? s)
       (problem! `(segment-bad-range ,(segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
       (problem! `(segment-misaligned ,(segment-name s) ,(segment-start s) ,(segment-align s)))))
@@ -238,11 +243,11 @@
 
   (define origins (make-hash))
 
-  ;; item 类别的合法性只有一张表(forms.rkt 的 allowed-item-kind?);
+  ;; item 类别的合法性只有一张表(forms.rkt 的 item-kind-allowed-in?);
   ;; 这里只把"不合法"翻译成本层的问题名, 不在这里塞策略。
   (define (check-item-kind! it)
     (define ik (item-kind it))
-    (unless (allowed-item-kind? seg-kind ik)
+    (unless (item-kind-allowed-in? ik seg-kind)
       (problem!
        (cond
          [(eq? seg-kind 'hole) `(hole-materialized-item ,seg-name ,cursor ,it)]

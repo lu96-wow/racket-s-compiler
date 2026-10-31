@@ -33,7 +33,7 @@ data-items                               ; label / bytes / fill / pad / value / 
 
 ## item 类别
 
-合法性只有一张表（`forms.rkt` 的 `allowed-item-kind?`），本层不另写策略：
+合法性只有一张表（`forms.rkt` 的 `item-kind-allowed-in?`），本层不另写策略：
 
 | 类别 | item | code | data | hole |
 | --- | --- | --- | --- | --- |

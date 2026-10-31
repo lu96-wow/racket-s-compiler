@@ -24,7 +24,7 @@
          arith-head? arith-form? address-expr? address-expr-chains
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
-         item-kind item-size allowed-item-kind?
+         item-kind item-size item-kind-allowed-in?
          branch-form? jump-form? control-form? control-target
          form-range scratch-hole?
          segment-form? segment-kind?)
@@ -122,7 +122,7 @@
 ;;   space        = reserve, 只推进位置, 只有 hole 收
 ;;   materialized = bytes / fill / value, "数据 item", 只有 data 收
 ;;   code         = 指令, 只有 code 收
-;; 判合法性**只看这张表**, 不在这里塞策略: allowed-item-kind? 是唯一入口。
+;; 判合法性**只看这张表**, 不在这里塞策略: item-kind-allowed-in? 是唯一入口。
 ;;
 ;; pad 与 materialized 刻意分开: pad 是本层自己产的对齐事实(代码段也需要),
 ;; materialized 是别人写进来的数据。RISC-V 这边 code 段不收数据。
@@ -139,7 +139,7 @@
 
 ;; 段 kind -> 它收哪些 item 类。
 ;; hole 收 space 不收 pad / materialized / code: 洞里的地址没有字节可对应。
-(define (allowed-item-kind? kind ik)
+(define (item-kind-allowed-in? ik kind)
   (and (case kind
          [(code) (memq ik '(marker align pad code))]
          [(data) (memq ik '(marker align pad materialized))]
