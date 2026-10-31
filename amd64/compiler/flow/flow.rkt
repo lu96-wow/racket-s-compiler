@@ -141,6 +141,17 @@
             (hash 'program-items items))
           "伪指令 -> 真指令（短分支起步，交 relax 升级）")
 
+   'expand-pseudo-near
+   (stage 'expand-pseudo-near '(program-items) '(program-items)
+          (lambda (_target in)
+            (define items
+              (rewrite-program (hash-ref in 'program-items)
+                               #:short-transfers? #f))
+            (when (pseudo-leftover? items)
+              (error 'expand-pseudo-near "pseudo instruction survived expansion: ~e" items))
+            (hash 'program-items items))
+          "伪指令 -> 真指令（全部 near，用于快速验证；布局一次即可）")
+
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
           (lambda (_target in)
@@ -223,6 +234,7 @@
   (hash
    'loko        '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode)
    'loko-manual '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode)
+   'loko-near   '(loko-compat loko-lower loko-image expand-pseudo-near analyze dce layout bind-labels encode)
    'elf         '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode loko-elf)
    'elf-manual  '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode loko-elf)
    'frontend '(expand-data flatten expand-pseudo)
@@ -288,6 +300,7 @@
 (define (run-flow target selector [seeds '()])
   (define names (select-stages selector))
   (define ctx (seed-context seeds))
+  (define timing? (and (getenv "AMD64_FLOW_TIMING") #t))
   (for ([n (in-list names)] [step (in-naturals)])
     (define st (hash-ref stage-table n))
     (for ([r (in-list (stage-requires st))])
@@ -298,7 +311,12 @@
                (let ([ps (providers-of r)])
                  (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
     (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
-    (for ([(k v) (in-hash ((stage-run st) target in))]) (hash-set! ctx k v)))
+    (define started (and timing? (current-inexact-milliseconds)))
+    (define produced ((stage-run st) target in))
+    (when timing?
+      (eprintf "~a: ~ams\n" n
+               (round (- (current-inexact-milliseconds) started))))
+    (for ([(k v) (in-hash produced)]) (hash-set! ctx k v)))
   ctx)
 
 ;; 单层: 只返回这层 provides 的值, 不带 seed 和其它上下文。

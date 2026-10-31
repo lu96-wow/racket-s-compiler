@@ -238,8 +238,15 @@
         [else #f]))
 
 (define (plan-entry-expr plan)
+  ;; Two accepted spellings:
+  ;;   (entry (entry expr))   explicit field form
+  ;;   (entry expr)           the form emitted by loko-compat
   (define c (for/first ([c (in-list (plan-clauses plan 'entry))]) c))
-  (and c (plan-field c 'entry)))
+  (and c
+       (match (cdr c)
+         [(list (cons 'entry expr)) expr]
+         [(list expr) expr]
+         [_ #f])))
 
 (define (plan-region-for plan id)
   (for/first ([c (in-list (plan-clauses plan 'region))]

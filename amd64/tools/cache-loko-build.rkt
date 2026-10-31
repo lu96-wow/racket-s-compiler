@@ -21,24 +21,23 @@
 
 (command-line
  #:program "cache-loko-build"
- #:args (dump-path cache-path)
+ #:args (dump-path cache-path [flow-name "loko-near"])
  (define target (hash 'arch 'amd64))
  (define source
    (list 'loko-source
          (cons 'text (read-items dump-path))
          '(data)))
  (define started (current-inexact-milliseconds))
- (define context (run-flow target 'loko (hash 'loko-source source)))
+ (define flow (string->symbol flow-name))
+ (define context (run-flow target flow (hash 'loko-source source)))
  (printf "pipeline: ~ams\n"
          (round (- (current-inexact-milliseconds) started)))
- (define build (hash-ref context 'build))
- (define symbols (cdr (assq 'symbols (hash-ref context 'bound-layout))))
+ (define bound (hash-ref context 'bound-layout))
  (define image-plan (ir-list (hash-ref context 'loko-ir) 'image-plan))
  (call-with-output-file cache-path #:exists 'replace
    (lambda (out)
      (write (list 'loko-build-cache
-                  (list 'build build)
-                  (list 'symbols symbols)
+                  (list 'bound-layout bound)
                   (list 'image-plan image-plan))
             out)))
  (printf "cached ~a\n" cache-path))

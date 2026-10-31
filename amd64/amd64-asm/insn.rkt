@@ -88,7 +88,6 @@
   (define rex-r (reg-field-rex-r reg-field))
   (define rex-x (if (and index (>= (reg-index index) 8)) 1 0))
   (define rex-b-base (if (and base (>= (reg-index base) 8)) 1 0))
-  (define rex-b-index (if (and index (>= (reg-index index) 8)) 1 0))
   (define rm (bitwise-and (reg-field-index reg-field) #b111))
 
   (cond
@@ -129,7 +128,7 @@
                   (disp32-bytes disp)
                   rex-r
                   rex-x
-                  rex-b-index
+                  0                                ; no base, REX.B is ignored
                   seg-prefix)]
 
     [else
@@ -161,7 +160,7 @@
                   disp-bytes
                   rex-r
                   rex-x
-                  (bitwise-ior rex-b-base rex-b-index)
+                  rex-b-base
                   seg-prefix)]))
 
 ;; ---------------------------------------------------------------------------
@@ -449,12 +448,16 @@
        [(and (reg? dst*) (mem? src*))
         (unless (= (reg-width dst*) (mem-width src*))
           (error 'encode-mov "register/memory widths do not match: ~e ~e" dst src))
-        (emit-rm (reg-width dst*) (list dst*) (encode-rm src* dst*) '(#x8b))]
+        (emit-rm (reg-width dst*)
+                 (list dst*) (encode-rm src* dst*)
+                 (list (if (= (reg-width dst*) 8) #x8a #x8b)))]
 
        [(and (mem? dst*) (reg? src*))
         (unless (= (mem-width dst*) (reg-width src*))
           (error 'encode-mov "memory/register widths do not match: ~e ~e" dst src))
-        (emit-rm (mem-width dst*) (list src*) (encode-rm dst* src*) '(#x89))]
+        (emit-rm (mem-width dst*)
+                 (list src*) (encode-rm dst* src*)
+                 (list (if (= (mem-width dst*) 8) #x88 #x89)))]
 
        [(and (reg? dst*) (immediate-value src))
         (let* ([value (immediate-value src)]

@@ -7,6 +7,7 @@
 ;;;   racket tools/write-cached-elf.rkt <cache.sexp> <out.elf>
 
 (require racket/cmdline
+         (file "../compiler/encode/encode.rkt")
          (file "../amd64-elf/writer.rkt")
          (only-in (file "../loko-compatibility/image/plan.rkt")
                   loko-linux-image-plan-for))
@@ -18,12 +19,13 @@
  #:program "write-cached-elf"
  #:args (cache-path out-path)
  (define cache (call-with-input-file cache-path read))
- (define build (cache-field cache 'build))
- (define symbols (cache-field cache 'symbols))
+ (define bound (cache-field cache 'bound-layout))
+ (define symbols (cdr (assq 'symbols bound)))
  (define declared-plan (cache-field cache 'image-plan))
  (define plan (loko-linux-image-plan-for symbols declared-plan))
+ (define build (encode-layout (hash 'arch 'amd64) bound))
  (define image (write-elf build symbols #:plan plan))
- (define bytes (cdr (assoc 'bytes (cdr image))))
+ (define bytes (cadr (assoc 'bytes (cdr image))))
  (call-with-output-file out-path #:exists 'replace
    (lambda (out) (write-bytes bytes out)))
  (printf "wrote ~a (~a bytes, entry ~a)\n"

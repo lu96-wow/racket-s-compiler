@@ -19,6 +19,16 @@
               (bytes #x48 #x8b #x45 #xf8))
 (check-equal? (enc 'mov '(b64 (base rbp) (disp -8)) 'rax)
               (bytes #x48 #x89 #x45 #xf8))
+;; 8-bit memory moves must use 88/8A, not 89/8B.  Using 89 with a
+;; byte register silently widens the store to 32 bits.
+(check-equal? (enc 'mov '(b8 (base rcx) (index rdi) (disp 11)) 'dl)
+              (bytes #x88 #x54 #x39 #x0b))
+(check-equal? (enc 'mov 'dl '(b8 (base rcx) (index rdi) (disp 11)))
+              (bytes #x8a #x54 #x39 #x0b))
+(check-equal? (enc 'mov '(b8 (base rax) (disp 0)) 'al)
+              (bytes #x88 #x00))
+(check-equal? (enc 'mov 'al '(b8 (base rax) (disp 0)))
+              (bytes #x8a #x00))
 (check-equal? (enc 'mov 'rax '(b64 (base rip) (disp 0)))
               (bytes #x48 #x8b #x05 #x00 #x00 #x00 #x00))
 (check-equal? (enc 'mov 'rax '(b64 (disp #x1234)))
@@ -28,6 +38,14 @@
               (bytes #x48 #x8d #x44 #x8b #x08))
 (check-equal? (enc 'mov 'rax '(b64 (base rsp) (index rcx) (disp 0)))
               (bytes #x48 #x8b #x04 #x0c))
+;; Extended index registers must set REX.X, not REX.B.  Setting REX.B
+;; would silently change the base from rsp to r12.
+(check-equal? (enc 'mov 'rax '(b64 (base rsp) (index r10) (disp #x28)))
+              (bytes #x4a #x8b #x44 #x14 #x28))
+(check-equal? (enc 'mov '(b64 (base rsp) (index r10) (disp #x28)) 'rax)
+              (bytes #x4a #x89 #x44 #x14 #x28))
+(check-equal? (enc 'mov 'rax '(b64 (base r12) (index r10) (disp #x28)))
+              (bytes #x4b #x8b #x44 #x14 #x28))
 
 (check-equal? (enc 'add 'rax 8) (bytes #x48 #x83 #xc0 #x08))
 (check-equal? (enc 'add 'rax 1000) (bytes #x48 #x81 #xc0 #xe8 #x03 #x00 #x00))

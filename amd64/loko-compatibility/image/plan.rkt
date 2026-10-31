@@ -50,7 +50,7 @@
 
 (define (loko-linux-image-plan)
   (list
-   (list 'entry (list 'entry 'elf-entry))
+   (list 'entry (list 'elf-entry))
    (region 'text ".text" 'r-x 'text)
    (region 'data ".data" 'r-- 'data)
    (region 'bss ".bss" 'rw- 'bss)
