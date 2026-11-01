@@ -1281,4 +1281,11 @@
      (define ops (if branch?
                      (branch-operands-for-sizing name prepared)
                      (map operand-for-sizing prepared)))
-     (bytes-length (encode-instruction name ops))]))
+     (cond
+       ;; Generated forms have an explicit plan: layout asks the constraint
+       ;; stage for a size and never invokes byte emission.
+       [(and (generic-instruction? name)
+             (not (hash-has-key? instruction-table name)))
+        (generic-instruction-size name ops)]
+       [else
+        (bytes-length (encode-instruction name ops))])]))

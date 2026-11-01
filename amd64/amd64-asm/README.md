@@ -13,7 +13,7 @@ amd64-asm/
   target.rkt      目标事实 + 填充
   insn-core.rkt   共享 ModR/M + SIB + REX + 立即数范围
   insn.rkt        手写特殊 form + instruction-size + encode-instruction
-  insn-generic.rkt  NASM 生成表的匹配与编码解释器
+  insn-generic.rkt  NASM 生成表：约束/选 form -> plan -> 字节生成
   nasm/           NASM insns.dat 原始/预处理快照
   binary-build/   解析、过滤、生成 NASM 指令表
   generated/      生成的 Racket 指令数据

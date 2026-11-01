@@ -84,12 +84,13 @@ The build never silently drops a line.  A refresh prints every rejection
 class, for example:
 
 ```text
-emitted forms:        1260
-rejected forms:       450
+emitted forms:        1264
+rejected forms:       480
   196: unsupported flag: UNDOC
   140: unsupported flag: FPU
-   73: unsupported flag: NOLONG
+   65: unsupported flag: NOLONG
    32: unsupported operand class (rel/unity)
+   32: control form belongs to insn.rkt
 ```
 
 Rejected classes are intentional:
@@ -100,24 +101,57 @@ Rejected classes are intentional:
 - relative-control rows (`rel*`); control forms stay in `insn.rkt`
 - multiple-immediate and unsupported operand shapes
 
-## 4. Runtime matching
+## 4. Constraint checking vs. instruction generation
 
-`insn-generic.rkt` turns each generated row into a `form` and groups rows by
-mnemonic.  For one instruction:
+The split exists at both build time and runtime.
 
-1. Normalize registers / memory operands / immediate wrappers.
-2. Keep forms whose operand kinds and widths match.
-3. Check immediate range (`ib`, `ib,s`, `ib,u`, `id,s`, `id,u`, ...).
-4. Emit candidate bytes.
-5. Pick the shortest candidate; ties retain NASM source order.
+### Build time
+
+```text
+parse.rkt     source syntax only
+resolve.rkt   supported-form constraints + rejection reasons
+emit/table.rkt render the surviving rows; no semantic decisions
+```
+
+`emit/table.rkt` never decides whether a form is legal.  It only serializes
+forms that `resolve.rkt` already accepted.
+
+### Runtime
+
+`insn-generic.rkt` turns each generated row into an `entry` and groups entries
+by mnemonic.  A separate plan stage performs every constraint/policy check:
+
+```text
+operands
+  -> generic-plan-instruction
+       try-plan-entry: arity, operand kinds/widths, immediate range,
+                       operand-size prefix, REX.W/REX bits, high-byte check,
+                       ModR/M + SIB addressing validation
+       choose shortest candidate; ties retain NASM source order
+  -> instruction-plan      (fixed form, prefixes, opcode, RM plan,
+                            immediate width/value, size)
+  -> encode-plan           (concatenate bytes only)
+```
+
+The important boundary:
+
+- `generic-plan-instruction` / `try-plan-entry` are the **checking/selection**
+  stage.  They return a plan or reject a candidate.
+- `plan-size` answers layout's size question from the plan.
+- `encode-plan` is **generation only**.  It re-checks no operands and makes no
+  form-selection decisions.
+- `generic-instruction-size` is what `instruction-size` uses for generic-only
+  mnemonics, so layout does not need to emit bytes.
+- `generic-encode-instruction` is `(encode-plan (generic-plan-instruction ...))`.
 
 Shortest-candidate selection is why `(adc rax 200)` uses the accumulator
 form (`48 15 c8 00 00 00`) while `(adc rax 1)` uses the sign-extended byte
 form (`48 83 d0 01`), matching NASM/LLVM behavior.
 
-The encoder shares `insn-core.rkt` with the handwritten path, so ModR/M, SIB,
-REX, high-byte register checks, displacement and immediate range rules have
-one implementation.
+The plan stage shares `insn-core.rkt` with the handwritten path, so ModR/M,
+SIB, REX, high-byte register checks, displacement and immediate range rules
+have one implementation.  `insn-core.rkt` is also what makes `rm-encoding` a
+plan fragment rather than an ad-hoc encoder decision.
 
 ## 5. Build
 

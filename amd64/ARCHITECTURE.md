@@ -13,7 +13,7 @@
 | `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
 | `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
 | `amd64-asm/insn.rkt` | 手写特殊 form、前缀/字符串指令、`instruction-size`、`encode-instruction` |
-| `amd64-asm/insn-generic.rkt` | NASM 生成表的匹配/编码解释器 |
+| `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> `instruction-plan` -> 纯字节生成 |
 | `amd64-asm/insn-core.rkt` | 共享 ModR/M/SIB/REX/立即数范围事实 |
 | `amd64-asm/generated/` | 从 NASM `insns.dat` 生成的指令数据；详见 [`amd64-asm/NASM.md`](amd64-asm/NASM.md) |
 | `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |

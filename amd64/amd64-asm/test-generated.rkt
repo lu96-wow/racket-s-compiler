@@ -97,13 +97,25 @@
 (check-equal? (enc 'cmpxchg16b '(b128 (base rax)))
               (bytes #x48 #x0f #xc7 #x08))
 
-;; instruction-size must use the same table as encode.
+;; Constraint/selection and byte emission are separate: a plan is selected
+;; and fixed first, then emission consumes only that plan.
+(define adc-plan (generic-plan-instruction 'adc '(rax 200)))
+(check-equal? (plan-size adc-plan) 6)
+(check-equal? (encode-plan adc-plan) (list #x48 #x15 #xc8 #x00 #x00 #x00))
+(check-equal? (generic-instruction-size 'adc '(rax 200))
+              (plan-size adc-plan))
+
+;; instruction-size must use the same table/plan as encode.
 (for ([case (in-list '((adc rax 200)
                        (shld rax rbx 3)
                        (lzcnt ax cx)
                        (crc32 rax rbx)
                        (movdqu xmm1 (b128 (base rsp)))) )])
   (check-equal? (instruction-size (car case) (cdr case))
-                (bytes-length (apply enc (car case) (cdr case)))))
+                (bytes-length (apply enc (car case) (cdr case))))
+  ;; These names are generic-only, so layout uses generic-instruction-size
+  ;; (plan-size), never encode-plan.
+  (check-equal? (instruction-size (car case) (cdr case))
+                (generic-instruction-size (car case) (cdr case))))
 
 (displayln "amd64 generated NASM table tests: ok")

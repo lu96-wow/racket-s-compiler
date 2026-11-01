@@ -47,10 +47,20 @@ form + operands
 (mnemonic operands encoding flags source-line)
 ```
 
-`insn-generic.rkt` 按操作数类别/宽度/立即数范围匹配，选择最短编码；
+生成表路径在运行时也分成策略/约束和字节生成两段：
+
+```text
+operands
+  -> generic-plan-instruction   约束检查 + 选 form + 固定 prefix/REX/imm
+  -> instruction-plan           已确定的 plan（长度由 plan-size 得到）
+  -> encode-plan                只拼接字节，不再做选择
+```
+
+`generic-instruction-size` 直接从 plan 得到尺寸，layout 不需要先编码；
+`generic-encode-instruction` 等价于 `(encode-plan (generic-plan-instruction ...))`。
 `insn-core.rkt` 统一提供 ModR/M、SIB、REX、displacement 和立即数范围。
 `encode-instruction` 先查手写表，再回退到生成表；`instruction-size`
-通过同一编码器得到尺寸。
+对 generic-only 指令使用 plan size，对手写 form 才通过编码器得到尺寸。
 
 ## 3. 编码类别
 
