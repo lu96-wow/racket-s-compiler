@@ -11,13 +11,21 @@ amd64-asm/
   sexp.rkt        共享 s-exp 形状 + 内存操作数
   registers.rkt   寄存器 class / 编码事实
   target.rkt      目标事实 + 填充
-  insn.rkt        指令表 + instruction-size + encode-instruction
+  insn-core.rkt   共享 ModR/M + SIB + REX + 立即数范围
+  insn.rkt        手写特殊 form + instruction-size + encode-instruction
+  insn-generic.rkt  NASM 生成表的匹配与编码解释器
+  nasm/           NASM insns.dat 原始/预处理快照
+  binary-build/   解析、过滤、生成 NASM 指令表
+  generated/      生成的 Racket 指令数据
   test.rkt        指令编码 golden test
+  test-generated.rkt 生成表 golden test
+  test-oracle.rkt LLVM MC 独立编码 oracle
 ```
 
 ## 文档
 
 - [`INSTRUCTIONS.md`](INSTRUCTIONS.md)：指令类别、前缀、字符串指令
+- [`NASM.md`](NASM.md)：NASM 数据来源、生成流水线和扩展方式
 - [`REGISTERS.md`](REGISTERS.md)：寄存器 class 与 REX/high-byte 事实
 - [`TARGET.md`](TARGET.md)：target 与填充策略
 
@@ -35,8 +43,18 @@ amd64-asm/
 - Loko 旧写法
 - 段 / ELF / reloc / loader
 
+## 生成指令表
+
+```sh
+cd amd64/amd64-asm
+make build          # 从 nasm/insns.pre.dat 生成 generated/gen/insn/nasm.rkt
+make test
+```
+
 ## 测试
 
 ```sh
 racket amd64/amd64-asm/test.rkt
+racket amd64/amd64-asm/test-generated.rkt
+racket amd64/amd64-asm/test-oracle.rkt
 ```

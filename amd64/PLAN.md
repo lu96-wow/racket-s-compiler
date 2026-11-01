@@ -65,7 +65,8 @@
 - [x] Loko Linux 真实输出验证：tiny 运行通过；t2 的 near/full 结果与 Loko 一致
 - [x] `loko-near` 验证流 + `tools/cache-loko-layout.rkt` / `write-cached-elf.rkt`
 - [ ] lower 的跨调用值 spill / frame allocation（Loko 实际输入已由 Loko optimizer 分配）
-- [ ] `adc/sbb`、更多双精度/packed SSE
+- [x] `adc/sbb`、更多双精度/packed SSE（NASM 生成表）
+- [x] NASM `insns.dat` -> generated instruction table，替换手写扩展模式
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
 - [ ] 通用 `%call` 的声明式替代
@@ -220,6 +221,8 @@ amd64/
 | --- | --- |
 | `amd64-asm/target.rkt` | `target-amd64`、指针宽度、代码段 NOP padding、端序 |
 | `amd64-asm/sexp.rkt` | item / chain / 地址表达式；amd64 内存操作数判定 |
+| `amd64-asm/binary-build/` | NASM 源解析、支持过滤、生成表输出 |
+| `amd64-asm/insn-generic.rkt` | 生成表匹配与编码解释器 |
 | `loko-compatibility` | Loko 旧汇编写法（memN+、%label、%uN 等）-> 核心 item |
 | `compiler/expand-data` | 先复用 RISC-V 的数据展开规则 |
 | `compiler/flatten` | 名字解析，可复用 RISC-V 实现 |
@@ -265,7 +268,7 @@ setcc
 nop, ud2
 ```
 
-SSE 标量单精度已覆盖；AVX / 完整 packed SSE 先不做。
+SSE/SSE2 legacy 形式已由 NASM 生成表覆盖；AVX/VEX/EVEX 先不做。
 
 ## 7. 实施阶段
 

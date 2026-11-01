@@ -21,7 +21,17 @@ form + operands
   -> encode-instruction
 ```
 
-表项：
+现在有两条编码路径，但尺寸和字节仍共用同一入口：
+
+1. **手写特殊 form**（`insn.rkt`）：控制转移、`prefix`、字符串指令、
+   `mov` 的立即数选择、`jcc/setcc/cmovcc` 条件码伪 form，以及少量
+   需要特殊寄存器模型的指令。
+2. **NASM 生成表**（`insn-generic.rkt` + `generated/gen/insn/nasm.rkt`）：
+   其余 legacy x86 / SSE / SSE2 form。数据由 `binary-build/` 从 NASM
+   `x86/insns.dat` 的预处理快照生成；来源和刷新方式见
+   [`NASM.md`](NASM.md)。
+
+手写表项：
 
 ```scheme
 (struct insn-def (arity encode))
@@ -31,7 +41,16 @@ form + operands
 - `arity = #f`：可变元数，例如 `imul` 的 1/2/3 操作数形式；
 - `encode`：操作数列表 -> 字节列表。
 
-`encode-instruction` 负责 arity 检查和字节化；`instruction-size` 通过同一编码器得到尺寸。
+生成表项：
+
+```scheme
+(mnemonic operands encoding flags source-line)
+```
+
+`insn-generic.rkt` 按操作数类别/宽度/立即数范围匹配，选择最短编码；
+`insn-core.rkt` 统一提供 ModR/M、SIB、REX、displacement 和立即数范围。
+`encode-instruction` 先查手写表，再回退到生成表；`instruction-size`
+通过同一编码器得到尺寸。
 
 ## 3. 编码类别
 
@@ -168,7 +187,18 @@ rdmsr wrmsr
 swapgs sysretq iretq
 ```
 
-尚未实现：`jmpf`/`far`、16/32 位模式。
+生成表已经补齐的常见家族：
+
+```text
+adc sbb
+shld shrd
+bt bts btr btc bsf bsr lzcnt tzcnt popcnt
+movbe crc32 cmpxchg8b cmpxchg16b
+SSE/SSE2 legacy forms（addsd/addps/movapd/pxor/paddq/movdqu/...）
+xgetbv clts rdpkru stac 等 fixed-opcode 系统指令
+```
+
+尚未实现：x87/MMX、AVX/VEX/EVEX/APX、`jmpf`/`far`、16/32 位模式。
 
 ## 9. 内存/REX 不变量
 
@@ -181,6 +211,18 @@ swapgs sysretq iretq
   不能在 layout 后根据最终值改宽度。
 
 ## 10. 扩展顺序
+
+新增真实指令时：
+
+1. 先查 `nasm/insns.pre.dat`，确认 NASM 已有对应 row；
+2. 刷新/运行 `binary-build/main.rkt`，让 `generated/gen/insn/nasm.rkt`
+   包含该 form；
+3. 在 `test-generated.rkt` 加 golden bytes，在 `test-oracle.rkt` 加 LLVM
+   MC 对照；
+4. 只有公共拼写与 NASM row 不是一一对应时（`jmp-short`、`jcc`、
+   `setcc`、`prefix`、`mov` 立即数策略），才在 `insn.rkt` 写特殊 form。
+
+后续大块能力：
 
 1. **PC 模式/远跳**：`%mode` 16/32/64、`jmpf` + `(far seg offset)`。
 2. **SSE 扩展**：按需补 `movsd/addsd/...` 等双精度和更多 packed 指令。

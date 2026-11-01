@@ -90,6 +90,7 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 已实现：
 
 - 指令编码：整数/控制流/内存/系统/SSE/PC 控制面
+- NASM `insns.dat` 驱动的指令表生成（`insn-generic.rkt` + `generated/`）
 - `prefix` 与字符串指令
 - block-aware 布局、place/region/wildcard、fallthrough 检查
 - short -> near relax
@@ -116,7 +117,7 @@ plan-only reserved region）、loko-near 验证流、Loko 输出缓存工具。
 - `needs-far` / far form / trampoline / scratch 寄存器
 - 外部符号 / loader、reloc/dynamic linking
 - `jmpf`/`far`、16/32 位模式
-- `adc/sbb`、AVX、更多双精度/packed SSE
+- x87/MMX、AVX/VEX/EVEX、far form、16/32 位模式
 
 ## 测试
 

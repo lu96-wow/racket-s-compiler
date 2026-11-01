@@ -10,7 +10,7 @@
 | `loko-compatibility/` | `translate.rkt` + `lower/` + `image/layout-spec.rkt`：符号元数据、sections/origin/mode、伪寄存器、liveness、图着色、自动 layout-spec | lower 还缺跨调用值 spill、frame allocation、GC 注记；`%call` 还没有声明式替代 |
 | `amd64-elf/` | build + symbols + image-plan -> 静态 ELF64 | 单 PT_LOAD 默认、plan 可多 PT_LOAD；还缺精确 symbol metadata / reloc |
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
-| `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/hole 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
+| `amd64-asm/` | 指令编码、寄存器、target、NASM 生成表、通用 `reserve`/hole 段 | 还缺 x87/MMX、AVX/VEX、far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
 | 仓库根 | `run-tests.sh` + `tools/` | Loko dump/cache 依赖外部 Loko 仓库，已在 `tools/` 提供 patch 和步骤 |
 
