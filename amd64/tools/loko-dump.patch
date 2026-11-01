@@ -19,23 +19,30 @@
 +       (string? (cadr x))
 +       (string=? (cadr x) "Built with Loko Scheme <https://scheme.fail/>")))
 +
-+(define (drop-elf-tail xs)
++(define (mark-elf-header xs)
++  ;; 汇编期的 ELF 头(从 #(elf start) 到程序内容的第一条)换成一个标记.
++  (cond ((null? xs) '())
++        ((elf-start-label? (car xs))
++         (let skip ((ys (cdr xs)))
++           (cond ((null? ys) '((%elf-header)))
++                 ((elf-notice? (car ys)) (cons '(%elf-header) ys))
++                 (else (skip (cdr ys))))))
++        (else (cons (car xs) (mark-elf-header (cdr xs))))))
++
++(define (mark-elf-tail xs)
++  ;; 第一个 %call 或 %section elf 之后全是汇编期的 ELF 尾
++  ;; (segments/symtab/strtab/shstrtab)和一个闭包钩子: 换成一个标记.
 +  (cond ((null? xs) '())
 +        ((and (pair? (car xs)) (memq (caar xs) '(%call %section))
 +              (or (eq? (caar xs) '%call)
 +                  (eq? (cadar xs) 'elf)))
-+         '())
-+        (else (cons (car xs) (drop-elf-tail (cdr xs))))))
++         '((%elf-tail)))
++        (else (cons (car xs) (mark-elf-tail (cdr xs))))))
 +
-+(define (drop-elf-header xs)
-+  (let loop ((xs xs))
-+    (cond ((null? xs) '())
-+          ((elf-start-label? (car xs))
-+           (let skip ((ys (cdr xs)))
-+             (cond ((null? ys) '())
-+                   ((elf-notice? (car ys)) ys)
-+                   (else (skip (cdr ys))))))
-+          (else (cons (car xs) (loop (cdr xs)))))))
++(define (mark-elf-regions xs)
++  ;; %call 是汇编期闭包, 不可序列化, 其用途全部是 ELF writer:
++  ;; 头回卷 / strtab / symtab. 这里只标出区域, 丢不丢由编译器决定.
++  (mark-elf-tail (mark-elf-header xs)))
 +
 +(define (portable-tree x memo)
 +  ;; Vectors are Loko labels, and labels are compared by object identity.
@@ -68,7 +75,7 @@
 +   (lambda (p)
 +     (define memo (make-eq-hashtable))
 +     (for-each (lambda (x) (write (portable-tree x memo) p) (newline p))
-+               (drop-elf-header (drop-elf-tail asm))))))
++               (mark-elf-regions asm)))))
 +
  (define (assemble-text-file filename codes primlocs locs-ht locs-rev verbose codegen-options)
    (define (print . x)

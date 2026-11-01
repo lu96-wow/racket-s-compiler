@@ -434,3 +434,58 @@
                 (lgdt (b64 (disp (gdtr))))
                 (lldt ax)
                 (sysretq)))
+
+;; ---------------------------------------------------------------------------
+;; ELF writer 的产出: %call / %elf-header / %elf-tail
+;;
+;; 汇编期的 %call 是闭包(拿 assemble!/ip/symbols 直接发 item), 不可序列化,
+;; 它的三处用途全是 ELF writer。dump 用两个标记把那两段标出来, 前端只负责丢:
+;; 镜像头由 image 层重新生成, 尾部之后没有任何程序内容。
+;; ---------------------------------------------------------------------------
+
+(define elf-wrapped
+  (translate-loko-source
+   '(loko-source
+     (text
+      (%origin #x200000)
+      (%label image-address-zero)
+      (%elf-header)                 ; ELF header + program headers: 丢掉
+      (%utf8z "hi")
+      (%section text)
+      (%label main)
+      (ret)
+      (%elf-tail)                   ; segments/symtab/strtab: 之后全部截断
+      (%section elf)
+      (%u8 127) (%u8 69) (%u8 76) (%u8 70))
+     (data))))
+
+(check-equal? (field 'problems elf-wrapped) '())
+(check-equal? (field 'program-items elf-wrapped)
+              '((label image-address-zero) (bytes 104 105 0) (label main) (ret)))
+(check-equal? (field 'data-items elf-wrapped) '())
+;; 汇编期的 elf 段(ELF 尾)没有进来; data 段是空占位
+(check-equal? (map (lambda (s) (cadr (assq 'name (cdr s))))
+                   (field 'sections elf-wrapped))
+              '(text data))
+(check-equal? (field 'program-items elf-wrapped)
+              (field 'program-items
+                     (translate-loko-source
+                      '(loko-source
+                        (text
+                         (%origin #x200000)
+                         (%label image-address-zero)
+                         (%utf8z "hi")
+                         (%section text)
+                         (%label main)
+                         (ret))
+                        (data)))))
+
+;; 没被标记过的 %call 仍然报问题: 那说明输入还带着汇编期的 ELF writer
+(define raw-call
+  (translate-loko-source
+   '(loko-source
+     (text (%label main) (ret) (%call some-procedure))
+     (data))))
+(check-true
+ (for/or ([p (in-list (field 'problems raw-call))])
+   (eq? (cadr p) 'directive-needs-image-layer)))

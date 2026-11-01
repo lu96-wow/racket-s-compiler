@@ -935,13 +935,19 @@
        [(%comm) (translate-comm ctx item)]
        [(%elf) (translate-elf ctx item)]
        [(%call)
+        ;; 汇编期闭包: 拿 assemble!/ip/symbols/bss 直接发 item, 不可序列化。
+        ;; 它的三处用途全是 ELF writer(头回卷 / strtab / symtab), 由 image 层重新生成;
+        ;; 正常输入里它们已经被 (%elf-header) / (%elf-tail) 标记取代。
         (record-problem-as-comment! ctx (problem 'directive-needs-image-layer item))]
+       [(%elf-header %elf-tail)
+        ;; 标记本身不产生 item; 正常路径在 strip-elf-wrapper 里就消费掉了。
+        '()]
        [else (translate-instruction ctx item)])]))
 
 (define loko-directive?
   (let ([hs '(%label %comment %align %u8 %u16 %u32 %u64 %u128
                %vu8 %utf8z %equiv %section %origin %comm %mode %call
-               %init-bss %elf)])
+               %init-bss %elf %elf-header %elf-tail)])
     (lambda (x)
       (and (form? x) (memq (car x) hs) #t))))
 
@@ -1004,8 +1010,23 @@
         '()])]
     [_ (record-problem-as-comment! ctx (problem 'bad-comm item))]))
 
+;; ELF writer 的两段产物由 image 层重新生成, 前端只负责丢:
+;;   (%elf-header)  镜像头(ELF header + program headers)
+;;   (%elf-tail)    第一个起就是 ELF 尾(segments/symtab/strtab/shstrtab),
+;;                  它之后没有任何程序内容 —— 直接截断
+;; 这一步让 %call(汇编期闭包)不必出现在编译器输入里。
+(define (strip-elf-wrapper items)
+  (let loop ([xs items] [out '()])
+    (cond
+      [(null? xs) (reverse out)]
+      [(and (form? (car xs)) (eq? (car (car xs)) '%elf-tail)) (reverse out)]
+      [(and (form? (car xs)) (eq? (car (car xs)) '%elf-header)) (loop (cdr xs) out)]
+      [else (loop (cdr xs) (cons (car xs) out))])))
+
 (define (translate-loko-source src)
-  (define-values (text data) (loko-source-parts src))
+  (define-values (text* data*) (loko-source-parts src))
+  (define text (strip-elf-wrapper text*))
+  (define data (strip-elf-wrapper data*))
   (let ([ctx (make-empty-ctx)])
 
     ;; Definitions are collected first: code may refer to an alias that is
