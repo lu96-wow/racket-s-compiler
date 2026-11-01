@@ -85,6 +85,27 @@ racket tools/write-cached-elf.rkt /tmp/loko-tiny-full.cache /tmp/loko-tiny-full.
 
 `loko-near` 和完整 `loko`（short+relax）两条路径都通过了运行验证。
 
+### 布局改成"解由 layout 求解"之后（段声明只给 `size` / `align`）
+
+重跑同一条链路（`loko`，18m24s）：
+
+```sh
+racket tools/cache-loko-layout.rkt /tmp/loko-tiny.sexp.p /tmp/loko-tiny-new.cache loko
+racket tools/write-cached-elf.rkt /tmp/loko-tiny-new.cache /tmp/loko-tiny-new.elf
+cmp /tmp/loko-tiny-full.elf /tmp/loko-tiny-new.elf && echo identical
+/tmp/loko-tiny-new.elf
+# identical
+# Tests passed
+```
+
+**产物逐字节相同**：真实 Loko 程序的 section 尺寸恰好是页的整数倍，旧的
+"紧凑打包"本来就落在页边界上；新规则把这些边界变成结构性的（由 plan 的
+`(align 4096)` 兑现），而不是靠尺寸凑巧。
+
+小程序的差别很大：没有 `%elf` 时后端会合成默认 plan，段很小、以前会挤在同一页，
+内核把 `.bss` 的匿名页盖在 `.text` 上 → 入口 SIGSEGV。这条路径由
+`tools/smoke-loko-elf.rkt` 守住（构建 + 真执行 + 每段独占一页）。
+
 ## 5. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
