@@ -115,14 +115,15 @@
       (cond [(memq stage not-cacheable) (printf "  ~a: ran (not cached)\n" stage)]
             [else (save! cache out) (printf "  ~a: ran + cached\n" stage)])]))
 
- (define image (hash-ref ctx 'image (lambda () #f)))
+ ;; encode 层产出 (build (segment …) …)；elf 流程还会多一个 image。
+ (define (field s k) (define p (assq k (cdr s))) (and p (cadr p)))
+ (define build (hash-ref ctx 'build (lambda () (hash-ref ctx 'image (lambda () #f)))))
  (cond
-   [image
-    (define segments (cdr (assq 'segments (cdr image))))
+   [build
+    (define segments (if (eq? (car build) 'build) (cdr build) (cdr (assq 'segments (cdr build)))))
     (printf "image: ~a segment(s)\n" (length segments))
     (for ([s (in-list segments)])
-      (printf "  ~a kind=~a start=~a size=~a bytes=~a\n"
-              (cadr (assq 'name (cdr s))) (cadr (assq 'kind (cdr s)))
-              (cadr (assq 'start (cdr s))) (cadr (assq 'size (cdr s)))
-              (bytes-length (cadr (assq 'bytes (cdr s))))))]
+      (printf "  ~a kind=~a start=#x~x size=~a bytes=~a\n"
+              (field s 'name) (field s 'kind) (field s 'start) (field s 'size)
+              (bytes-length (field s 'bytes))))]
    [else (printf "no image (selector stops before encode)\n")]))

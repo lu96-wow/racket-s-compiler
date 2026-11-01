@@ -237,7 +237,18 @@ QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 
 ## 5.1 裸机（pc / multiboot）镜像
 
-同一个后端也能产 Loko 的**裸机**镜像。链路和 Linux 那条平行：
+同一个后端也能产 Loko 的**裸机**镜像。一条命令：
+
+```sh
+# 默认读 ~/work/tmp/loko，产出 /tmp/pc-flat.bin 和装好的磁盘副本
+./tools/build-pc-image.sh            # 只构建
+./tools/build-pc-image.sh -b         # 构建 + 启动 QEMU/KVM，检查 REPL 画出来了
+```
+
+脚本从零跑一遍约 6 分钟（第二次起流水线全命中缓存，约 1 分钟）。下面是分步
+说明，每一步都能单独跑。
+
+链路和 Linux 那条平行：
 
 ```sh
 # 1. Loko 侧 dump（sexp-pc target 在 Loko 仓库 arch/amd64/sexp-asm.sls）
