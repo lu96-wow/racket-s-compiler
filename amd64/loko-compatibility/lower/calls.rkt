@@ -24,6 +24,7 @@
 ;;; 如果保存副本太多，分配器仍会报 uncolored；真正的 spill 属于下一层。
 
 (require "../../amd64-asm/sexp.rkt"
+         (only-in "../../compiler/item.rkt" make-label)
          "../../compiler/analyze/analyze.rkt"
          "liveness.rkt"
          "pseudo.rkt")
@@ -86,7 +87,7 @@
     (define block (vector-ref blocks i))
     (define head (block-head block))
     (when (pair? head)
-      (set! out (cons (cons 'label (append* head)) out)))
+      (set! out (cons (make-label (append* head)) out)))
     (define items (block-items block))
     (for ([j (in-range (length items))])
       (set! out (cons (list (list-ref items j) (live-out-after lv i j)) out))))

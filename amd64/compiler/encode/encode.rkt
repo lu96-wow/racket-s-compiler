@@ -11,6 +11,7 @@
          "../../amd64-asm/target.rkt"
          "../item.rkt"
          "../../amd64-asm/insn.rkt"
+         (only-in "../item.rkt" pad-size bytes-content fill-size fill-byte)
          (only-in "../layout/forms.rkt"
                   layout-phase layout-segments layout-symbols
                   layout-requests layout-problems
@@ -155,9 +156,9 @@
       (check-offset! name at cursor it)
       (cond
         [(label-form? it) (void)]
-        [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (cadr it))))]
-        [(bytes-form? it) (emit! (list->bytes (cdr it)))]
-        [(fill-form? it) (emit! (make-bytes (cadr it) (caddr it)))]
+        [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (pad-size it))))]
+        [(bytes-form? it) (emit! (list->bytes (bytes-content it)))]
+        [(fill-form? it) (emit! (make-bytes (fill-size it) (fill-byte it)))]
         [(reserve-form? it)
          (error 'encode "reserve is only valid in a hole segment: ~e" it)]
         [(value-form? it)

@@ -30,9 +30,11 @@
          "../../amd64-asm/target.rkt"
          "../ir.rkt"
          (only-in "../../compiler/item.rkt"
-                  label-form? label-chain comment-form? align-form?)
+                  label-form? label-chain comment-form? align-form?
+                  make-label make-comment)
          (only-in "../../compiler/layout/forms.rkt"
-                  item-size align-pad)
+                  item-size align-pad make-segment-form make-place
+                  make-layout-spec)
          "../../compiler/expand-pseudo/rewrite.rkt")
 
 (provide build-layout-spec)
@@ -71,7 +73,7 @@
     [(label-form? (car items)) items]
     [else
      (define label (fresh-section-label (section-name section) used))
-     (cons (cons 'label label) items)]))
+     (cons (make-label label) items)]))
 
 (define (near-measurement-item item)
   ;; Explicit short forms can still be relaxed later; measure their near
@@ -139,18 +141,13 @@
        (define segment-name (section-segment-name name))
 
        (set! segments
-             (cons (list 'segment
-                         (list 'name segment-name)
-                         (list 'kind kind)
-                         (list 'start cursor)
-                         (list 'end end)
-                         (list 'align 1))
+             (cons (make-segment-form segment-name kind cursor end 1)
                    segments))
 
        (define labels (section-label-paths items))
        (when (pair? labels)
          (set! places
-               (cons (cons 'place (cons segment-name labels)) places)))
+               (cons (make-place segment-name labels) places)))
 
        (case kind
          [(code) (set! program-items (append program-items items))]
@@ -160,13 +157,12 @@
           (when (pair? data-items)
             (set! data-items
                   (append data-items
-                          (list (list 'comment 'section-boundary segment-name)))))
+                          (list (make-comment 'section-boundary segment-name)))))
           (set! data-items (append data-items items))])
 
        (set! cursor end)]))
 
-  (values (cons (cons 'segments (reverse segments))
-                (reverse places))
+  (values (make-layout-spec (reverse segments) (reverse places))
           program-items
           data-items
           (reverse problems)))

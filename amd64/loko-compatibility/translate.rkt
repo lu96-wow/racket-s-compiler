@@ -44,6 +44,9 @@
 (require racket/match
          "../amd64-asm/sexp.rkt"
          "../amd64-asm/registers.rkt"
+         (only-in "../compiler/item.rkt"
+                  make-label make-comment make-align make-bytes-item
+                  make-value make-reserve)
          "../compiler/item.rkt"
          "ir.rkt")
 
@@ -107,7 +110,7 @@
   (list (problem->comment-form p)))
 
 (define (problem->comment-form p)
-  (list 'comment (cons 'loko-compat-problem (cdr (problem->sexp p)))))
+  (make-comment (cons 'loko-compat-problem (cdr (problem->sexp p)))))
 
 (define (record-symbol! ctx start end misc)
   (set-ctx-symbols! ctx
@@ -555,20 +558,20 @@
     [(list start)
      (define start* (label-path ctx start))
      (record-symbol! ctx start* start* '())
-     (list (cons 'label start*))]
+     (list (make-label start*))]
     [(cons start (cons end misc))
      ;; Loko: (%label start end . misc).  END is the symbol's end label,
      ;; not an alias at this address.  It is defined by its own %label.
      (define start* (label-path ctx start))
      (define end* (label-path ctx end))
      (record-symbol! ctx start* end* misc)
-     (list (cons 'label start*))]))
+     (list (make-label start*))]))
 
 (define (translate-align ctx item)
   (match (cdr item)
     [(list n)
      (if (exact-positive-integer? n)
-         (list (list 'align n))
+         (list (make-align n))
          (record-problem-as-comment! ctx (problem 'bad-align item)))]
     [(list n byte)
      (cond
@@ -576,7 +579,7 @@
         (record-problem-as-comment! ctx (problem 'bad-align item))]
        [(not (eqv? byte 0))
         (record-problem-as-comment! ctx (problem 'align-fill-not-supported item))]
-       [else (list (list 'align n))])]
+       [else (list (make-align n))])]
     [_ (record-problem-as-comment! ctx (problem 'bad-align item))]))
 
 (define (integer-directive-width h)
@@ -589,13 +592,13 @@
     [else #f]))
 
 (define (bytes->item bv)
-  (list (cons 'bytes (bytes->list bv))))
+  (list (make-bytes-item (bytes->list bv))))
 
 (define (translate-u128 ctx expr)
   (if (exact-integer? expr)
       (let* ([low (bitwise-and expr (sub1 (expt 2 64)))]
              [high (arithmetic-shift expr -64)])
-        (list (list 'value 8 low) (list 'value 8 high)))
+        (list (make-value 8 low) (make-value 8 high)))
       (record-problem-as-comment! ctx (problem 'symbolic-u128 expr))))
 
 (define (translate-integer-value ctx width value)
@@ -606,7 +609,7 @@
      (cond
        [(problem? e) (record-problem-as-comment! ctx e)]
        [(= width 16) (translate-u128 ctx e)]
-       [else (list (list 'value width e))])]))
+       [else (list (make-value width e))])]))
 
 (define (translate-integer-data ctx item)
   (define width (integer-directive-width (car item)))
@@ -624,9 +627,9 @@
   (append*
    (for/list ([v (in-list (cdr item))])
      (if (string? v)
-         (list (cons 'bytes
-                     (append (for/list ([b (in-bytes (string->bytes/utf-8 v))]) b)
-                             (list 0))))
+         (list (make-bytes-item
+                (append (for/list ([b (in-bytes (string->bytes/utf-8 v))]) b)
+                        (list 0))))
          (record-problem-as-comment! ctx (problem 'bad-utf8z v))))))
 
 ;; 条件码别名：setcc/cmovcc 的旧拼写都落到同一张表。
@@ -898,7 +901,7 @@
      (define h (car item))
      (case h
        [(%label) (translate-label ctx item)]
-       [(%comment) (list (cons 'comment (cdr item)))]
+       [(%comment) (list (apply make-comment (cdr item)))]
        [(%align) (translate-align ctx item)]
        [(%u8 %u16 %u32 %u64 %u128) (translate-integer-data ctx item)]
        [(%vu8) (translate-vu8 ctx item)]
@@ -971,9 +974,9 @@
           (for/list ([c (in-list sorted)])
             (match c
               [(list 'comm name size align)
-               (list (list 'align align)
-                     (cons 'label name)
-                     (list 'reserve size))]))))
+               (list (make-align align)
+                     (make-label name)
+                     (make-reserve size))]))))
        ;; section items are stored in reverse order; prepend generated
        ;; comm layout before the section's own items.
        (set-section-state-items! bss

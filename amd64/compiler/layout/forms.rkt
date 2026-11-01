@@ -10,7 +10,7 @@
 (provide form? name? path? normalize-path
 
          make-segment segment? segment-name segment-kind segment-start segment-end segment-align
-         parse-segment-form
+         make-segment-form parse-segment-form
          make-offset offset? offset-position offset-item
          make-anchor anchor? anchor-chain anchor-segment anchor-position
          make-request request? request-kind request-payload
@@ -23,11 +23,17 @@
          layout-phase layout-segments layout-anchors layout-symbols
          layout-requests layout-problems
 
+         make-place place? place-segment place-chains
+         make-layout-spec layout-spec? layout-spec-segments layout-spec-places
+
          label-form? label-chain
          comment-form?
-         align-form? pad-form? bytes-form? fill-form? value-form?
+         align-form? align-value
+         pad-form? pad-size
+         bytes-form? bytes-content
+         fill-form? fill-size fill-byte
+         value-form? value-width value-payload
          reserve-form? reserve-size
-         value-width value-payload
          item-kind item-size item-kind-allowed-in?
          align-pad
          control-transfer-form? short-control-transfer-form? near-control-transfer-form?
@@ -55,6 +61,15 @@
 (define (field-value key fields)
   (cond ((assq key fields) => cadr)
         [else #f]))
+
+(define (make-segment-form name kind start end align)
+  (make-segment name kind start end align)
+  (list 'segment
+        (list 'name name)
+        (list 'kind kind)
+        (list 'start start)
+        (list 'end end)
+        (list 'align align)))
 
 (define (parse-segment-form s)
   (unless (and (form? s) (eq? (car s) 'segment))
@@ -159,14 +174,39 @@
 (define (layout-requests x) (cdr (or (assq 'requests x) '(requests))))
 (define (layout-problems x) (cdr (or (assq 'problems x) '(problems))))
 
+
+(define (make-place segment chains)
+  (unless (symbol? segment)
+    (error 'make-place "place segment must be a symbol: ~e" segment))
+  (unless (and (list? chains) (andmap (lambda (c) (or (eq? c '*) (path? c))) chains))
+    (error 'make-place "place chains must be chains or *: ~e" chains))
+  (cons 'place (cons segment chains)))
+
+(define (place? x)
+  (and (form? x) (eq? (car x) 'place) (>= (length x) 2)))
+(define (place-segment x) (cadr x))
+(define (place-chains x) (cddr x))
+
+(define (make-layout-spec segments places)
+  (cons (cons 'segments segments) places))
+
+(define (layout-spec? x)
+  (and (list? x)
+       (for/first ([clause (in-list x)] #:when (eq? (car clause) 'segments)) #t)
+       #t))
+(define (layout-spec-segments spec)
+  (cdr (or (assq 'segments spec) '(segments))))
+(define (layout-spec-places spec)
+  (filter place? spec))
+
 (define (item-size target x)
   (cond
     [(label-form? x) 0]
     [(comment-form? x) 0]
     [(align-form? x) #f]
-    [(pad-form? x) (cadr x)]
-    [(bytes-form? x) (length (cdr x))]
-    [(fill-form? x) (cadr x)]
+    [(pad-form? x) (pad-size x)]
+    [(bytes-form? x) (length (bytes-content x))]
+    [(fill-form? x) (fill-size x)]
     [(reserve-form? x) (reserve-size x)]
     [(value-form? x) (value-width x)]
     [else (instruction-size target (car x) (cdr x))]))

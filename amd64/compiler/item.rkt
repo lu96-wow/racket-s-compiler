@@ -14,9 +14,12 @@
          make-align make-pad make-bytes-item make-fill make-value make-reserve
          label-form? label-chain
          comment-form?
-         align-form? pad-form? bytes-form? fill-form? value-form?
+         align-form? align-value
+         pad-form? pad-size
+         bytes-form? bytes-content
+         fill-form? fill-size fill-byte
+         value-form? value-width value-payload
          reserve-form? reserve-size
-         value-width value-payload
          item-kind)
 
 ;; ---------------------------------------------------------------------------
@@ -98,6 +101,11 @@
   (and (form? x) (eq? (car x) 'reserve) (= 2 (length x))
        (exact-nonnegative-integer? (cadr x))))
 
+(define (align-value x) (cadr x))
+(define (pad-size x) (cadr x))
+(define (bytes-content x) (cdr x))
+(define (fill-size x) (cadr x))
+(define (fill-byte x) (caddr x))
 (define (reserve-size x) (cadr x))
 
 (define (value-width x) (cadr x))

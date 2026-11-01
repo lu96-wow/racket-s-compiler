@@ -13,18 +13,23 @@
 
 (check-equal? (make-align 16) '(align 16))
 (check-true (align-form? (make-align 16)))
+(check-equal? (align-value (make-align 16)) 16)
 (check-exn exn:fail? (lambda () (make-align 0)))
 
 (check-equal? (make-pad 8) '(pad 8))
 (check-true (pad-form? (make-pad 8)))
+(check-equal? (pad-size (make-pad 8)) 8)
 (check-exn exn:fail? (lambda () (make-pad -1)))
 
 (check-equal? (make-bytes-item '(1 2 3)) '(bytes 1 2 3))
 (check-true (bytes-form? (make-bytes-item '(1 2 3))))
+(check-equal? (bytes-content (make-bytes-item '(1 2 3))) '(1 2 3))
 (check-exn exn:fail? (lambda () (make-bytes-item '(1 300))))
 
 (check-equal? (make-fill 4 0) '(fill 4 0))
 (check-true (fill-form? (make-fill 4 0)))
+(check-equal? (fill-size (make-fill 4 0)) 4)
+(check-equal? (fill-byte (make-fill 4 0)) 0)
 (check-exn exn:fail? (lambda () (make-fill -1 0)))
 (check-exn exn:fail? (lambda () (make-fill 1 256)))
 

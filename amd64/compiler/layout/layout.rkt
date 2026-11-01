@@ -13,7 +13,7 @@
 ;;; 绝对地址由 bind-labels 统一产生。
 
 (require "../../amd64-asm/sexp.rkt"
-         (only-in "../item.rkt" make-pad make-reserve)
+         (only-in "../item.rkt" make-pad make-reserve align-value)
          "../../amd64-asm/target.rkt"
          "../../amd64-help/ranges.rkt"
          "forms.rkt"
@@ -53,34 +53,31 @@
   (define names (map segment-name segments))
   (define rules '())
   (define wildcard #f)
-  (for ([p (in-list spec)]
-        #:when (and (form? p) (eq? (car p) 'place)))
-    (match (cdr p)
-      [(cons seg chains)
-       (cond
-         [(not (memq seg names))
-          (problem! (make-problem 'unknown-segment seg))]
-         [(null? chains)
-          (problem! (make-problem 'bad-place p))]
-         [else
-          (for ([c (in-list chains)])
-            (cond
-              [(eq? c '*)
-               (if wildcard
-                   (problem! (make-problem 'ambiguous-wildcard wildcard seg))
-                   (set! wildcard seg))]
-              [else
-               (define path (normalize-path c))
-               (if path
-                   (set! rules (cons (cons path seg) rules))
-                   (problem! (make-problem 'bad-place-chain c)))]))])]
-      [_ (problem! (make-problem 'bad-place p))]))
+  (for ([p (in-list (layout-spec-places spec))])
+    (define seg (place-segment p))
+    (define chains (place-chains p))
+    (cond
+      [(not (memq seg names))
+       (problem! (make-problem 'unknown-segment seg))]
+      [(null? chains)
+       (problem! (make-problem 'bad-place p))]
+      [else
+       (for ([c (in-list chains)])
+         (cond
+           [(eq? c '*)
+            (if wildcard
+                (problem! (make-problem 'ambiguous-wildcard wildcard seg))
+                (set! wildcard seg))]
+           [else
+            (define path (normalize-path c))
+            (if path
+                (set! rules (cons (cons path seg) rules))
+                (problem! (make-problem 'bad-place-chain c)))]))]))
   (values (reverse rules) wildcard))
 
 (define (parse-spec spec problem!)
   (define segments
-    (map parse-segment-form
-         (cdr (or (assq 'segments spec) '(segments)))))
+    (map parse-segment-form (layout-spec-segments spec)))
   (validate-segments segments problem!)
   (define-values (rules wildcard) (parse-places spec segments problem!))
   (values segments rules wildcard))
@@ -239,7 +236,7 @@
       [(label-form? it) (anchor! (label-chain it))]
       [(comment-form? it) (void)]
       [(align-form? it)
-       (define n (align-pad (+ start cursor) (cadr it)))
+       (define n (align-pad (+ start cursor) (align-value it)))
        ;; 补出来的空间算不算文件字节由段 kind 定:
        ;;   code / data -> (pad n)      要材料化
        ;;   hole        -> (reserve n)  只推进位置, 文件里没有

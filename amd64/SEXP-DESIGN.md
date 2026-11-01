@@ -99,30 +99,22 @@ owner：
 - 指令 form：`amd64-asm/` 的 plan/table
 - 条件码 / 分支选择：`amd64-help/`
 
-### 2.4 program
+### 2.4 program：唯一保留的结构化 IR
 
-当前实现用 `program` struct；目标契约是显式 s-expression：
+`program` / `block` / `flow` 保留为 struct，而不是 s-expression。理由：
 
-```scheme
-(program
-  (block
-    (head 链 ...)
-    (item ...)
-    ...)
-  (flow
-    (succ 块下标 ...)
-    (fallthrough 块下标|#f)
-    (root? #t|#f))
-  ...)
-```
+- 它只存在于 `analyze` / `dce` / `layout` / `relax` 的内部边界；
+- 没有序列化、跨进程或外部工具格式要求；
+- 字段固定且由 `compiler/analyze/analyze.rkt` 提供 accessor；
+- 其 `items` 仍然是 canonical program item s-expression。
 
-owner：`compiler/analyze/program.rkt`（目标模块）。
+因此它是本设计允许的**唯一结构化 IR 例外**。约束仍然成立：
 
-约束：
-
-- `block` 只包含 canonical program item。
-- `flow` 只引用块下标，不引用地址。
-- `program` 不包含指令字节、绝对地址、段信息。
+- `block` 的 item 是 canonical s-expression；
+- `flow` 只引用块下标；
+- `program` 不包含字节、绝对地址、段信息；
+- 其他模块只能通过 `program-blocks` / `block-head` / `block-items` /
+  `flow-fallthrough` 等 accessor 使用它。
 
 ### 2.5 layout IR
 
@@ -282,23 +274,35 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 - `compiler/item.rkt` 的 `make-label` / `make-comment` / `make-align` /
   `make-pad` / `make-bytes-item` / `make-fill` / `make-value` /
   `make-reserve` 构造函数；
-- `expand-data` 和 `layout` 的产物开始使用 item 构造函数；
+- `compiler/item.rkt` 已提供 align/pad/bytes/fill/value/reserve 的
+  constructor + accessor，`layout` / `encode` 不再直接拆这些 item；
+- `expand-data` 和 `layout` 的产物使用 item 构造函数；
 - `layout/forms.rkt` 已提供 `segment` / `offset` / `anchor` /
   `request` / `problem` / `measured-layout` / `bound-layout` 的构造与 accessor；
 - `layout` / `relax` / `bind-labels` / `encode` 已使用这些 accessor；
 - `bind-labels/forms.rkt` 提供 symbol 的显式构造与 accessor；
+- `loko-compatibility` 的 item/label/align/comment/segment/place 构造已改用
+  owner 构造函数；
+- `place` / layout-spec 的构造与 accessor 已加入 `layout/forms.rkt`。
 - `amd64-asm` 的 explicit plan / encoding-plan；
 - measured/bound/build 已经是显式 s-expression；
 - `amd64-help/main.rkt` 收敛条件码、li、branch、call 策略。
 
-需要迁移：
+已完成：
 
-1. `compiler/item.rkt` 构造函数已加入；继续清理 `loko-compatibility` 等
-   生产者的裸 list 构造。
-2. `program` / `block` / `flow` 从 struct 迁成显式 s-expression，或明确保留为
-   唯一允许的 struct IR；不能两种风格混用。
-3. layout IR 的 segment/offset/anchor/request/problem/measured/bound
-   已 accessor 化；继续把 `place` 收进 owner。
-4. `encode` 改用 layout accessor，不再直接 `assq/cadr`。
-5. 增加“owner 外不得 destructure”的审计：至少对新增代码做 grep 检查。
+1. `compiler/item.rkt` 的 item 构造函数/accessor。
+2. `program` / `block` / `flow` 明确保留为唯一 struct IR，其余跨阶段数据为
+   显式 s-expression。
+3. layout IR 的 segment/offset/anchor/request/problem/measured/bound/place
+   构造与 accessor。
+4. `encode` 已使用 bound-layout / segment / offset / symbol accessor。
+5. `loko-compatibility` 的 item/label/segment/place 构造已改用 owner 构造。
 6. 文档与测试同步更新。
+
+后续维护规则：
+
+- 新增 form 先加 constructor/accessor，再使用；
+- 新增 pipeline 数据先确定 owner 和输入/输出；
+- 不在 owner 外 destructure；
+- 不在下游阶段重新做上游选择；
+- 每次新增 item/layout/bound form 都补 owner 测试。
