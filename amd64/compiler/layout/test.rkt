@@ -254,8 +254,7 @@
    (eq? (car r) 'needs-far)))
 
 ;; Layout IR explicit constructors/accessors.
-(define seg (parse-segment-form
-             '(segment (name text) (kind code) (start 0) (end 16) (align 4))))
+(define seg (make-segment 'text 'code 0 16 4))
 (check-true (segment? seg))
 (check-equal? (segment-name seg) 'text)
 (check-equal? (segment-kind seg) 'code)
@@ -263,6 +262,42 @@
 (check-equal? (segment-end seg) 16)
 (check-equal? (segment-align seg) 4)
 (check-exn exn:fail? (lambda () (make-segment 'x 'bad 0 1 1)))
+
+;; 段声明: start 可以缺省, 容量用 (end …) 或 (size …) 给
+(define decl (parse-segment-decl
+              '(segment (name text) (kind code) (start 0) (end 16) (align 4))))
+(check-true (segment-decl? decl))
+(check-equal? (segment-decl-name decl) 'text)
+(check-equal? (segment-decl-kind decl) 'code)
+(check-equal? (segment-decl-start decl) 0)
+(check-equal? (segment-decl-end decl) 16)
+(check-equal? (segment-decl-size decl) #f)
+(check-equal? (segment-decl-align decl) 4)
+
+(define decl-auto (parse-segment-decl
+                   '(segment (name data) (kind data) (size 8) (align 16))))
+(check-false (segment-decl-start decl-auto))
+(check-equal? (segment-decl-size decl-auto) 8)
+(check-exn exn:fail? (lambda () (parse-segment-decl
+                                 '(segment (name d) (kind data) (align 8)))))
+(check-equal? (layout-spec-origin '((origin #x200000) (segments))) #x200000)
+
+;; 地址求解: 缺 start 的段按 (align …) 递增, (size …) 变成 end = start + size
+(define auto-out
+  (layout-flat-items
+   target-amd64
+   '((label text) (ret) (label data) (value 8 1))
+   '((origin #x200000)
+     (segments (segment (name text) (kind code) (size 16) (align 4096))
+               (segment (name data) (kind data) (size 8) (align 4096)))
+     (place text (text))
+     (place data (data)))))
+(check-equal? (cdr (assq 'problems auto-out)) '())
+(check-equal? (cdr (assq 'anchors auto-out))
+              '((anchor (text) text 0) (anchor (data) data 0)))
+(define auto-segs (cdr (assq 'segments auto-out)))
+(check-equal? (map (lambda (s) (cadr (assq 'start (cdr s)))) auto-segs)
+              (list #x200000 #x201000))
 
 (define off (make-offset 3 '(ret)))
 (check-true (offset? off))

@@ -75,9 +75,26 @@
                 (problem! (make-problem 'bad-place-chain c)))]))]))
   (values (reverse rules) wildcard))
 
+(define (align-up n align)
+  (* align (quotient (+ n (sub1 align)) align)))
+
+;; 地址求解: 段声明里的 (start …) 是"解", 缺省就由本层按声明顺序递增求解。
+;;   start = 对齐后的游标        (游标从 spec 的 (origin …) 起步, 缺省 0)
+;;   end   = start + 容量        ((end …) 给绝对上界, (size …) 给相对上界)
+;; 过了这一步, 段的 start/end 一定是整数, 下游不再需要关心地址从哪来。
+;; 页边界、权限分组这类约束就以 (align …) 的形式流进来, 分配者不再需要猜。
+(define (resolve-segment-starts decls spec)
+  (define cursor (or (layout-spec-origin spec) 0))
+  (for/list ([d (in-list decls)])
+    (define align (segment-decl-align d))
+    (define start (or (segment-decl-start d) (align-up cursor align)))
+    (define end (or (segment-decl-end d) (+ start (segment-decl-size d))))
+    (set! cursor end)
+    (make-segment (segment-decl-name d) (segment-decl-kind d) start end align)))
+
 (define (parse-spec spec problem!)
   (define segments
-    (map parse-segment-form (layout-spec-segments spec)))
+    (resolve-segment-starts (map parse-segment-decl (layout-spec-segments spec)) spec))
   (validate-segments segments problem!)
   (define-values (rules wildcard) (parse-places spec segments problem!))
   (values segments rules wildcard))

@@ -14,7 +14,9 @@
 (provide form? name? path? normalize-path
 
          make-segment segment? segment-name segment-kind segment-start segment-end segment-align
-         make-segment-form parse-segment-form
+         make-segment-decl segment-decl? segment-decl-name segment-decl-kind
+         segment-decl-start segment-decl-end segment-decl-size segment-decl-align
+         make-segment-form parse-segment-decl
          make-offset offset? offset-position offset-item
          make-anchor anchor? anchor-chain anchor-segment anchor-position
          make-request request? request-kind request-payload
@@ -29,6 +31,7 @@
 
          make-place place? place-segment place-chains
          make-layout-spec layout-spec? layout-spec-segments layout-spec-places
+         layout-spec-origin
 
          label-form? label-chain
          comment-form?
@@ -66,24 +69,61 @@
   (cond ((assq key fields) => cadr)
         [else #f]))
 
-(define (make-segment-form name kind start end align)
-  (make-segment name kind start end align)
-  (list 'segment
-        (list 'name name)
-        (list 'kind kind)
-        (list 'start start)
-        (list 'end end)
-        (list 'align align)))
+;; 段声明: 和求解后的 segment 分开, 因为 start 可以缺省。
+;;   (start …)  解: 给了就是固定地址(手写 spec / freestanding)
+;;   (size …)   约束: 相对的容量上界 -> end = start + size
+;;   (end …)    约束: 绝对的容量上界
+;;   (align …)  约束: 段起点必须对齐到它; 自动求解时 layout 用它递增游标
+;; end / size 至少给一个: 否则没法做段容量校验。
+(struct segment-decl (name kind start end size align) #:transparent)
 
-(define (parse-segment-form s)
+(define (make-segment-decl name kind start end size align)
+  (unless (symbol? name)
+    (error 'make-segment-decl "segment name must be a symbol: ~e" name))
+  (unless (memq kind '(code data hole))
+    (error 'make-segment-decl "segment kind must be code/data/hole: ~e" kind))
+  (unless (or (not start) (exact-integer? start))
+    (error 'make-segment-decl "segment start must be an integer or absent: ~e" start))
+  (unless (or (not end) (exact-integer? end))
+    (error 'make-segment-decl "segment end must be an integer or absent: ~e" end))
+  (unless (or (not size) (exact-nonnegative-integer? size))
+    (error 'make-segment-decl "segment size must be a non-negative integer or absent: ~e" size))
+  (unless (exact-positive-integer? align)
+    (error 'make-segment-decl "segment align must be positive: ~e" align))
+  (unless (or end size)
+    (error 'make-segment-decl "segment needs (end …) or (size …): ~e" name))
+  (segment-decl name kind start end size align))
+
+(define (parse-segment-decl s)
   (unless (and (form? s) (eq? (car s) 'segment))
-    (error 'parse-segment-form "bad segment form: ~e" s))
+    (error 'parse-segment-decl "bad segment form: ~e" s))
   (define fields (cdr s))
-  (make-segment (field-value 'name fields)
-                (field-value 'kind fields)
-                (field-value 'start fields)
-                (field-value 'end fields)
-                (field-value 'align fields)))
+  (make-segment-decl (field-value 'name fields)
+                     (field-value 'kind fields)
+                     (field-value 'start fields)
+                     (field-value 'end fields)
+                     (field-value 'size fields)
+                     (field-value 'align fields)))
+
+;; 声明 -> form: 只写给出的字段。image 层用它吐"只有约束"的段。
+(define (make-segment-form name kind
+                           #:align align
+                           #:start [start #f]
+                           #:end [end #f]
+                           #:size [size #f])
+  (unless (symbol? name)
+    (error 'make-segment-form "segment name must be a symbol: ~e" name))
+  (unless (memq kind '(code data hole))
+    (error 'make-segment-form "segment kind must be code/data/hole: ~e" kind))
+  (unless (exact-positive-integer? align)
+    (error 'make-segment-form "segment align must be positive: ~e" align))
+  (append (list 'segment
+                (list 'name name)
+                (list 'kind kind))
+          (if start (list (list 'start start)) '())
+          (if end (list (list 'end end)) '())
+          (if size (list (list 'size size)) '())
+          (list (list 'align align))))
 
 (define (make-offset position item)
   (unless (exact-nonnegative-integer? position)
@@ -202,6 +242,11 @@
   (cdr (or (assq 'segments spec) '(segments))))
 (define (layout-spec-places spec)
   (filter place? spec))
+
+;; 段表的基准地址: 自动求解时游标从这里起步。缺省 0。
+(define (layout-spec-origin spec)
+  (define hit (assq 'origin spec))
+  (and hit (cadr hit)))
 
 (define (item-size target x)
   (cond
