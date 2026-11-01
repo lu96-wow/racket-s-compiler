@@ -198,6 +198,29 @@ QEMU_ACCEL=tcg ./tools/qemu-run.sh /tmp/prog2.elf
 | `Fatal: Loko can't run because the system does not support #AC.`（exit 70） | Loko 启动时验证 #AC 真能触发 SIGBUS（`arch/amd64/linux-init.sls` 的 `linux-init-check-alignment`，靠一次未对齐读）。QEMU 的 **TCG 不实现 AC 标志**，未对齐访问不陷入，于是走到 valgrind 探测分支直接 `exit 70` | 用 `-accel kvm`（默认）；`-cpu host` 也只支持 KVM/HVF，TCG 用 `-cpu max` |
 | `mmap` `errno: 12` ENOMEM，`&irritants: (#x10020000000 1 GiB 3 50 -1 0)` | Loko 启动就 `mmap` 1 GiB 堆（`MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS`），内核按 overcommit 记账；guest 内存 1 GB 时装不下 | `QEMU_MEM=2048`（默认）或更大 |
 
+### 怎么判断自己的环境支持不支持 #AC
+
+`tools/acprobe.s` 是 12 行汇编：打开 AC 后做一次未对齐读。支持 #AC 就被 SIGBUS 打死
+（exit 135），不支持就正常 exit 0。不依赖 Loko，可以拿来量任何环境：
+
+```sh
+as -o /tmp/acprobe.o tools/acprobe.s && ld -o /tmp/acprobe /tmp/acprobe.o
+/tmp/acprobe; echo "exit=$?"                 # 本机 CPU（含虚拟机里的 vCPU）
+./tools/qemu-run.sh /tmp/acprobe            # QEMU/KVM
+QEMU_ACCEL=tcg ./tools/qemu-run.sh /tmp/acprobe
+```
+
+实测（本机＝虚拟机，宿主暴露了嵌套虚拟化）：
+
+| 环境 | acprobe | Loko 镜像 |
+| --- | --- | --- |
+| 直接执行（vCPU） | exit 135，SIGBUS | 能跑 |
+| QEMU + KVM | exit 135，SIGBUS | 能跑 |
+| QEMU + TCG | exit 0，**没有 #AC** | 全部 exit 70（原生后端也一样） |
+
+所以在虚拟机里不需要 QEMU 也能验证产物：直接 `./prog.elf` 就行，vCPU 是真实 CPU 行为。
+QEMU 只是额外补一道“真内核开机”的检查，没 KVM 时不要指望 TCG 能跑 Loko 镜像。
+
 ### 已验证
 
 | 镜像 | 大小 | 用户态执行 | QEMU/KVM |

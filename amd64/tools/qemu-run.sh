@@ -109,13 +109,23 @@ set -e
 # 程序输出 = "=== prog start" 与 "=== exit=" 之间的内容（内核日志已被 loglevel=4 压掉）。
 # 先把 ANSI 转义（SeaBIOS/内核清屏）去掉，否则标记行会带前缀。
 LOG2=$(tr -d '\r' <"$LOG" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g')
-OUT=$(echo "$LOG2" | awk '/=== prog start/{on=1; next} /=== exit=/{on=0} on')
-if [ -z "$OUT" ]; then
+if ! echo "$LOG2" | grep -q '=== prog start'; then
     echo "qemu 没有跑起来（qemu 退出码 $QEMU_STATUS）：" >&2
     sed -n '1,40p' "$LOG" | tr -d '\r' >&2
     exit 1
 fi
+OUT=$(echo "$LOG2" | awk '/=== prog start/{on=1; next} /=== exit=/{on=0} on')
 echo "$OUT" | grep -v '^\[ *[0-9.]*\]' || true
 EXIT=$(echo "$LOG2" | sed -n 's/.*=== exit=\([0-9]*\).*/\1/p' | tail -1)
+
+# 这两条不是 QEMU 的问题，是 Loko 运行库的前提（详见 README 第 5 节）
+if echo "$OUT" | grep -q 'does not support #AC'; then
+    echo "\n注意: 这个 accel（$ACCEL）不实现 #AC。Loko 的运行库靠 #AC 做类型错误恢复，" >&2
+    echo "      启动时会验证一次，所以任何 Loko 镜像都不能在这种环境下跑。" >&2
+    echo "      改用 QEMU_ACCEL=kvm，或直接在 CPU 上跑这个 ELF（不需要 QEMU）。" >&2
+fi
+if echo "$OUT" | grep -q 'function: mmap' && echo "$OUT" | grep -q 'errno: 12'; then
+    echo "\n注意: guest 内存不够装 Loko 的 1 GiB 堆，把 QEMU_MEM 调到 2048 以上。" >&2
+fi
 [ -n "$EXIT" ] || { echo "$0: 没拿到退出码，日志在 $LOG" >&2; exit 1; }
 exit "$EXIT"
