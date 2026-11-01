@@ -21,14 +21,13 @@
          "insn-core.rkt"
          "generated/gen/insn/nasm.rkt")
 
-(provide (struct-out instruction-plan)
-         generic-instruction?
+(provide generic-instruction?
          generic-instruction-arity
          generic-plan-instruction
          generic-instruction-size
          generic-encode-instruction
-         plan-size
-         encode-plan
+         (rename-out [plan-size generic-plan-size]
+                     [encode-plan generic-encode-plan])
          generic-form-count
          generic-mnemonic-count
          generic-source)

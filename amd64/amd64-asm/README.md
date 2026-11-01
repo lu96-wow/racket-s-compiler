@@ -11,9 +11,13 @@ amd64-asm/
   sexp.rkt        共享 s-exp 形状 + 内存操作数
   registers.rkt   寄存器 class / 编码事实
   target.rkt      目标事实 + 填充
+  ranges.rkt      共享整数/立即数/disp/rel 范围谓词
   insn-core.rkt   共享 ModR/M + SIB + REX + 立即数范围
-  insn.rkt        手写特殊 form + instruction-size + encode-instruction
-  insn-generic.rkt  NASM 生成表：约束/选 form -> plan -> 字节生成
+  operand.rkt     操作数解析/立即数 wrapper/rm helper
+  special.rkt     手写特殊 form 家族 -> bytes
+  insn-generic.rkt NASM 生成表：约束/选 form -> plan -> 字节生成
+  plan.rkt        resolved-plan facade：plan-size / encode-plan
+  insn.rkt        稳定公共入口（instruction-plan/size/encode）
   nasm/           NASM insns.dat 原始/预处理快照
   binary-build/   解析、过滤、生成 NASM 指令表
   generated/      生成的 Racket 指令数据

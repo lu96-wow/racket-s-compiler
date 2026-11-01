@@ -143,6 +143,9 @@ The important boundary:
 - `generic-instruction-size` is what `instruction-size` uses for generic-only
   mnemonics, so layout does not need to emit bytes.
 - `generic-encode-instruction` is `(encode-plan (generic-plan-instruction ...))`.
+- `plan.rkt` wraps generated and handwritten special forms in one
+  `resolved-plan`; `insn.rkt` exposes `instruction-plan`, `plan-size` and
+  `encode-plan` on top of that.
 
 Shortest-candidate selection is why `(adc rax 200)` uses the accumulator
 form (`48 15 c8 00 00 00`) while `(adc rax 1)` uses the sign-extended byte

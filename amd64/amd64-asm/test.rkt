@@ -248,3 +248,15 @@
 (check-equal? (enc 'swapgs) (bytes #x0f #x01 #xf8))
 (check-equal? (enc 'sysretq) (bytes #x48 #x0f #x07))
 (check-equal? (enc 'iretq) (bytes #x48 #xcf))
+
+;; Unified resolved-plan facade: special and prefix forms use the same
+;; plan-size/encode-plan boundary as generated forms.
+(define mov-plan (instruction-plan 'mov '(rax rbx)))
+(check-equal? (plan-size mov-plan) 3)
+(check-equal? (encode-plan mov-plan) (list #x48 #x89 #xd8))
+
+(define prefix-plan
+  (instruction-plan 'prefix '(lock (xadd (b64 (base rax)) rbx))))
+(check-equal? (plan-size prefix-plan) 5)
+(check-equal? (encode-plan prefix-plan)
+              (list #xf0 #x48 #x0f #xc1 #x18))

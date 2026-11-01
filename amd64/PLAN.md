@@ -70,6 +70,11 @@
 - [x] `compiler/flow/core.rkt`：核心流水线不再依赖 `loko-compatibility`/`amd64-elf`
 - [x] `amd64-asm/DESIGN.md` / `amd64-help/DESIGN.md`：按 x86 编码逻辑重划职责
 - [x] `amd64-help` 的 `cc` / `branch` / `main` / `li-size` 基础拆分
+- [x] `insn.rkt` 收缩为 facade；`operand` / `special` / `plan` 拆出
+- [x] `resolved-plan`：special + generated 统一 plan-size/encode-plan
+- [x] `compiler` core flow 与 Loko/ELF flow 解耦
+- [ ] `special.rkt` 继续拆成 `mov/control/prefix/string/system` 并改为 plan 片段
+- [ ] `sexp.rkt` 的内存形状迁到 `facts/operand.rkt`；target 增加 mode
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
 - [ ] 通用 `%call` 的声明式替代

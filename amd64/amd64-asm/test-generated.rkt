@@ -100,10 +100,15 @@
 ;; Constraint/selection and byte emission are separate: a plan is selected
 ;; and fixed first, then emission consumes only that plan.
 (define adc-plan (generic-plan-instruction 'adc '(rax 200)))
-(check-equal? (plan-size adc-plan) 6)
-(check-equal? (encode-plan adc-plan) (list #x48 #x15 #xc8 #x00 #x00 #x00))
+(check-equal? (generic-plan-size adc-plan) 6)
+(check-equal? (generic-encode-plan adc-plan) (list #x48 #x15 #xc8 #x00 #x00 #x00))
 (check-equal? (generic-instruction-size 'adc '(rax 200))
-              (plan-size adc-plan))
+              (generic-plan-size adc-plan))
+
+;; The facade exposes the same plan/size/encode boundary for every instruction.
+(define resolved-adc (instruction-plan 'adc '(rax 200)))
+(check-equal? (plan-size resolved-adc) 6)
+(check-equal? (encode-plan resolved-adc) (list #x48 #x15 #xc8 #x00 #x00 #x00))
 
 ;; instruction-size must use the same table/plan as encode.
 (for ([case (in-list '((adc rax 200)

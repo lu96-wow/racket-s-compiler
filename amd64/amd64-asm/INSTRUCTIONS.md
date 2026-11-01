@@ -59,8 +59,15 @@ operands
 `generic-instruction-size` 直接从 plan 得到尺寸，layout 不需要先编码；
 `generic-encode-instruction` 等价于 `(encode-plan (generic-plan-instruction ...))`。
 `insn-core.rkt` 统一提供 ModR/M、SIB、REX、displacement 和立即数范围。
-`encode-instruction` 先查手写表，再回退到生成表；`instruction-size`
-对 generic-only 指令使用 plan size，对手写 form 才通过编码器得到尺寸。
+`plan.rkt` 把手写 special 和生成表统一成 `resolved-plan`：
+
+```text
+instruction-plan -> plan-size / encode-plan
+```
+
+`encode-instruction` 先查手写 form，再回退到生成表；`instruction-size`
+对两类 form 都经过 `instruction-plan` 得到 plan size。当前 special 仍以
+“plan 阶段产出 bytes”为过渡实现，后续会继续改成真正的 form plan。
 
 ## 3. 编码类别
 

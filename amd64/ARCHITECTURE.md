@@ -14,8 +14,11 @@
 | --- | --- |
 | `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
 | `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
-| `amd64-asm/insn.rkt` | facade：手写特殊 form、生成表、plan/size/encode 公共入口 |
-| `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> `instruction-plan` -> 纯字节生成 |
+| `amd64-asm/insn.rkt` | 稳定 facade：`instruction-plan` / `plan-size` / `encode-plan` / `encode-instruction` |
+| `amd64-asm/plan.rkt` | 统一 `resolved-plan`；special 与 generated plan 的 size/encode 入口 |
+| `amd64-asm/operand.rkt` | 操作数解析、rm helper、立即数 wrapper、symbolic immediate 策略 |
+| `amd64-asm/special.rkt` | 手写特殊 form 家族（mov/control/string/system）-> bytes |
+| `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> generic plan -> 纯字节生成 |
 | `amd64-asm/insn-core.rkt` | 共享 ModR/M/SIB/REX/立即数范围事实 |
 | `amd64-asm/ranges.rkt` | 共享整数/立即数/disp/rel 范围谓词；help 层转发 |
 | `amd64-asm/generated/` | 从 NASM `insns.dat` 生成的指令数据；详见 [`amd64-asm/NASM.md`](amd64-asm/NASM.md) |
