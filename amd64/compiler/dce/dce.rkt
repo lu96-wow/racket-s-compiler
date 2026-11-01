@@ -53,18 +53,20 @@
 ;; pass 1: 删不可达块
 ;; ---------------------------------------------------------------------------
 
+;; 注意 (list-ref entries i): 在可达性遍历里对每个块取一次就是 O(块数),
+;; 整体二次。先转 vector。
 (define (drop-unreachable prog)
-  (define entries (zip-program prog))
-  (define n (length entries))
+  (define entries (list->vector (zip-program prog)))
+  (define n (vector-length entries))
   (define seen (make-vector n #f))
   (define (visit! i)
     (unless (vector-ref seen i)
       (vector-set! seen i #t)
-      (for ([s (in-list (flow-succ (caddr (list-ref entries i))))])
+      (for ([s (in-list (flow-succ (caddr (vector-ref entries i))))])
         (when (< s n) (visit! s)))))
-  (for ([e (in-list entries)] #:when (flow-root? (caddr e)))
+  (for ([e (in-vector entries)] #:when (flow-root? (caddr e)))
     (visit! (car e)))
-  (define kept (for/list ([e (in-list entries)] #:when (vector-ref seen (car e))) e))
+  (define kept (for/list ([e (in-vector entries)] #:when (vector-ref seen (car e))) e))
   (if (= (length kept) n) prog (rebuild-program kept)))
 
 ;; ---------------------------------------------------------------------------
@@ -87,13 +89,16 @@
            (branch-instruction? last-insn))
        (member (normalize-path (jump-target last-insn)) (block-head next-block))))
 
+;; 注意: 下面用 vector 而不是 (list-ref blocks (add1 i)) —— 后者在循环里
+;; 是 O(块数) 的, 整个 pass 就变成二次的(pc-repl 有十万级基本块)。
 (define (drop-transfers-to-next-block prog)
-  (define blocks (program-blocks prog))
+  (define blocks (list->vector (program-blocks prog)))
   (define flows (program-flows prog))
-  (define changed (make-vector (length blocks) #f))
+  (define n-blocks (vector-length blocks))
+  (define changed (make-vector n-blocks #f))
   (define new-blocks
-    (for/list ([b (in-list blocks)] [i (in-naturals)])
-      (define next (and (< (add1 i) (length blocks)) (list-ref blocks (add1 i))))
+    (for/list ([b (in-vector blocks)] [i (in-naturals)])
+      (define next (and (< (add1 i) n-blocks) (vector-ref blocks (add1 i))))
       (cond
         [(transfer-to-next? b next)
          (vector-set! changed i #t)

@@ -406,17 +406,22 @@
       (problem! (make-problem 'segment-overflow
                       (segment-name seg) (measured-segment-size m) capacity)))))
 
+;; 逐 unit 检查"顺序落下"是否与 CFG 的 fallthrough 一致。
+;; 这里原来对每个 unit 都做 (list-ref flows bi) / (list-ref units (add1 i)) /
+;; (length units) —— 三个 O(段长) 的操作放在循环里, 于是整个检查是二次的
+;; (pc-repl 的 text 段有十万级 unit)。改成先转 vector。
 (define (check-fallthrough code-by-seg flows problem!)
+  (define flows-v (list->vector flows))
   (for ([seg (in-list (hash-keys code-by-seg))])
-    (define units (hash-ref code-by-seg seg))
-    (for ([u (in-list units)] [i (in-naturals)])
+    (define units (list->vector (hash-ref code-by-seg seg)))
+    (define n (vector-length units))
+    (for ([u (in-vector units)] [i (in-naturals)])
       (define id (unit-id u))
       (when (eq? (car id) 'code)
         (define bi (cadr id))
-        (define ft (flow-fallthrough (list-ref flows bi)))
+        (define ft (flow-fallthrough (vector-ref flows-v bi)))
         (when ft
-          (define next (and (< (add1 i) (length units))
-                            (unit-id (list-ref units (add1 i)))))
+          (define next (and (< (add1 i) n) (unit-id (vector-ref units (add1 i)))))
           (define next-bi (and next (eq? (car next) 'code) (cadr next)))
           (unless (eqv? next-bi ft)
             (problem! (make-problem 'broken-fallthrough seg bi ft next-bi))))))))
