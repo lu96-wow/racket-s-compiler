@@ -4,6 +4,7 @@
 (require rackunit
          "../../amd64-asm/target.rkt"
          "../analyze/analyze.rkt"
+         "../bind-labels/forms.rkt"
          "layout.rkt"
          "forms.rkt")
 
@@ -283,3 +284,26 @@
 (check-true (problem? prob))
 (check-equal? (problem-kind prob) 'undefined-target)
 (check-equal? (length (problem-detail prob)) 3)
+
+;; Measured/bound layout outer constructors/accessors.
+(define mlayout
+  (make-measured-layout (list (make-layout-segment 'text 'code 0 16 '() 0))
+                        (list (make-anchor '(text) 'text 0))
+                        '()
+                        '()))
+(check-equal? (layout-phase mlayout) 'measured)
+(check-equal? (length (layout-segments mlayout)) 1)
+(check-equal? (layout-segment-name (car (layout-segments mlayout))) 'text)
+(check-equal? (layout-anchors mlayout) (list (make-anchor '(text) 'text 0)))
+(check-equal? (layout-symbols mlayout) '())
+(check-equal? (layout-requests mlayout) '())
+(check-equal? (layout-problems mlayout) '())
+
+(define blayout
+  (make-bound-layout (layout-segments mlayout)
+                     (layout-anchors mlayout)
+                     (list (make-symbol '(text) 'text 0 0))
+                     '()
+                     '()))
+(check-equal? (layout-phase blayout) 'bound)
+(check-equal? (length (layout-symbols blayout)) 1)

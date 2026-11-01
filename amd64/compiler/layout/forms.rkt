@@ -16,6 +16,13 @@
          make-request request? request-kind request-payload
          make-problem problem? problem-kind problem-detail
 
+         make-layout-segment layout-segment?
+         layout-segment-name layout-segment-kind layout-segment-start
+         layout-segment-end layout-segment-items layout-segment-size
+         make-measured-layout make-bound-layout
+         layout-phase layout-segments layout-anchors layout-symbols
+         layout-requests layout-problems
+
          label-form? label-chain
          comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
@@ -95,6 +102,62 @@
   (and (form? x) (symbol? (car x)) #t))
 (define (problem-kind x) (car x))
 (define (problem-detail x) (cdr x))
+
+
+;; ---------------------------------------------------------------------------
+;; Measured/bound layout s-expression
+;; ---------------------------------------------------------------------------
+
+(define (layout-field key x)
+  (cond ((assq key (cdr x)) => cadr)
+        [else #f]))
+
+(define (make-layout-segment name kind start end items size)
+  (list 'segment
+        (list 'name name)
+        (list 'kind kind)
+        (list 'start start)
+        (list 'end end)
+        (cons 'items items)
+        (list 'size size)))
+
+(define (layout-segment? x)
+  (and (form? x) (eq? (car x) 'segment)
+       (layout-field 'name x)
+       (layout-field 'kind x)
+       (layout-field 'start x)
+       (layout-field 'size x)
+       #t))
+(define (layout-segment-name x) (layout-field 'name x))
+(define (layout-segment-kind x) (layout-field 'kind x))
+(define (layout-segment-start x) (layout-field 'start x))
+(define (layout-segment-end x) (layout-field 'end x))
+(define (layout-segment-items x)
+  (cond ((assq 'items (cdr x)) => cdr)
+        [else '()]))
+(define (layout-segment-size x) (layout-field 'size x))
+
+(define (make-measured-layout segments anchors requests problems)
+  (list (list 'phase 'measured)
+        (cons 'segments segments)
+        (cons 'anchors anchors)
+        (cons 'requests requests)
+        (cons 'problems problems)))
+
+(define (make-bound-layout segments anchors symbols requests problems)
+  (list (list 'phase 'bound)
+        (cons 'segments segments)
+        (cons 'anchors anchors)
+        (cons 'symbols symbols)
+        (cons 'requests requests)
+        (cons 'problems problems)))
+
+(define (layout-phase x) (cadr (or (assq 'phase x) '(phase #f))))
+(define (layout-segments x) (cdr (or (assq 'segments x) '(segments))))
+(define (layout-anchors x) (cdr (or (assq 'anchors x) '(anchors))))
+(define (layout-symbols x) (cdr (or (assq 'symbols x) '(symbols))))
+(define (layout-requests x) (cdr (or (assq 'requests x) '(requests))))
+(define (layout-problems x) (cdr (or (assq 'problems x) '(problems))))
 
 (define (item-size target x)
   (cond

@@ -80,7 +80,8 @@
 - [x] `sexp.rkt` 拆成 `shape.rkt` + `memory.rkt` facade；target 增加 mode
 - [x] `compiler/item.rkt` 增加 `make-*` 构造函数；expand-data/layout 开始使用
 - [x] layout IR 的 segment/offset/anchor/request/problem 构造与 accessor
-- [ ] measured/bound 外层构造与 `place` accessor 化
+- [x] measured/bound 外层构造与 symbol accessor 化
+- [ ] `place` / layout-spec 的显式构造与 accessor
 - [ ] `program` / `block` / `flow` 的 s-expression 契约（或明确保留 struct）
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用

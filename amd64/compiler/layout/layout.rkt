@@ -398,13 +398,12 @@
 
 (define (segment->sexp m)
   (define seg (measured-segment-segment m))
-  (list 'segment
-        (list 'name (segment-name seg))
-        (list 'kind (segment-kind seg))
-        (list 'start (segment-start seg))
-        (list 'end (segment-end seg))
-        (cons 'items (measured-segment-items m))
-        (list 'size (measured-segment-size m))))
+  (make-layout-segment (segment-name seg)
+                       (segment-kind seg)
+                       (segment-start seg)
+                       (segment-end seg)
+                       (measured-segment-items m)
+                       (measured-segment-size m)))
 
 (define (build-layout target segments units-by-seg code-by-seg flows problem!)
   (define measured
@@ -443,11 +442,9 @@
   (define units-by-seg (units-by-segment segments code-by-seg data-by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg code-by-seg (program-flows prog) problem!))
-  (list (list 'phase 'measured)
-        (cons 'segments (for/list ([m (in-list measured)]) (segment->sexp m)))
-        (cons 'anchors anchors)
-        (cons 'requests requests)
-        (cons 'problems (reverse problems))))
+  (make-measured-layout
+   (for/list ([m (in-list measured)]) (segment->sexp m))
+   anchors requests (reverse problems)))
 
 (define (layout-flat-items target items spec)
   (define problems '())
@@ -458,8 +455,6 @@
   (define units-by-seg (units-by-segment segments (make-hash) by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg #f #f problem!))
-  (list (list 'phase 'measured)
-        (cons 'segments (for/list ([m (in-list measured)]) (segment->sexp m)))
-        (cons 'anchors anchors)
-        (cons 'requests requests)
-        (cons 'problems (reverse problems))))
+  (make-measured-layout
+   (for/list ([m (in-list measured)]) (segment->sexp m))
+   anchors requests (reverse problems)))

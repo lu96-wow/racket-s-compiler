@@ -13,17 +13,20 @@
          "../../amd64-help/ranges.rkt"
          (only-in "../item.rkt" value-form? value-width value-payload)
          (only-in "../layout/forms.rkt"
-                  anchor? anchor-chain anchor-segment anchor-position))
+                  anchor? anchor-chain anchor-segment anchor-position
+                  offset? offset-position offset-item
+                  layout-phase layout-segments layout-anchors
+                  layout-requests layout-problems
+                  layout-segment? layout-segment-name layout-segment-start
+                  layout-segment-items
+                  make-bound-layout make-problem)
+         "forms.rkt")
 
 (provide bind-labels)
 
-(define (field-value key row)
-  (cond ((assq key (cdr row)) => cadr)
-        [else #f]))
-
 (define (symbols->addresses symbols)
   (for/hash ([s (in-list symbols)])
-    (values (cadr s) (cadddr (cdr s)))))
+    (values (symbol-chain s) (symbol-address s))))
 
 (define (all-chains-known? expr symbols)
   (andmap (lambda (c) (hash-has-key? symbols c))
@@ -33,11 +36,14 @@
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (for ([seg (in-list segments)])
-    (define seg-name (field-value 'name seg))
-    (define items-hit (assq 'items (cdr seg)))
-    (for ([entry (in-list (if items-hit (cdr items-hit) '()))])
-      (define offset (cadr entry))
-      (define item (caddr entry))
+    (unless (layout-segment? seg)
+      (error 'bind-labels "bad layout segment: ~e" seg))
+    (define seg-name (layout-segment-name seg))
+    (for ([entry (in-list (layout-segment-items seg))])
+      (unless (offset? entry)
+        (error 'bind-labels "bad layout offset entry: ~e" entry))
+      (define offset (offset-position entry))
+      (define item (offset-item entry))
       (when (value-form? item)
         (define width (value-width item))
         (define payload (value-payload item))
@@ -47,21 +53,21 @@
             [(all-chains-known? payload symbols)
              (eval-address payload
                            (lambda (c) (hash-ref symbols c))
-                           (+ (field-value 'start seg) offset))]
+                           (+ (layout-segment-start seg) offset))]
             [else #f]))
         (when (and n (not (fits-width? n width)))
-          (problem! (list 'value-out-of-range seg-name offset item n))))))
+          (problem! (make-problem 'value-out-of-range seg-name offset item n))))))
   (reverse problems))
 
 (define (bind-labels measured)
-  (define phase (and (assq 'phase measured) (cadr (assq 'phase measured))))
+  (define phase (layout-phase measured))
   (unless (eq? phase 'measured)
     (error 'bind-labels "expected measured-layout, got phase ~e" phase))
-  (define segments (cdr (assq 'segments measured)))
-  (define anchors (cdr (assq 'anchors measured)))
-  (define segment-info
+  (define segments (layout-segments measured))
+  (define anchors (layout-anchors measured))
+  (define start-of
     (for/hash ([s (in-list segments)])
-      (values (field-value 'name s) s)))
+      (values (layout-segment-name s) (layout-segment-start s))))
   (define symbols
     (for/list ([a (in-list anchors)])
       (unless (anchor? a)
@@ -69,14 +75,11 @@
       (define chain (anchor-chain a))
       (define seg (anchor-segment a))
       (define offset (anchor-position a))
-      (define s (hash-ref segment-info seg #f))
-      (unless s (error 'bind-labels "unknown segment in anchor: ~e" a))
-      (list 'symbol chain seg offset (+ (field-value 'start s) offset))))
+      (define start (hash-ref start-of seg #f))
+      (unless start (error 'bind-labels "unknown segment in anchor: ~e" a))
+      (make-symbol chain seg offset (+ start offset))))
   (define table (symbols->addresses symbols))
   (define extra (check-value-widths segments table))
-  (list (list 'phase 'bound)
-        (cons 'segments segments)
-        (cons 'anchors anchors)
-        (cons 'symbols symbols)
-        (cons 'requests (cdr (assq 'requests measured)))
-        (cons 'problems (append (cdr (assq 'problems measured)) extra))))
+  (make-bound-layout segments anchors symbols
+                     (layout-requests measured)
+                     (append (layout-problems measured) extra)))

@@ -10,25 +10,27 @@
 (require "../../amd64-asm/sexp.rkt"
          "../../amd64-asm/target.rkt"
          "../item.rkt"
-         "../../amd64-asm/insn.rkt")
+         "../../amd64-asm/insn.rkt"
+         (only-in "../layout/forms.rkt"
+                  layout-phase layout-segments layout-symbols
+                  layout-requests layout-problems
+                  layout-segment? layout-segment-name layout-segment-kind
+                  layout-segment-start layout-segment-size layout-segment-items
+                  offset? offset-position offset-item)
+         (only-in "../bind-labels/forms.rkt"
+                  symbol-entry? symbol-chain symbol-address))
 
 (provide encode-layout)
-
-(define (field-value key row)
-  (cond ((assq key (cdr row)) => cadr)
-        [else #f]))
-
-(define (segment-field seg key) (field-value key seg))
-(define (segment-items seg) (cdr (assq 'items (cdr seg))))
 
 (define (resolve-symbol symbols chain)
   (define chain* (normalize-path chain))
   (define row
     (for/first ([s (in-list symbols)]
-                #:when (equal? (cadr s) chain*))
+                #:when (and (symbol-entry? s)
+                            (equal? (symbol-chain s) chain*)))
       s))
   (unless row (error 'encode "undefined symbol: ~e" chain))
-  (caddr (cddr row)))
+  (symbol-address row))
 
 (define (resolve-address symbols expr here)
   (eval-address expr (lambda (chain) (resolve-symbol symbols chain)) here))
@@ -104,12 +106,16 @@
 ;; materialize anything and does not care who zeroes it.
 ;; Items can only be label / reserve (layout already turned align into reserve).
 (define (encode-hole-segment seg)
-  (define name (segment-field seg 'name))
-  (define size (segment-field seg 'size))
+  (unless (layout-segment? seg)
+    (error 'encode "bad layout segment: ~e" seg))
+  (define name (layout-segment-name seg))
+  (define size (layout-segment-size seg))
   (define cursor 0)                     ; memory-only: there is no file cursor here
-  (for ([entry (in-list (segment-items seg))])
-    (define at (cadr entry))
-    (define it (caddr entry))
+  (for ([entry (in-list (layout-segment-items seg))])
+    (unless (offset? entry)
+      (error 'encode "bad layout offset entry: ~e" entry))
+    (define at (offset-position entry))
+    (define it (offset-item entry))
     (check-offset! name at cursor it)
     (cond
       [(label-form? it) (void)]
@@ -123,24 +129,28 @@
   (list 'segment
         (list 'name name)
         (list 'kind 'hole)
-        (list 'start (segment-field seg 'start))
+        (list 'start (layout-segment-start seg))
         (list 'size size)
         (list 'bytes #"")))
 
 (define (encode-materialized-segment target seg symbols)
-  (define name (segment-field seg 'name))
-  (define kind (segment-field seg 'kind))
-  (define start (segment-field seg 'start))
-  (define size (segment-field seg 'size))
-  (define entries (segment-items seg))
+  (unless (layout-segment? seg)
+    (error 'encode "bad layout segment: ~e" seg))
+  (define name (layout-segment-name seg))
+  (define kind (layout-segment-kind seg))
+  (define start (layout-segment-start seg))
+  (define size (layout-segment-size seg))
+  (define entries (layout-segment-items seg))
   (let ([chunks '()]
         [cursor 0])
     (define (emit! bs)
       (set! chunks (cons bs chunks))
       (set! cursor (+ cursor (bytes-length bs))))
     (for ([entry (in-list entries)])
-      (define at (cadr entry))
-      (define it (caddr entry))
+      (unless (offset? entry)
+        (error 'encode "bad layout offset entry: ~e" entry))
+      (define at (offset-position entry))
+      (define it (offset-item entry))
       (define here (+ start at))
       (check-offset! name at cursor it)
       (cond
@@ -174,18 +184,23 @@
 ;; hole ones only advance the position.  "Where the hole starts" is not a
 ;; runtime state -- the segment declares it.
 (define (encode-segment target seg symbols)
-  (if (eq? (segment-field seg 'kind) 'hole)
+  (unless (layout-segment? seg)
+    (error 'encode "bad layout segment: ~e" seg))
+  (if (eq? (layout-segment-kind seg) 'hole)
       (encode-hole-segment seg)
       (encode-materialized-segment target seg symbols)))
 (define (encode-layout target layout)
-  (define requests (cdr (or (assq 'requests layout) '(requests))))
+  (unless (eq? (layout-phase layout) 'bound)
+    (error 'encode-layout "expected bound-layout, got phase ~e"
+           (layout-phase layout)))
+  (define requests (layout-requests layout))
   (unless (null? requests)
     (error 'encode-layout "layout still has requests: ~e" requests))
-  (define problems (cdr (or (assq 'problems layout) '(problems))))
+  (define problems (layout-problems layout))
   (unless (null? problems)
     (error 'encode-layout "layout still has problems: ~e" problems))
-  (define symbols (cdr (assq 'symbols layout)))
-  (define segments (cdr (assq 'segments layout)))
+  (define symbols (layout-symbols layout))
+  (define segments (layout-segments layout))
   (cons 'build
         (for/list ([seg (in-list segments)])
           (encode-segment target seg symbols))))

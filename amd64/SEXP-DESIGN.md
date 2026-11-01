@@ -284,8 +284,9 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
   `make-reserve` 构造函数；
 - `expand-data` 和 `layout` 的产物开始使用 item 构造函数；
 - `layout/forms.rkt` 已提供 `segment` / `offset` / `anchor` /
-  `request` / `problem` 的构造与 accessor；
-- `layout` / `relax` / `bind-labels` 已开始使用这些 accessor；
+  `request` / `problem` / `measured-layout` / `bound-layout` 的构造与 accessor；
+- `layout` / `relax` / `bind-labels` / `encode` 已使用这些 accessor；
+- `bind-labels/forms.rkt` 提供 symbol 的显式构造与 accessor；
 - `amd64-asm` 的 explicit plan / encoding-plan；
 - measured/bound/build 已经是显式 s-expression；
 - `amd64-help/main.rkt` 收敛条件码、li、branch、call 策略。
@@ -296,8 +297,8 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
    生产者的裸 list 构造。
 2. `program` / `block` / `flow` 从 struct 迁成显式 s-expression，或明确保留为
    唯一允许的 struct IR；不能两种风格混用。
-3. layout IR 的 segment/offset/anchor/request/problem 已开始 accessor 化；
-   继续把 `place` / measured / bound 的外层构造也收进 owner。
+3. layout IR 的 segment/offset/anchor/request/problem/measured/bound
+   已 accessor 化；继续把 `place` 收进 owner。
 4. `encode` 改用 layout accessor，不再直接 `assq/cadr`。
 5. 增加“owner 外不得 destructure”的审计：至少对新增代码做 grep 检查。
 6. 文档与测试同步更新。
