@@ -70,6 +70,9 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 | `(%mode n)` | `(modes (item下标 n) ...)` | 16/32/64；同一 section 可多次切换 |
 | `(%comm name size align)` | `(comm name size align)` + bss 段里的 `(align) (label) (reserve)` | 按 size 升序展开到第一个 bss section 开头 |
 | `(%init-bss)` | 64 位：`cld` + `li` + `sub` + `xor` + `rep stosb` | 显式源码 marker；默认 `bss`/`bss-end`，clobber `rax rcx rdi` |
+| `(%elf-header)` | 无（丢掉） | dump 标出的镜像头：ELF header + program headers，由 `amd64-elf` 重新生成 |
+| `(%elf-tail)` | 无（丢掉，并截断其后所有 item） | dump 标出的 ELF 尾：segments/symtab/strtab/shstrtab + 汇编期 `%call` 钩子 |
+| `(%call proc …)` | 无 | 汇编期闭包，不可序列化；正常输入里已被上面两个标记取代，残留则报 `directive-needs-image-layer` |
 | `(%init-bss start end)` | 同上 | 自定义 BSS 起止 label |
 | `(%elf (entry ...) (region ...) (load ...) (symbol ...))` | `image-plan` | `region` 是 canonical 身份；`content`/`perm` 派生 ELF 元数据 |
 | `(%comment ...)` | `(comment ...)` | 零尺寸注记 |

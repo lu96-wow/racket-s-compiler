@@ -28,8 +28,27 @@ LOKO_DUMP_PROGRAM=/tmp/prog.sexp \
 - 在 `generate-assembler` 之后导出 `pass-optimize` 的 text/data
   （`LOKO_DUMP_OPT`）；
 - 在 `assembler-library` 之后导出完整 assembler 输入
-  （`LOKO_DUMP_PROGRAM`），并去掉 ELF header/footer 的 `%call`；
-- 把 label vector 按对象身份换成唯一符号，避免 `equal?` 合并同名 label。
+  （`LOKO_DUMP_PROGRAM`）；
+- 把 label vector 按对象身份换成唯一符号，避免 `equal?` 合并同名 label；
+- 把汇编期 ELF writer 的两段产物换成**声明式标记**（见下）。
+
+### ELF writer 的标记：`%elf-header` / `%elf-tail`
+
+`%call` 是汇编期闭包（`(%call proc arg …)`，`proc` 拿到 `assemble!/ip/symbols/bss`
+直接发 item 并返回位置增量），不可序列化。Loko 里它的三处用途**全部是 ELF
+writer**：头回卷、strtab、symtab。所以 dump 只负责标出这两段：
+
+| 标记 | 范围 | 谁负责 |
+| --- | --- | --- |
+| `(%elf-header)` | `#(elf start)` 到程序内容的第一条 | `amd64-elf` 重新生成 |
+| `(%elf-tail)` | 第一个 `%call` / `%section elf` 之后全部 | `amd64-elf` 重新生成 |
+
+`loko-compat` 丢掉它们（`strip-elf-wrapper`）：头部直接忽略，尾部之后没有任何
+程序内容所以直接截断。于是 `%call` 不会出现在编译器输入里，而"哪些东西属于
+镜像格式"这个判断留在编译器一侧，Loko 不打补丁也能说出形状。
+
+裸的 `%call` 仍然报 `directive-needs-image-layer` —— 那说明输入还带着汇编期的
+ELF writer，需要重新导出。
 
 ## 2. 转成 Racket 可读形式
 
@@ -110,3 +129,9 @@ cmp /tmp/loko-tiny-full.elf /tmp/loko-tiny-new.elf && echo identical
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
 - dump/portableize 是 Loko 前端的外部工具，不属于 `compiler` 层。
+- **不要用 `make -B loko`**：`-B` 会重跑 `akku install`，而 akku 会把
+  `.akku/lib/loko`（`LOKO_SOURCE` 指向的自有库目录）换成它自己的副本，
+  打补丁的 `compiler/main.sls` 就丢了。正确做法是 `touch loko-prebuilt &&
+  make loko`，并且保证 `.akku/lib/loko` 是**工作树的副本**（不是系统安装）。
+- 验证顺序（每步都可单独失败）：dump 里的标记 → `translate-loko-source` 的
+  `program-items`/`sections` 与旧 dump 一致 → `cache-loko-layout` → ELF → 执行。

@@ -58,7 +58,8 @@
 
 - ~~精确尺寸~~：地址现在由 `compiler/layout` 求解，near 上界只用于容量校验，
   gap 不再影响后续段起点
-- `%call` 通用替代；Loko Linux 路径已用 `image/plan.rkt` + `amd64-elf`
+- ~~`%call` 通用替代~~：dump 改成标 `(%elf-header)` / `(%elf-tail)`，`loko-compat`
+  丢掉这两段（`strip-elf-wrapper`），`%call` 不再出现在编译器输入里
   的 plan-only reserved region 替代 ELF header/footer
 - `%elf` / `image-plan` 已支持 canonical region/load/symbol；`content`/`perm` 派生 ELF 元数据；还需要覆盖 Loko 现有 ELF callback 的全部语义
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
