@@ -10,7 +10,8 @@
 
 (require racket/cmdline
          (file "../loko-compatibility/flow.rkt")
-         (only-in (file "../loko-compatibility/ir.rkt") ir-list))
+         (only-in (file "../loko-compatibility/ir.rkt") ir-list)
+         (file "../amd64-asm/target.rkt"))
 
 (define (read-items path)
   (call-with-input-file path
@@ -22,7 +23,7 @@
 (command-line
  #:program "cache-loko-layout"
  #:args (dump-path cache-path [flow-name "loko-near"])
- (define target (hash 'arch 'amd64))
+ (define target target-amd64)
  (define source
    (list 'loko-source
          (cons 'text (read-items dump-path))

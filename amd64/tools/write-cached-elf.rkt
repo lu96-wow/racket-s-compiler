@@ -8,6 +8,7 @@
 
 (require racket/cmdline
          (file "../compiler/encode/encode.rkt")
+         (file "../amd64-asm/target.rkt")
          (file "../amd64-elf/writer.rkt")
          (only-in (file "../loko-compatibility/image/plan.rkt")
                   choose-loko-linux-image-plan))
@@ -23,7 +24,7 @@
  (define symbols (cdr (assq 'symbols bound)))
  (define declared-plan (cache-field cache 'image-plan))
  (define plan (choose-loko-linux-image-plan symbols declared-plan))
- (define build (encode-layout (hash 'arch 'amd64) bound))
+ (define build (encode-layout target-amd64 bound))
  (define image (write-elf build symbols #:plan plan))
  (define bytes (cadr (assoc 'bytes (cdr image))))
  (call-with-output-file out-path #:exists 'replace

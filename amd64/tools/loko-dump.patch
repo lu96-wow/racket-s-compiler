@@ -4,8 +4,7 @@
      (loko compiler global)
      (loko compiler optimize)
      (only (psyntax compat) pretty-print)
-+    (srfi :98 os-environment-variables)
-+    (only (loko runtime io-printer) write-simple)
++    (only (loko runtime init) get-environment-variable)
      (rnrs))
  
 +(define (elf-start-label? x)
@@ -60,7 +59,7 @@
 +   (open-file-output-port path (file-options no-fail) 'block
 +                          (make-transcoder (utf-8-codec)))
 +   (lambda (p)
-+     (for-each (lambda (x) (write-simple x p) (newline p)) items))))
++     (for-each (lambda (x) (write x p) (newline p)) items))))
 +
 +(define (dump-loko-program path asm)
 +  (call-with-port
@@ -68,7 +67,7 @@
 +                          (make-transcoder (utf-8-codec)))
 +   (lambda (p)
 +     (define memo (make-eq-hashtable))
-+     (for-each (lambda (x) (write-simple (portable-tree x memo) p) (newline p))
++     (for-each (lambda (x) (write (portable-tree x memo) p) (newline p))
 +               (drop-elf-header (drop-elf-tail asm))))))
 +
  (define (assemble-text-file filename codes primlocs locs-ht locs-rev verbose codegen-options)
