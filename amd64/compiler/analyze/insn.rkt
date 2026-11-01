@@ -7,7 +7,14 @@
 ;;;   jump     jmp-short/near       只有目标
 ;;;   call     call-near            目标 + 顺序(调用会返回)
 ;;;   indirect jmp-indirect/call-indirect
-;;;   term     ret/ud2/hlt          不返回
+;;   term     ret/ud2              不返回
+;;
+;;; 注意 `hlt` **不是**终止指令：它会在中断之后继续执行下一条。Loko 的
+;;; `syscall-hlt` 就靠这一点:
+;;;     (sti) (hlt) (cli) (xor eax eax) (swapgs) (sysretq)
+;;; 把 hlt 当成"不返回"会让 CFG 认为后面的 cli/swapgs/sysretq 不可达,
+;;; DCE 于是把整个队尾删掉, 结果 hlt 之后**顺序落进下一条 syscall 实现**
+;;; (实测: 落进 syscall-rdmsr 里的 rdmsr, 用垃圾 MSR 号 -> #GP -> #DF)。
 ;;;
 ;;; 不认识的指令当普通指令。
 
@@ -24,7 +31,7 @@
 (define jump-mnemonics '(jmp-short jmp-near))
 (define call-mnemonics '(call-near))
 (define indirect-mnemonics '(jmp-indirect call-indirect))
-(define trap-mnemonics '(ret ud2 hlt))
+(define trap-mnemonics '(ret ud2))
 
 (define (head-in? x heads)
   (and (form? x) (memq (car x) heads) #t))

@@ -49,10 +49,24 @@
     [(program) (sexp->program (cadr t))]
     [else (cadr t)]))
 
+;; 缓存失效: dump 变了, 或者流水线代码比缓存新。后者很重要 —— 改一行
+;; analyze/cfg 之后复用旧缓存会得到"看起来没变化"的假结果。
+(define (newest-source-time)
+  (define roots (list "compiler" "loko-compatibility" "amd64-asm" "amd64-help"))
+  (define here (current-directory))
+  (for/fold ([t 0]) ([root (in-list roots)])
+    (define dir (build-path here ".." root))
+    (if (directory-exists? dir)
+        (for/fold ([t t]) ([f (in-directory dir)])
+          (if (and (file-exists? f) (regexp-match? #rx"[.]rkt$" (path->string f)))
+              (max t (file-or-directory-modify-seconds f))
+              t))
+        t)))
+
 (define (fresh? cache dump)
   (and (file-exists? cache)
        (>= (file-or-directory-modify-seconds cache)
-           (file-or-directory-modify-seconds dump))))
+           (max (file-or-directory-modify-seconds dump) (newest-source-time)))))
 
 (define (save! path produced)
   (define tmp (string->path (format "~a.tmp" path)))

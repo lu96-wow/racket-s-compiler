@@ -235,6 +235,61 @@ QEMU 只是额外补一道“真内核开机”的检查，没 KVM 时不要指�
 QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 ```
 
+## 5.1 裸机（pc / multiboot）镜像
+
+同一个后端也能产 Loko 的**裸机**镜像。链路和 Linux 那条平行：
+
+```sh
+# 1. Loko 侧 dump（sexp-pc target 在 Loko 仓库 arch/amd64/sexp-asm.sls）
+cd ~/work/tmp/loko/bin/pc-repl
+LOKO_PROGRAM_SEXP=/tmp/pc.sexp .akku/env ../../loko-prebuilt \
+    -feval -ftarget=sexp-pc --compile pc-repl.sps --output /tmp/pc.bin
+
+# 2. 我们的流水线（逐层缓存；这个镜像 1.6M 个 item，不缓存要重跑很久）
+cd ~/work/racket-s-compiler/amd64
+racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
+
+# 3. 平铺镜像（没有 ELF 头，multiboot 加载的是一坨连续字节）
+racket tools/write-flat-image.rkt /tmp/pcflow/encode.rktd /tmp/pc-flat.bin
+
+# 4. 塞进磁盘镜像的副本并启动（mtools 改 FAT 分区里的 boot/loko）
+cp ~/work/tmp/loko/bin/pc-repl/loko-hdd.img /tmp/test-hdd.img
+mcopy -o -i "/tmp/test-hdd.img@@$((32*512))" /tmp/pc-flat.bin ::boot/loko
+qemu-system-x86_64 -enable-kvm -m 2048 -M q35 -vga std -display none \
+    -serial file:/tmp/boot.ser -drive file=/tmp/test-hdd.img,format=raw,if=ide
+```
+
+**结果**：串口打出 `Initializing Bochs graphics...`，REPL 窗口画出来，CPU 停在
+`syscall-hlt` 的 `sti; hlt` 空转里；screendump 与 Loko 自己镜像的 screendump
+只差 0.08% 像素（光标/时钟）。
+
+参数和 Linux 那条不同：
+
+| | Linux 路径 | 裸机路径 |
+| --- | --- | --- |
+| target | `-ftarget=sexp` | `-ftarget=sexp-pc` |
+| 运行库 | `(loko … linux-*)` | `(loko … pc-*)`，`%call` 数为 0 |
+| 镜像 | ELF（我们生成头/段表） | 平铺（`write-flat-image`） |
+| 结果 | `/tmp/prog.elf` 直接跑 | 装进 `loko-hdd.img` 里由 syslinux 的 `mboot.c32` 加载 |
+
+### 32 位引导段
+
+裸机镜像开头的多引导 trampoline 是 `(%mode 32)`。本后端只有 64 位编码路径，
+所以只放行"64 位路径编出的字节与 32 位一致"的 item（`loko-compatibility/mode32.rkt`
+的审计清单：寄存器宽度 ≤32、没有 rip 相对、指令头在白名单里）。其余一律报
+`mode32-unsupported-form`，不会静默编错。
+
+### 一个真实踩过的坑：`hlt` 不是终止指令
+
+Loko 的 `syscall-hlt` 是 `(sti) (hlt) (cli) (xor eax eax) (swapgs) (sysretq)`：
+`hlt` 之后还要继续执行。早先 `compiler/analyze/insn.rkt` 把 `hlt` 归到
+"不返回"（和 `ret`/`ud2` 一组），CFG 认为 `hlt` 后面的指令不可达，DCE 就把
+`cli/swapgs/sysretq` 删了 —— 于是 `hlt` 醒来后**顺序落进下一条 syscall 实现**
+（`syscall-rdmsr` 里的 `rdmsr`），用垃圾 MSR 号触发 #GP，而 #GP 的桩假定的是
+用户态栈帧（`[rsp+0x20]` 取 RSP），内核态出错时那里是垃圾 → #DF。镜像能启动、
+能初始化图形，然后死在这个 #DF 上。现象和根因隔得很远，教训是：
+**"某条指令不会返回"这种事实必须和硬件语义一致**。
+
 ## 6. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
