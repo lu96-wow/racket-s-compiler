@@ -9,14 +9,14 @@
          "../insn-core.rkt"
          "../operand.rkt")
 
-(provide encode-movss
-         encode-movd
-         encode-movq
-         encode-movdqa
-         encode-sse-scalar
-         encode-roundss
-         encode-cvtsi2ss
-         encode-mxcsr)
+(provide plan-movss
+         plan-movd
+         plan-movq
+         plan-movdqa
+         plan-sse-scalar
+         plan-roundss
+         plan-cvtsi2ss
+         plan-mxcsr)
 
 (define (xmm-operand? x)
   (define r (cond
@@ -36,48 +36,48 @@
   (when (and (mem? op) (not (= (mem-width op) width)))
     (error who "memory width must be b~a: ~e" width op)))
 
-(define (emit-sse prefix width regs rm-enc opcode [imm '()])
+(define (sse-rm-plan prefix width regs rm-enc opcode [imm '()])
   (rm-plan width regs rm-enc opcode imm prefix))
 
-(define (encode-movss operands)
+(define (plan-movss operands)
   (match operands
     [(list dst src)
      (cond
        [(xmm-operand? dst)
         (define d (parse-xmm dst))
         (define s (parse-xmm-or-mem src))
-        (check-mem-width s 32 'encode-movss)
-        (emit-sse (list #xf3) 32 (list d) (encode-rm s d) '(#x0f #x10))]
+        (check-mem-width s 32 'plan-movss)
+        (sse-rm-plan (list #xf3) 32 (list d) (make-rm-encoding s d) '(#x0f #x10))]
        [(or (mem? dst) (mem-form? dst))
         (define d (parse-rm dst))
         (define s (parse-xmm src))
-        (check-mem-width d 32 'encode-movss)
-        (emit-sse (list #xf3) 32 (list s) (encode-rm d s) '(#x0f #x11))]
-       [else (error 'encode-movss "unsupported movss operands: ~e" operands)])]
-    [_ (error 'encode-movss "movss takes two operands: ~e" operands)]))
+        (check-mem-width d 32 'plan-movss)
+        (sse-rm-plan (list #xf3) 32 (list s) (make-rm-encoding d s) '(#x0f #x11))]
+       [else (error 'plan-movss "unsupported movss operands: ~e" operands)])]
+    [_ (error 'plan-movss "movss takes two operands: ~e" operands)]))
 
-(define (encode-movd operands)
+(define (plan-movd operands)
   (match operands
     [(list dst src)
      (cond
        [(xmm-operand? dst)
         (define d (parse-xmm dst))
         (define s (parse-rm src))
-        (check-mem-width s 32 'encode-movd)
+        (check-mem-width s 32 'plan-movd)
         (unless (= 32 (if (mem? s) (mem-width s) (reg-width s)))
-          (error 'encode-movd "movd source must be 32 bits: ~e" src))
-        (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x6e))]
+          (error 'plan-movd "movd source must be 32 bits: ~e" src))
+        (sse-rm-plan (list #x66) 32 (list d) (make-rm-encoding s d) '(#x0f #x6e))]
        [(or (mem? dst) (mem-form? dst) (gpr-operand? dst))
         (define d (parse-rm dst))
         (define s (parse-xmm src))
-        (check-mem-width d 32 'encode-movd)
+        (check-mem-width d 32 'plan-movd)
         (unless (= 32 (if (mem? d) (mem-width d) (reg-width d)))
-          (error 'encode-movd "movd destination must be 32 bits: ~e" dst))
-        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #x7e))]
-       [else (error 'encode-movd "unsupported movd operands: ~e" operands)])]
-    [_ (error 'encode-movd "movd takes two operands: ~e" operands)]))
+          (error 'plan-movd "movd destination must be 32 bits: ~e" dst))
+        (sse-rm-plan (list #x66) 32 (list s) (make-rm-encoding d s) '(#x0f #x7e))]
+       [else (error 'plan-movd "unsupported movd operands: ~e" operands)])]
+    [_ (error 'plan-movd "movd takes two operands: ~e" operands)]))
 
-(define (encode-movq operands)
+(define (plan-movq operands)
   (match operands
     [(list dst src)
      (cond
@@ -86,83 +86,83 @@
         (cond
           [(or (xmm-operand? src) (mem? src) (mem-form? src))
            (define s (parse-xmm-or-mem src))
-           (check-mem-width s 64 'encode-movq)
-           (emit-sse (list #xf3) 32 (list d) (encode-rm s d) '(#x0f #x7e))]
+           (check-mem-width s 64 'plan-movq)
+           (sse-rm-plan (list #xf3) 32 (list d) (make-rm-encoding s d) '(#x0f #x7e))]
           [(gpr-operand? src)
            (define s (parse-reg src))
            (unless (= 64 (reg-width s))
-             (error 'encode-movq "movq GPR source must be 64 bits: ~e" src))
-           (emit-sse (list #x66) 64 (list d) (encode-rm s d) '(#x0f #x6e))]
-          [else (error 'encode-movq "unsupported movq source: ~e" src)])]
+             (error 'plan-movq "movq GPR source must be 64 bits: ~e" src))
+           (sse-rm-plan (list #x66) 64 (list d) (make-rm-encoding s d) '(#x0f #x6e))]
+          [else (error 'plan-movq "unsupported movq source: ~e" src)])]
        [(or (mem? dst) (mem-form? dst))
         (define d (parse-rm dst))
         (define s (parse-xmm src))
-        (check-mem-width d 64 'encode-movq)
-        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #xd6))]
+        (check-mem-width d 64 'plan-movq)
+        (sse-rm-plan (list #x66) 32 (list s) (make-rm-encoding d s) '(#x0f #xd6))]
        [(gpr-operand? dst)
         (define d (parse-reg dst))
         (unless (= 64 (reg-width d))
-          (error 'encode-movq "movq GPR destination must be 64 bits: ~e" dst))
+          (error 'plan-movq "movq GPR destination must be 64 bits: ~e" dst))
         (define s (parse-xmm src))
-        (emit-sse (list #x66) 64 (list s) (encode-rm d s) '(#x0f #x7e))]
-       [else (error 'encode-movq "unsupported movq operands: ~e" operands)])]
-    [_ (error 'encode-movq "movq takes two operands: ~e" operands)]))
+        (sse-rm-plan (list #x66) 64 (list s) (make-rm-encoding d s) '(#x0f #x7e))]
+       [else (error 'plan-movq "unsupported movq operands: ~e" operands)])]
+    [_ (error 'plan-movq "movq takes two operands: ~e" operands)]))
 
-(define (encode-movdqa operands)
+(define (plan-movdqa operands)
   (match operands
     [(list dst src)
      (cond
        [(xmm-operand? dst)
         (define d (parse-xmm dst))
         (define s (parse-xmm-or-mem src))
-        (check-mem-width s 128 'encode-movdqa)
-        (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x6f))]
+        (check-mem-width s 128 'plan-movdqa)
+        (sse-rm-plan (list #x66) 32 (list d) (make-rm-encoding s d) '(#x0f #x6f))]
        [(or (mem? dst) (mem-form? dst))
         (define d (parse-rm dst))
         (define s (parse-xmm src))
-        (check-mem-width d 128 'encode-movdqa)
-        (emit-sse (list #x66) 32 (list s) (encode-rm d s) '(#x0f #x7f))]
-       [else (error 'encode-movdqa "unsupported movdqa operands: ~e" operands)])]
-    [_ (error 'encode-movdqa "movdqa takes two operands: ~e" operands)]))
+        (check-mem-width d 128 'plan-movdqa)
+        (sse-rm-plan (list #x66) 32 (list s) (make-rm-encoding d s) '(#x0f #x7f))]
+       [else (error 'plan-movdqa "unsupported movdqa operands: ~e" operands)])]
+    [_ (error 'plan-movdqa "movdqa takes two operands: ~e" operands)]))
 
-(define (encode-sse-scalar name opcode prefix mem-width operands)
+(define (plan-sse-scalar name opcode prefix mem-width operands)
   (match operands
     [(list dst src)
      (define d (parse-xmm dst))
      (define s (parse-xmm-or-mem src))
      (check-mem-width s mem-width name)
-     (emit-sse prefix 32 (list d) (encode-rm s d) (list #x0f opcode))]
+     (sse-rm-plan prefix 32 (list d) (make-rm-encoding s d) (list #x0f opcode))]
     [_ (error name "~a takes two operands: ~e" name operands)]))
 
-(define (encode-roundss operands)
+(define (plan-roundss operands)
   (match operands
     [(list dst src imm)
      (define d (parse-xmm dst))
      (define s (parse-xmm-or-mem src))
-     (check-mem-width s 32 'encode-roundss)
+     (check-mem-width s 32 'plan-roundss)
      (define v (or (immediate-value imm)
-                   (error 'encode-roundss "roundss immediate must be an integer: ~e" imm)))
-     (check-imm8 v 'encode-roundss)
-     (emit-sse (list #x66) 32 (list d) (encode-rm s d) '(#x0f #x3a #x0a) (u8 v))]
-    [_ (error 'encode-roundss "roundss takes dst, src, imm8: ~e" operands)]))
+                   (error 'plan-roundss "roundss immediate must be an integer: ~e" imm)))
+     (check-imm8 v 'plan-roundss)
+     (sse-rm-plan (list #x66) 32 (list d) (make-rm-encoding s d) '(#x0f #x3a #x0a) (u8 v))]
+    [_ (error 'plan-roundss "roundss takes dst, src, imm8: ~e" operands)]))
 
-(define (encode-cvtsi2ss operands)
+(define (plan-cvtsi2ss operands)
   (match operands
     [(list dst src)
      (define d (parse-xmm dst))
      (define s (parse-rm src))
      (define width (if (mem? s) (mem-width s) (reg-width s)))
      (unless (memq width '(32 64))
-       (error 'encode-cvtsi2ss "source must be 32/64 bits: ~e" src))
-     (emit-sse (list #xf3) (if (= width 64) 64 32)
-               (list d) (encode-rm s d) '(#x0f #x2a))]
-    [_ (error 'encode-cvtsi2ss "cvtsi2ss takes dst, src: ~e" operands)]))
+       (error 'plan-cvtsi2ss "source must be 32/64 bits: ~e" src))
+     (sse-rm-plan (list #xf3) (if (= width 64) 64 32)
+               (list d) (make-rm-encoding s d) '(#x0f #x2a))]
+    [_ (error 'plan-cvtsi2ss "cvtsi2ss takes dst, src: ~e" operands)]))
 
-(define (encode-mxcsr name digit operands)
+(define (plan-mxcsr name digit operands)
   (match operands
     [(list m)
      (define m* (parse-rm m))
      (unless (mem? m*) (error name "~a needs a memory operand: ~e" name m))
      (check-mem-width m* 32 name)
-     (emit-sse '() 32 (regs-in-op m*) (encode-rm m* digit) '(#x0f #xae))]
+     (sse-rm-plan '() 32 (regs-in-op m*) (make-rm-encoding m* digit) '(#x0f #xae))]
     [_ (error name "~a takes one memory operand: ~e" name operands)]))

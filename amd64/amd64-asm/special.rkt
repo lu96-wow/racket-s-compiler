@@ -3,6 +3,7 @@
 ;;;
 ;;; Facade for handwritten special form families.  The implementation lives in
 ;;; special/*.rkt; this module keeps the stable internal API for plan.rkt.
+;;; Every family returns an encoding-plan, never raw bytes.
 
 (require "special/common.rkt"
          "special/table.rkt")

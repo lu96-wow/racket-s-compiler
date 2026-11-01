@@ -43,7 +43,7 @@ amd64-asm/
 ```racket
 (require "amd64-asm/insn.rkt")
 (instruction-size 'mov '(rax rbx))
-(encode-instruction 'mov '(rax rbx))
+(encode-instruction target-amd64 'mov '(rax rbx))
 ```
 
 ## 不负责

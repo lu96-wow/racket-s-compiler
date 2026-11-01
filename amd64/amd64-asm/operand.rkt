@@ -1,7 +1,7 @@
 #lang racket
 ;;; amd64/amd64-asm/operand.rkt
 ;;;
-;;; Shared operand parsing/normalization used by handwritten special encoders
+;;; Shared operand parsing/normalization used by handwritten special plans
 ;;; and by the plan facade.  This module does not choose instruction forms and
 ;;; does not emit bytes.
 

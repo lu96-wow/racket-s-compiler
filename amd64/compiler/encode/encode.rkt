@@ -41,6 +41,14 @@
 (define (value->bytes width expr symbols here)
   (list->bytes (integer->bytes width (resolve-address symbols expr here))))
 
+(define (make-build-segment name kind start size bytes)
+  (list 'segment
+        (list 'name name)
+        (list 'kind kind)
+        (list 'start start)
+        (list 'size size)
+        (list 'bytes bytes)))
+
 (define (resolve-mem m here size symbols)
   (define d (mem-disp m))
   (define resolved
@@ -127,12 +135,7 @@
   (unless (= cursor size)
     (error 'encode "segment ~a size mismatch: layout says ~a, hole advances ~a"
            name size cursor))
-  (list 'segment
-        (list 'name name)
-        (list 'kind 'hole)
-        (list 'start (layout-segment-start seg))
-        (list 'size size)
-        (list 'bytes #"")))
+  (make-build-segment name 'hole (layout-segment-start seg) size #""))
 
 (define (encode-materialized-segment target seg symbols)
   (unless (layout-segment? seg)
@@ -174,12 +177,8 @@
     (unless (= cursor size)
       (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
              name size cursor))
-    (list 'segment
-          (list 'name name)
-          (list 'kind kind)
-          (list 'start start)
-          (list 'size size)
-          (list 'bytes (apply bytes-append (reverse chunks))))))
+    (make-build-segment name kind start size
+                        (apply bytes-append (reverse chunks)))))
 
 ;; Two kinds of segments, two paths: materialized ones emit bytes item by item,
 ;; hole ones only advance the position.  "Where the hole starts" is not a

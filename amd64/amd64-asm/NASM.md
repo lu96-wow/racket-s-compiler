@@ -37,7 +37,7 @@ authoritative source
   insn-generic.rkt        ; matcher + byte emitter shared with insn.rkt
 ```
 
-`insn.rkt` keeps its existing special encoders because they encode public
+`insn.rkt` keeps its existing special plans because they encode public
 forms that are not one-to-one with NASM rows: `jmp-short`, `jcc-near`,
 `call-indirect`, `prefix`, the conditional-code pseudo forms `jcc`, `setcc`,
 `cmovcc`, and the `mov` immediate-selection policy.  Everything without a
@@ -184,7 +184,7 @@ generated module does not hard-code a require path back into the build tree.
    be emitted after a refresh.  Add a golden test in `test-generated.rkt` and
    an oracle case in `test-oracle.rkt`.
 3. If the form needs a public spelling that NASM does not have (`jmp-short`,
-   `jcc`, `setcc`, `prefix`, ...), add a special encoder in `insn.rkt`
+   `jcc`, `setcc`, `prefix`, ...), add a special family under `amd64-asm/special/` and register its plan in `special/table.rkt`
    instead of distorting the table.
 4. If a whole source family is rejected, change `resolve.rkt` only when the
    runtime matcher actually supports its operand/encoding classes.

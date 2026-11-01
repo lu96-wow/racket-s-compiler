@@ -7,7 +7,7 @@
          "../encoding-plan.rkt")
 
 (provide cc-index
-         make-fixed-encoder
+         make-fixed-plan
          prefix-byte)
 
 (define (cc-index cc)
@@ -22,7 +22,7 @@
     [(le) 14] [(g) 15]
     [else (error 'cc-index "unknown condition code: ~e" cc)]))
 
-(define (make-fixed-encoder name bytes)
+(define (make-fixed-plan name bytes)
   (lambda (operands)
     (unless (null? operands)
       (error name "~a takes no operands: ~e" name operands))
@@ -33,4 +33,4 @@
     [(lock) #xf0]
     [(rep repz) #xf3]
     [(repne repnz) #xf2]
-    [else (error 'encode-prefix "unknown instruction prefix: ~e" pname)]))
+    [else (error 'prefix-byte "unknown instruction prefix: ~e" pname)]))

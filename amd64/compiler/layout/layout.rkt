@@ -206,7 +206,8 @@
 ;; ---------------------------------------------------------------------------
 
 (struct measured-segment (segment items size entries anchors) #:transparent)
-;; entries: (list segment 段内偏移 item 尺寸 origin)
+(struct entry (segment offset item size origin) #:transparent)
+(struct memory-site (mem here size) #:transparent)
 
 (define (measure-segment target seg units problem!)
   (define name (segment-name seg))
@@ -252,7 +253,7 @@
        (unless (and (exact-integer? size) (>= size 0))
          (error 'layout "cannot size item in segment ~a: ~e" name it))
        (set! out (cons (make-offset cursor it) out))
-       (set! entries (cons (list seg cursor it size origin) entries))
+       (set! entries (cons (entry seg cursor it size origin) entries))
        (set! cursor (+ cursor size))]))
 
   (for ([u (in-list units)])
@@ -285,11 +286,11 @@
                (anchor-position a)))))
 
 (define (check-control-transfer entry positions problem! request!)
-  (define seg (car entry))
-  (define offset (cadr entry))
-  (define item (caddr entry))
-  (define size (cadddr entry))
-  (define origin (list-ref entry 4))
+  (define seg (entry-segment entry))
+  (define offset (entry-offset entry))
+  (define item (entry-item entry))
+  (define size (entry-size entry))
+  (define origin (entry-origin entry))
   (when (control-transfer-form? item)
     (define target (normalize-path (control-transfer-target item)))
     (cond
@@ -312,7 +313,7 @@
 
 (define (item-memory-sites item here size)
   (cond
-    [(mem-form? item) (list (list (parse-mem item) here size))]
+    [(mem-form? item) (list (memory-site (parse-mem item) here size))]
     [(and (form? item)
           (eq? (car item) 'prefix)
           (= 3 (length item))
@@ -324,15 +325,15 @@
     [else '()]))
 
 (define (check-memory-range entry positions problem!)
-  (define seg (car entry))
-  (define offset (cadr entry))
-  (define item (caddr entry))
-  (define size (cadddr entry))
+  (define seg (entry-segment entry))
+  (define offset (entry-offset entry))
+  (define item (entry-item entry))
+  (define size (entry-size entry))
   (define here (+ (segment-start seg) offset))
   (for ([site (in-list (item-memory-sites item here size))])
-    (define m (car site))
-    (define m-here (cadr site))
-    (define m-size (caddr site))
+    (define m (memory-site-mem site))
+    (define m-here (memory-site-here site))
+    (define m-size (memory-site-size site))
     (define d (mem-disp m))
     (unless (exact-integer? d)
       (define chains (address-expr-chains d))
@@ -356,9 +357,9 @@
                               (segment-name seg) offset item value)))])]))))
 
 (define (check-value-chains entry positions problem!)
-  (define seg (car entry))
-  (define offset (cadr entry))
-  (define item (caddr entry))
+  (define seg (entry-segment entry))
+  (define offset (entry-offset entry))
+  (define item (entry-item entry))
   (when (value-form? item)
     (define v (value-payload item))
     (unless (exact-integer? v)

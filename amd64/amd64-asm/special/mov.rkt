@@ -9,7 +9,7 @@
          "../insn-core.rkt"
          "../operand.rkt")
 
-(provide encode-mov)
+(provide plan-mov)
 
 (define (reg-class-of x)
   (define r (cond
@@ -42,7 +42,7 @@
                                (bitwise-and (reg-index sr) #b111) 3)
                               (bitwise-and (reg-index gpr) #b111))))))
 
-(define (encode-special-mov dst src)
+(define (plan-special-mov dst src)
   (cond
     [(special-register? dst)
      (define sr (parse-special-register dst))
@@ -50,7 +50,7 @@
      (emit-special-mov (case (reg-class sr)
                          [(control) #x22]
                          [(debug) #x23]
-                         [else (error 'encode-mov "bad special register: ~e" sr)])
+                         [else (error 'plan-mov "bad special register: ~e" sr)])
                        sr g)]
     [(special-register? src)
      (define sr (parse-special-register src))
@@ -58,19 +58,19 @@
      (emit-special-mov (case (reg-class sr)
                          [(control) #x20]
                          [(debug) #x21]
-                         [else (error 'encode-mov "bad special register: ~e" sr)])
+                         [else (error 'plan-mov "bad special register: ~e" sr)])
                        sr g)]
-    [else (error 'encode-mov "expected a control/debug register: ~e ~e" dst src)]))
+    [else (error 'plan-mov "expected a control/debug register: ~e ~e" dst src)]))
 
-(define (encode-mov operands)
+(define (plan-mov operands)
   (match operands
     [(list dst src)
      (if (or (special-register? dst) (special-register? src))
-         (encode-special-mov dst src)
-         (encode-mov-normal operands))]
-    [_ (error 'encode-mov "mov takes two operands: ~e" operands)]))
+         (plan-special-mov dst src)
+         (plan-mov-normal operands))]
+    [_ (error 'plan-mov "mov takes two operands: ~e" operands)]))
 
-(define (encode-mov-normal operands)
+(define (plan-mov-normal operands)
   (match operands
     [(list dst src)
      (define dst* (parse-rm dst))
@@ -79,24 +79,24 @@
        [(and (reg? dst*) (reg? src*))
         (let* ([width (reg-width dst*)]
                [regs (list dst* src*)]
-               [rm (encode-rm dst* src*)]
+               [rm (make-rm-encoding dst* src*)]
                [opcode (if (= width 8) '(#x88) '(#x89))])
           (unless (= width (reg-width src*))
-            (error 'encode-mov "register widths do not match: ~e ~e" dst src))
+            (error 'plan-mov "register widths do not match: ~e ~e" dst src))
           (rm-plan width regs rm opcode))]
 
        [(and (reg? dst*) (mem? src*))
         (unless (= (reg-width dst*) (mem-width src*))
-          (error 'encode-mov "register/memory widths do not match: ~e ~e" dst src))
+          (error 'plan-mov "register/memory widths do not match: ~e ~e" dst src))
         (rm-plan (reg-width dst*)
-                 (list dst*) (encode-rm src* dst*)
+                 (list dst*) (make-rm-encoding src* dst*)
                  (list (if (= (reg-width dst*) 8) #x8a #x8b)))]
 
        [(and (mem? dst*) (reg? src*))
         (unless (= (mem-width dst*) (reg-width src*))
-          (error 'encode-mov "memory/register widths do not match: ~e ~e" dst src))
+          (error 'plan-mov "memory/register widths do not match: ~e ~e" dst src))
         (rm-plan (mem-width dst*)
-                 (list src*) (encode-rm dst* src*)
+                 (list src*) (make-rm-encoding dst* src*)
                  (list (if (= (mem-width dst*) 8) #x88 #x89)))]
 
        [(and (reg? dst*) (immediate-value src))
@@ -105,26 +105,26 @@
                [forced (immediate-form src)]
                [regs (list dst*)])
           (define (emit-imm8)
-            (check-imm8 value 'encode-mov)
+            (check-imm8 value 'plan-mov)
             (literal-plan
              (append (prefixes 8 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
                      (u8 (+ #xb0 (bitwise-and (reg-index dst*) #b111)))
                      (u8 value))))
           (define (emit-imm16)
-            (check-imm16 value 'encode-mov)
+            (check-imm16 value 'plan-mov)
             (literal-plan
              (append (prefixes 16 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
                      (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
                      (u16 value))))
           (define (emit-imm32)
-            (check-imm32 value 'encode-mov)
+            (check-imm32 value 'plan-mov)
             (literal-plan
              (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
                      (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
                      (u32 value))))
           (define (emit-imm64)
             (unless (= width 64)
-              (error 'encode-mov "imm64 needs a 64-bit destination: ~e" dst))
+              (error 'plan-mov "imm64 needs a 64-bit destination: ~e" dst))
             (let ([rex (make-rex #t regs 0 0 (if (>= (reg-index dst*) 8) 1 0))])
               (literal-plan
                (append (if rex (list rex) '())
@@ -138,8 +138,8 @@
               [(64)
                (cond
                  [(<= (- (expt 2 31)) value (sub1 (expt 2 31)))
-                  (check-imm32/signed value 'encode-mov)
-                  (let ([rm (encode-rm dst* 0)])
+                  (check-imm32/signed value 'plan-mov)
+                  (let ([rm (make-rm-encoding dst* 0)])
                     (rm-plan 64 regs rm '(#xc7) (u32 value)))]
                  [(<= 0 value (sub1 (expt 2 32)))
                   ;; mov r32, imm32 zero-extends to r64
@@ -148,7 +148,7 @@
           (case forced
             [(imm8)
              (unless (= width 8)
-               (error 'encode-mov "imm8 needs an 8-bit destination: ~e" dst))
+               (error 'plan-mov "imm8 needs an 8-bit destination: ~e" dst))
              (emit-imm8)]
             [(imm16) (emit-imm16)]
             [(imm32) (emit-imm32)]
@@ -160,17 +160,17 @@
                [regs '()])
           (case width
             [(8)
-             (check-imm8 value 'encode-mov)
-             (rm-plan 8 regs (encode-rm dst* 0) '(#xc6) (u8 value))]
+             (check-imm8 value 'plan-mov)
+             (rm-plan 8 regs (make-rm-encoding dst* 0) '(#xc6) (u8 value))]
             [(16)
-             (check-imm16 value 'encode-mov)
-             (rm-plan 16 regs (encode-rm dst* 0) '(#xc7) (u16 value))]
+             (check-imm16 value 'plan-mov)
+             (rm-plan 16 regs (make-rm-encoding dst* 0) '(#xc7) (u16 value))]
             [(32)
-             (check-imm32 value 'encode-mov)
-             (rm-plan 32 regs (encode-rm dst* 0) '(#xc7) (u32 value))]
+             (check-imm32 value 'plan-mov)
+             (rm-plan 32 regs (make-rm-encoding dst* 0) '(#xc7) (u32 value))]
             [(64)
-             (check-imm32/signed value 'encode-mov)
-             (rm-plan 64 regs (encode-rm dst* 0) '(#xc7) (u32 value))]))]
+             (check-imm32/signed value 'plan-mov)
+             (rm-plan 64 regs (make-rm-encoding dst* 0) '(#xc7) (u32 value))]))]
        [else
-        (error 'encode-mov "unsupported mov operands: ~e" operands)])]
-    [_ (error 'encode-mov "mov takes two operands: ~e" operands)]))
+        (error 'plan-mov "unsupported mov operands: ~e" operands)])]
+    [_ (error 'plan-mov "mov takes two operands: ~e" operands)]))

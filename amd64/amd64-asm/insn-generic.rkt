@@ -10,7 +10,7 @@
 ;;;
 ;;; Layout can consume generic-instruction-size/plan-size without asking for
 ;;; bytes; encoding only consumes the already-resolved plan.  It is separate
-;;; from insn.rkt's handwritten special encoders: generated forms are the
+;;; from the handwritten special plans: generated forms are the
 ;;; fallback (and the future primary path) for instructions without a special
 ;;; case.
 
@@ -283,7 +283,7 @@
                                   (if (eq? (car reg-field-spec) 'r)
                                       (list-ref operands (cadr reg-field-spec))
                                       (cadr reg-field-spec))])
-                            (encode-rm rm-op reg-field))
+                            (make-rm-encoding rm-op reg-field))
                           #f)]
                      [regs
                       (append*

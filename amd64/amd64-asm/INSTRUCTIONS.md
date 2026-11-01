@@ -34,7 +34,7 @@ form + operands
 手写表项：
 
 ```scheme
-(struct insn-def (arity encode))
+(struct special-def (arity plan))
 ```
 
 - `arity`：固定操作数个数；
@@ -159,7 +159,7 @@ debug:    dr0 ... dr7
 `registers.rkt` 的 `reg` 带 `class` 事实（`'gpr` / `'xmm` / `'control` / `'debug`）。
 GPR 编码器通过 `parse-reg` / `parse-rm` 拒绝 XMM/控制/调试寄存器；
 SSE 编码器通过 `parse-xmm` / `parse-xmm-or-mem` 接受 XMM；
-`mov cr/dr` 在 `encode-mov` 里走专门的控制/调试寄存器编码。
+`mov cr/dr` 在 `special/mov.rkt` 的 `plan-mov` 里走专门的控制/调试寄存器编码。
 
 后续计划：
 

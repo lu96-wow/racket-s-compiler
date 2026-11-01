@@ -1,7 +1,7 @@
 #lang racket
 ;;; amd64/amd64-asm/ranges.rkt
 ;;;
-;;; Pure integer range facts shared by instruction planning, special encoders
+;;; Pure integer range facts shared by instruction planning, special plans
 ;;; and amd64-help.  No layer policy lives here.
 
 (provide fits-s8?

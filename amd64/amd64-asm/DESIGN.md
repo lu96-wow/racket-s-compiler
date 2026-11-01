@@ -226,7 +226,7 @@ wait prefix + segment prefix + mandatory prefixes + REX
   `instruction-plan -> plan-size/encode-plan`；
 - `encoding-plan.rkt` 提供 special 的底层 plan：`literal-plan` / `rm-plan` /
   `encoding-plan-size` / `encoding-plan-bytes`；
-- 所有手写 special encoder 现在都返回 `encoding-plan`（literal 或 rm-plan）；
+- 所有手写 special plan 现在都返回 `encoding-plan`（literal 或 rm-plan）；
   `special/table.rkt` 强制检查返回值，bytes 不再能漏进 plan 层；
 - `instruction-size` 对两类指令都走 plan；
 - `sexp.rkt` 已缩成兼容 facade；通用形状在 `shape.rkt`，内存形状在
