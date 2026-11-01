@@ -45,7 +45,10 @@
 
 (define (build-cfg items)
   ;; 1. 切块: 先收集 (labels . insns) 的逆序
-  (define targets (referenced-labels items))     ; 控制转移的目标链
+  ;; 目标链做成哈希集合: 下面是"每个 label 查一次", 用 (member …) 在
+  ;; 大镜像(几十万 label / 几万目标)上是二次的。
+  (define targets
+    (for/hash ([p (in-list (referenced-labels items))]) (values p #t)))
   (define collected '())
   (define cur-labels '())
   (define cur-insns '())
@@ -65,7 +68,7 @@
          ;; 块开头(还没放 item): 归块头的多个名字
          [(null? cur-insns) (set! cur-labels (cons path cur-labels))]
          ;; 目标是 leader: 另起一块
-         [(member path targets) (flush!) (set! cur-labels (list path))]
+         [(hash-ref targets path #f) (flush!) (set! cur-labels (list path))]
          ;; 非目标 label: 位置标记, 留在块里
          [else (set! cur-insns (cons it cur-insns))])]
       [else

@@ -82,10 +82,15 @@
   ;; 根只有"外部入口": 入口块 + (有间接跳转时)地址被取过的块。
   ;; 内部引用不是根 —— 它们在 CFG 里就是边。
   ;; "地址被取过"包含数据侧: 数据里存了某块的地址, 就等于外部能进来。
-  (define address-taken (if (cfg:graph-indirect? g)
-                            (append (cfg:address-taken-paths items)
-                                    (cfg:address-taken-paths (as-items data-items)))
-                            '()))
+  ;; 哈希表而不是 list: 下面是"每个块 × 每个 label"查询, 用 (member …) 在
+  ;; 大镜像(几十万符号)上是二次的 —— pc-repl 那种 1.6M item 的镜像会跑到
+  ;; 十几分钟。这里只换表示, 判据不变。
+  (define address-taken
+    (if (cfg:graph-indirect? g)
+        (for/hash ([p (in-list (append (cfg:address-taken-paths items)
+                                       (cfg:address-taken-paths (as-items data-items))))])
+          (values p #t))
+        #f))
 
   (define blocks
     (for/list ([b (in-vector cfg-blocks)])
@@ -106,7 +111,9 @@
                 (for/list ([it (in-list (cfg:basic-block-items b))] #:when (label-form? it))
                   (label-path it))))
       (define root? (or (zero? i)
-                        (and (ormap (lambda (p) (member p address-taken)) all-labels) #t)))
+                        (and address-taken
+                             (ormap (lambda (p) (hash-ref address-taken p #f)) all-labels)
+                             #t)))
       (make-flow succ (or fallthrough #f) root?)))
 
   (program blocks flows))
