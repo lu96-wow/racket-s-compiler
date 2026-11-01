@@ -25,7 +25,7 @@ rich data
   -> encode
 ```
 
-Loko 兼容入口：
+Loko 兼容入口（可选扩展，不属于 core flow）：
 
 ```text
 loko-source
@@ -35,6 +35,9 @@ loko-source
   -> compiler 的后半段
   -> build -> amd64-elf
 ```
+
+核心 flow 在 `compiler/flow/core.rkt`；`loko-compatibility/flow.rkt` 只负责
+把可选阶段注册到同一个 stage 引擎。
 
 ## 子项目
 

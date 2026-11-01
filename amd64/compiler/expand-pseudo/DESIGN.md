@@ -26,6 +26,8 @@
 - 操作数是值，不递归改写。
 - `jmp`/`jcc` 的 short/near 选择由参数决定；默认 near-only，flow 里用 short 起步，
   交给 relax 升级。
+- 条件码别名、`li`、`jmp/jcc` 的 form 策略来自 `../../amd64-help/main.rkt`；
+  本层只做遍历和调用，不复制策略表。
 - `li` 的地址表达式统一变成 RIP-relative `lea`；是否可达由 layout 检查。
 - `pseudo-leftover?` 在 flow 里做最后检查，伪指令不能流入 layout/encode。
 

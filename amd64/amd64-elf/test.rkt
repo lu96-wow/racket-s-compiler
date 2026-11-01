@@ -3,7 +3,7 @@
 
 (require rackunit
          "../amd64-asm/target.rkt"
-         "../compiler/flow/flow.rkt"
+         "../loko-compatibility/flow.rkt"
          "writer.rkt")
 
 (define (u16 bv off)

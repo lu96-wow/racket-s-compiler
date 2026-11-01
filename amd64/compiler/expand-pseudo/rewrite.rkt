@@ -7,7 +7,7 @@
 ;;; 操作数是值，不递归改写。
 
 (require "../../amd64-asm/sexp.rkt"
-         "../../amd64-help/li.rkt")
+         "../../amd64-help/main.rkt")
 
 (provide rewrite-item
          rewrite-program
@@ -19,43 +19,14 @@
 ;; 条件码别名
 ;; ---------------------------------------------------------------------------
 
-(define jcc-alias
-  (hash
-   'je 'e   'jz 'e
-   'jne 'ne 'jnz 'ne
-   'jc 'b   'jnae 'b
-   'jnc 'ae 'jnb 'ae 'jae 'ae
-   'jbe 'be 'jna 'be
-   'ja 'a   'jnbe 'a
-   'js 's   'jns 'ns
-   'jp 'p   'jpe 'p
-   'jnp 'np 'jpo 'np
-   'jl 'l   'jnge 'l
-   'jge 'ge 'jnl 'ge
-   'jle 'le 'jng 'le
-   'jg 'g   'jnle 'g
-   'jo 'o   'jno 'no
-   ;; Canonical condition-code spellings are accepted directly too.
-   'jb 'b   'jae 'ae 'jbe 'be 'ja 'a
-   'js 's   'jns 'ns
-   'jp 'p   'jnp 'np
-   'jl 'l   'jge 'ge 'jle 'le 'jg 'g
-   'jo 'o   'jno 'no))
-
 (define (pseudo-name? h)
   (and (symbol? h)
-       (or (hash-has-key? jcc-alias h)
+       (or (jcc-alias? h)
            (memq h '(jmp jcc call li)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 分支形式
 ;; ---------------------------------------------------------------------------
-
-(define (jump-form target short?)
-  (if short? (list 'jmp-short target) (list 'jmp-near target)))
-
-(define (branch-form cc target short?)
-  (if short? (list 'jcc-short cc target) (list 'jcc-near cc target)))
 
 (define (rewrite-item item #:short-transfers? [short? #f])
   (cond
@@ -81,10 +52,11 @@
           [_ item])]
        [else
         (cond
-          [(hash-ref jcc-alias h #f)
-           (match item
-             [(list _ target) (branch-form (hash-ref jcc-alias h) target short?)]
-             [_ item])]
+          [(canonical-cc h)
+           => (lambda (cc)
+                (match item
+                  [(list _ target) (branch-form cc target short?)]
+                  [_ item]))]
           [else item])])]))
 
 (define (rewrite-program items #:short-transfers? [short? #f])
@@ -96,7 +68,7 @@
     (and (form? i)
          (let ([h (car i)])
            (or (pseudo-name? h)
-               (hash-has-key? jcc-alias h)))))
+               (jcc-alias? h)))))
   (define items
     (cond
       [(and (form? x) (symbol? (car x))) (list x)]

@@ -13,6 +13,8 @@
 | `amd64-asm/` | 指令编码、寄存器、target、NASM 生成表、通用 `reserve`/hole 段 | 还缺 x87/MMX、AVX/VEX、far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
 | 仓库根 | `run-tests.sh` + `tools/` | Loko dump/cache 依赖外部 Loko 仓库，已在 `tools/` 提供 patch 和步骤 |
+| `compiler/flow/` | core stage 引擎 + 兼容入口 | Loko/ELF 已移到 `loko-compatibility/flow.rkt`；核心 flow 不再 require 可选层 |
+| `amd64-help/` | `li` / `ranges` / `cc` / `branch` / `main` | 还缺 `la` / `jump` / `scratch` 和 far/trampoline 策略 |
 
 ## 2. Loko 编译链缺口
 

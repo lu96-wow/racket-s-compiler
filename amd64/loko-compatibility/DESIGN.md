@@ -55,7 +55,7 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 - `program-items` / `data-items` 是按 section kind 从 `sections` 重新推导的扁平视图。
 - `origin` 是 `%origin` 设置的起址；`sections` 是按源顺序排列的 section run，
   `modes` 记录 mode 切换点的 item 下标。
-- `problems` 是明确的问题列表；`flow/flow.rkt` 在非空时报错。
+- `problems` 是明确的问题列表；`loko-compatibility/flow.rkt` 在非空时报错。
 
 ## 4. 映射
 

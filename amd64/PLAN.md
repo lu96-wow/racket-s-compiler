@@ -67,6 +67,9 @@
 - [ ] lower 的跨调用值 spill / frame allocation（Loko 实际输入已由 Loko optimizer 分配）
 - [x] `adc/sbb`、更多双精度/packed SSE（NASM 生成表）
 - [x] NASM `insns.dat` -> generated instruction table，替换手写扩展模式
+- [x] `compiler/flow/core.rkt`：核心流水线不再依赖 `loko-compatibility`/`amd64-elf`
+- [x] `amd64-asm/DESIGN.md` / `amd64-help/DESIGN.md`：按 x86 编码逻辑重划职责
+- [x] `amd64-help` 的 `cc` / `branch` / `main` / `li-size` 基础拆分
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
 - [ ] 通用 `%call` 的声明式替代

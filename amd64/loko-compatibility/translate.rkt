@@ -36,7 +36,7 @@
 ;;;     (problems problem ...))
 ;;;
 ;;; 不支持的写法不会偷偷丢掉：它变成 (problem 种类 细节 ...) 并出现在
-;;; problems 里。流层（flow/flow.rkt）把非空 problems 当错误。
+;;; problems 里。流层（loko-compatibility/flow.rkt）把非空 problems 当错误。
 ;;;
 ;;; 这里是**纯变换**：输入、输出都是 s-expression；内部 hash 只是本次
 ;;; 变换的局部索引（标签/别名），没有跨调用状态，也不改输入。

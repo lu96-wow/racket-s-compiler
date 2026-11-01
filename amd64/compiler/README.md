@@ -18,11 +18,14 @@ rich data
   -> encode
 ```
 
-Loko 兼容入口：
+Loko/ELF 是可选扩展：
 
 ```text
 loko-source -> loko-compat -> program-items + data-items + loko-ir -> 后半段
+             (loko-compatibility/flow.rkt 注册可选阶段)
 ```
+
+`flow/core.rkt` 不依赖 `loko-compatibility` 或 `amd64-elf`。
 
 ## 目录
 
@@ -48,8 +51,8 @@ s-expression 形式见 [`../SEXP.md`](../SEXP.md)。
 ## 依赖
 
 - `../amd64-asm/`：指令、寄存器、target 事实
-- `../amd64-help/`：`li` 展开、范围判断
-- `../loko-compatibility/`：可选的 Loko 前端
+- `../amd64-help/`：`li` / `la` / branch / jump 展开与范围判断
+- `../loko-compatibility/`：**可选**前端，不在 core flow 依赖里
 
 ## 测试
 

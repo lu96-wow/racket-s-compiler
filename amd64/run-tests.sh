@@ -16,6 +16,7 @@ for test in \
   amd64-asm/test.rkt \
   amd64-asm/test-oracle.rkt \
   amd64-asm/test-generated.rkt \
+  amd64-help/test.rkt \
   amd64-elf/test.rkt \
   compiler/expand-data/test.rkt \
   compiler/flatten/test.rkt \
@@ -26,6 +27,7 @@ for test in \
   compiler/test/end-to-end.rkt \
   compiler/test/flow-test.rkt \
   loko-compatibility/test.rkt \
+  loko-compatibility/test-flow.rkt \
   loko-compatibility/lower/test.rkt \
   loko-compatibility/image/test.rkt
 do

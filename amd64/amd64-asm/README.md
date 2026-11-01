@@ -25,6 +25,7 @@ amd64-asm/
 ## 文档
 
 - [`INSTRUCTIONS.md`](INSTRUCTIONS.md)：指令类别、前缀、字符串指令
+- [`DESIGN.md`](DESIGN.md)：x86 编码逻辑、约束归属、plan/encode 分层目标
 - [`NASM.md`](NASM.md)：NASM 数据来源、生成流水线和扩展方式
 - [`REGISTERS.md`](REGISTERS.md)：寄存器 class 与 REX/high-byte 事实
 - [`TARGET.md`](TARGET.md)：target 与填充策略

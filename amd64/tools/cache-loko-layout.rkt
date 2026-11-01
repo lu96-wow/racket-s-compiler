@@ -9,7 +9,7 @@
 ;;;   racket tools/cache-loko-layout.rkt <dump.sexp> <cache.sexp>
 
 (require racket/cmdline
-         (file "../compiler/flow/flow.rkt")
+         (file "../loko-compatibility/flow.rkt")
          (only-in (file "../loko-compatibility/ir.rkt") ir-list))
 
 (define (read-items path)

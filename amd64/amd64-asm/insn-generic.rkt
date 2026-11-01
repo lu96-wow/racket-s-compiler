@@ -17,6 +17,7 @@
 (require racket/list
          "sexp.rkt"
          "registers.rkt"
+         "ranges.rkt"
          "insn-core.rkt"
          "generated/gen/insn/nasm.rkt")
 
@@ -209,13 +210,13 @@
 (define (imm-fits? range value)
   (and (exact-integer? value)
        (case range
-         [(uint8) (<= 0 value 255)]
-         [(int8) (<= -128 value 127)]
-         [(any16) (<= (- (expt 2 15)) value (sub1 (expt 2 16)))]
-         [(any32) (<= (- (expt 2 31)) value (sub1 (expt 2 32)))]
-         [(int32) (<= (- (expt 2 31)) value (sub1 (expt 2 31)))]
-         [(uint32) (<= 0 value (sub1 (expt 2 32)))]
-         [(any64) (<= (- (expt 2 63)) value (sub1 (expt 2 64)))]
+         [(uint8) (fits-u8? value)]
+         [(int8) (fits-s8? value)]
+         [(any16) (fits-any16? value)]
+         [(any32) (fits-any32? value)]
+         [(int32) (fits-s32? value)]
+         [(uint32) (fits-u32? value)]
+         [(any64) (fits-any64? value)]
          [else #t])))
 
 (define (imm-bytes width value)

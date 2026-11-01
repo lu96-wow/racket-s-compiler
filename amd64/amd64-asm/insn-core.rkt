@@ -7,7 +7,8 @@
 ;;; interpreter use this module, so size and bytes cannot drift apart.
 
 (require "sexp.rkt"
-         "registers.rkt")
+         "registers.rkt"
+         "ranges.rkt")
 
 (provide (struct-out rm-encoding)
          reg-field-index
@@ -183,30 +184,30 @@
 (define (list->bytevector xs) (list->bytes xs))
 
 (define (check-s8 x who)
-  (unless (<= -128 x 127) (error who "value does not fit in signed 8 bits: ~e" x)))
+  (unless (fits-s8? x) (error who "value does not fit in signed 8 bits: ~e" x)))
 (define (check-s32 x who)
-  (unless (<= (- (expt 2 31)) x (sub1 (expt 2 31)))
+  (unless (fits-s32? x)
     (error who "value does not fit in signed 32 bits: ~e" x)))
 (define (check-u32 x who)
-  (unless (<= 0 x (sub1 (expt 2 32)))
+  (unless (fits-u32? x)
     (error who "value does not fit in unsigned 32 bits: ~e" x)))
 (define (check-s16 x who)
-  (unless (<= (- (expt 2 15)) x (sub1 (expt 2 15)))
+  (unless (fits-s16? x)
     (error who "value does not fit in signed 16 bits: ~e" x)))
 (define (check-u16 x who)
-  (unless (<= (- (expt 2 15)) x (sub1 (expt 2 16)))
+  (unless (fits-any16? x)
     (error who "value does not fit in 16 bits: ~e" x)))
 (define (check-imm8 x who)
-  (unless (<= -128 x 255)
+  (unless (fits-any8? x)
     (error who "value does not fit in an 8-bit immediate: ~e" x)))
 (define (check-imm16 x who)
-  (unless (<= (- (expt 2 15)) x (sub1 (expt 2 16)))
+  (unless (fits-any16? x)
     (error who "value does not fit in a 16-bit immediate: ~e" x)))
 (define (check-imm32 x who)
-  (unless (<= (- (expt 2 31)) x (sub1 (expt 2 32)))
+  (unless (fits-any32? x)
     (error who "value does not fit in a 32-bit immediate: ~e" x)))
 (define (check-imm32/signed x who)
-  (unless (<= (- (expt 2 31)) x (sub1 (expt 2 31)))
+  (unless (fits-s32? x)
     (error who "value does not fit in a sign-extended 32-bit immediate: ~e" x)))
 
 ;; ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@
 > 本文记录跨层规则和当前实现事实。每层细节见各自的 `DESIGN.md`。
 
 > 指令类别、前缀和字符串指令的模型见 [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。
+> 指令编码内部的分层见 [`amd64-asm/DESIGN.md`](amd64-asm/DESIGN.md)；
+> 伪指令/装载/分支策略见 [`amd64-help/DESIGN.md`](amd64-help/DESIGN.md)。
 
 ## 1. 共享事实层
 
@@ -12,9 +14,10 @@
 | --- | --- |
 | `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
 | `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
-| `amd64-asm/insn.rkt` | 手写特殊 form、前缀/字符串指令、`instruction-size`、`encode-instruction` |
+| `amd64-asm/insn.rkt` | facade：手写特殊 form、生成表、plan/size/encode 公共入口 |
 | `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> `instruction-plan` -> 纯字节生成 |
 | `amd64-asm/insn-core.rkt` | 共享 ModR/M/SIB/REX/立即数范围事实 |
+| `amd64-asm/ranges.rkt` | 共享整数/立即数/disp/rel 范围谓词；help 层转发 |
 | `amd64-asm/generated/` | 从 NASM `insns.dat` 生成的指令数据；详见 [`amd64-asm/NASM.md`](amd64-asm/NASM.md) |
 | `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |
 | `amd64-asm/target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md) |
@@ -22,6 +25,23 @@
 `amd64-asm/insn.rkt` 同时服务 layout 和 encode，避免两边各自维护尺寸。
 真实指令的通用 legacy/SSE form 来自 NASM 数据表；`insn.rkt` 只保留
 无法一比一映射为 NASM row 的公共 form 和选择策略。
+
+### 1.1 core 与可选层
+
+`compiler/flow/core.rkt` 只包含核心汇编流水线，**不 require**
+`loko-compatibility`、`amd64-elf` 或其它可选前端/镜像层。
+`compiler/flow/flow.rkt` 只是 core 的兼容入口。
+
+Loko 和 ELF 阶段在 `loko-compatibility/flow.rkt` 注册到同一个通用 stage
+引擎；它们的 group（`loko` / `loko-manual` / `loko-near` / `elf`）也只在
+那里存在。这样：
+
+```text
+compiler  -> amd64-asm + amd64-help
+loko      -> compiler + amd64-elf + loko-compatibility
+```
+
+依赖方向是单向的：核心后端不知道 Loko，Loko 可以选择依赖核心后端。
 
 ## 2. 流水线
 
@@ -52,7 +72,7 @@ rich data -> expand-data -> flatten -> program-items / data-items
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
 | `loko-image`（可选） | `loko-ir` | `program-items` `data-items` `layout-spec` |
 | `loko-elf`（可选） | `build` `bound-layout` `loko-ir` | `image` |
-| `loko-lower` | `loko-ir` | `loko-ir` |
+| `loko-lower`（可选） | `loko-ir` | `loko-ir` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -157,10 +177,18 @@ symbols: (symbol chain segment offset address)
 ## 9. 当前入口
 
 ```racket
+;; 核心汇编后端：不加载 Loko/ELF
 (require "amd64/compiler/flow/flow.rkt")
 
 (compile target-amd64
          (list (cons 'rich-data ...)
                (cons 'program-items ...)
                (cons 'layout-spec ...)))
+
+;; 可选 Loko/ELF 流：只有这里加载 loko-compatibility 和 amd64-elf
+(require "amd64/loko-compatibility/flow.rkt")
+
+(compile target-amd64
+         (list (cons 'loko-source ...))
+         'loko-manual)
 ```
