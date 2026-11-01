@@ -134,6 +134,10 @@ racket amd64/amd64-asm/test.rkt
 racket amd64/compiler/test/end-to-end.rkt
 ```
 
+`amd64-asm/test-oracle.rkt` 用 LLVM MC 作为独立编码 oracle：同一批 form
+分别由本后端和 `llvm-mc` 编码，逐字节比较。没有 `llvm-mc` 时自动跳过。
+新增指令时先加 oracle case，再加手算 golden test。
+
 ## Loko 验证：缓存 + 快速迭代
 
 完整 `analyze -> dce -> relax -> encode` 对 Loko 运行时约 15 分钟，其中

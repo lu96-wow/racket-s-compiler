@@ -193,6 +193,9 @@ cd amd64 && ./run-tests.sh
 racket amd64-asm/test.rkt
 ```
 
+`test-oracle.rkt` 用 `llvm-mc -show-encoding` 做独立编码 oracle；新增 form
+时先加 oracle case，再加 golden bytes。
+
 每条新 form 至少覆盖：
 
 - golden bytes；

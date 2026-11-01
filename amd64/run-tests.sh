@@ -14,6 +14,7 @@ raco make \
 
 for test in \
   amd64-asm/test.rkt \
+  amd64-asm/test-oracle.rkt \
   amd64-elf/test.rkt \
   compiler/expand-data/test.rkt \
   compiler/flatten/test.rkt \
