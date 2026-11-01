@@ -68,6 +68,9 @@ data-items                               ; label / bytes / fill / pad / value / 
 - `align` 在度量时换算成精确事实；产物写事实，不写请求。
   补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见上）。
 - 不透明代码的兜底 `4 字节 / 'code` 是设计，不是漏检。
+- 地址求解：段声明里 `(start …)` 是解、可以缺省；缺省时 `start = align-up 游标 align`，
+  游标等于上一个段的 `end`，起点是 spec 的 `(origin …)`。`(size …)` 会变成
+  `end = start + size`。求解后各层只看到整数地址。
 - 段范围：`start <= end` 合法（空段是常态：还没有内容的 section，或者还没占地址的洞）；
   只有 `end < start` 报 `segment-bad-range`。和 amd64 同一条规则。
 - 只有 anchors + 段 start，所以本层只能算临时距离；`needs-far` / `la-too-far` 是请求。

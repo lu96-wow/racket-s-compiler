@@ -21,14 +21,28 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 `spec`：
 
 ```scheme
-'((segments
-   (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16))
-   (segment (name data) (kind data) (start #x300000) (end #x301000) (align 8))
-   (segment (name bss) (kind hole) (start #x400000) (end #x401000) (align 16)))
+'((origin #x200000)                  ; 可选：段表游标从这里起步（缺省 0）
+  (segments
+   ;; 只给约束（起点由本层求解）
+   (segment (name text) (kind code) (align 4096) (size #x1000))
+   (segment (name data) (kind data) (align 4096) (size #x1000))
+   (segment (name bss)  (kind hole) (align 4096) (size #x2000))
+   ;; 给起点（手写 spec / freestanding）
+   (segment (name mmio) (kind hole) (start #x800000) (end #x801000) (align 4096)))
   (place text (text))      ; 精确匹配
   (place data (data))
   (place text *))          ; 可选：未命中的块/run 落到 text
 ```
+
+## 地址求解
+
+- `(start …)` 是**解**，可以缺省；`(size …)`（相对）或 `(end …)`（绝对）是容量约束，
+  至少给一个；`(align …)` 是对齐约束。
+- 缺 `start` 的段按声明顺序递增求解：`start = align-up 游标 align`，游标等于上一个段的
+  `end`，起点是 spec 的 `(origin …)`。给了 `start` 就用它（仍然校验对齐）。
+- 求解后段的 `start` / `end` 一定是整数，`anchors` / `bind-labels` / `encode` 都只看到解。
+- 这条规则的意义：**谁分配地址，谁就能看到约束**。页边界、section 对齐、权限分组
+  只要变成 `(align …)` 就自动被兑现，不再需要上游自己猜地址。
 
 ## 放置规则
 

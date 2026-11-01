@@ -65,8 +65,13 @@
 | `hole` | `label` / `align` / `reserve` | `(reserve n)` | **没有** |
 
 ```scheme
-(segment (name bss) (kind hole) (start #x2000) (end #x2100) (align 8))
+(segment (name bss) (kind hole) (align 4096) (size #x2000))   ; 起点由 layout 求解
 ```
+
+段的形状：`(segment (name s) (kind k) (align n) [(start a)] [(end e) | (size z)])`。
+`(start …)` 是**解**，可以不给；`(size …)` / `(end …)` 是容量约束（至少给一个）；
+`(align …)` 是对齐约束。缺 `start` 时 `layout` 从 spec 的 `(origin …)` 起按 `align`
+递增求解 —— **谁分配地址，谁就能看到约束**。
 
 `hole` 段只回答“这些地址存在”；内容不由本产物定义（加载器 / 程序 / 硬件决定），
 所以 `build` 里它的 `bytes` 是 `#""`，`size` 照旧。谁把它清成 0、什么时候清，

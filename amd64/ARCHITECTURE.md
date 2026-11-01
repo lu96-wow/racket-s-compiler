@@ -85,7 +85,7 @@ rich data -> expand-data -> flatten -> program-items / data-items
 | `expand-pseudo` | `program-items` | `program-items` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
-| `layout` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `layout` | `program` `data-items` `layout-spec` | `measured-layout`（含地址求解） |
 | `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |

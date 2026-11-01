@@ -46,8 +46,16 @@ problems
   compiler 的 `expand-pseudo` + `relax` 完成。
 - 每个 section 如果开头不是 label，就补一个内部 label：
   `loko-image-start-<section>`。
-- 每个 section 生成一个 segment：
-  `(segment (name ...) (kind code|data|hole) (start ...) (end ...) (align 1))`。
+- 每个 section 生成一个 segment，**只给约束，不给地址**：
+  `(segment (name ...) (kind code|data|hole) (size ...) (align ...))`。
+  起点由 `compiler/layout` 求解（`(start …)` 在 layout-spec 里是可选的）。
+- `(align ...)` 来自 `%elf` 计划：region 的 `(align …)` 与它所属 load 的
+  `(align …)` 取较大者。页边界就是这样进入地址分配的：默认 Loko Linux 计划
+  给 text/data/bss 三个 load 各声明 `(align 4096)`，于是三个 section 落在不同的
+  4K 页上（同一页 + 不同权限 = 内核后映射的页会覆盖前面的，实测直接 SIGSEGV）。
+- `(size ...)` 是段内 item 的尺寸上界（code 段用 near 分支量，relax 只会更小）。
+- 计划在 `loko-image` 阶段就解析（`choose-loko-linux-image-plan`），因为约束必须
+  早于地址分配；`loko-elf` 用同一个纯函数再解析一次，结果一致。
 - 该 section 的所有 label 生成一条 `place`。
 - 空 section 允许 `start == end`。
 - data/bss section 之间插入零尺寸 `(comment section-boundary ...)`，避免相邻
@@ -56,7 +64,7 @@ problems
 
 ### 边界
 
-- 不做 DCE；因此 code section 的尺寸是保守上界，后续段起点可能留 gap。
+- 不做 DCE；因此 code section 的尺寸是保守上界（只是容量校验用，不再用于算地址）。
 - 不做 short/near 精确收缩；放松只会让实际尺寸变小，不会导致 overflow。
 - 不生成 ELF；只生成 compiler 的 `layout-spec` 和扁平 items。
 - `loko-ir` 的 `image-plan` 不在这里消费；它直接交给 `amd64-elf`。

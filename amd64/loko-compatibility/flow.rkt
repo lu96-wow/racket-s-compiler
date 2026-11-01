@@ -63,8 +63,15 @@
    (core:stage 'loko-image '(loko-ir)
                '(program-items data-items layout-spec)
                (lambda (_target in)
+                 ;; 先把 %elf 计划定下来: 地址在这一步之后的 layout 里求解,
+                 ;; 所以"页/权限边界"这类约束必须现在就交给 layout-spec。
+                 ;; 和 loko-elf 用同一个纯函数, 两边结果一致。
+                 (define ir (hash-ref in 'loko-ir))
+                 (define plan (choose-loko-linux-image-plan
+                               (ir-list ir 'symbols)
+                               (ir-list ir 'image-plan)))
                  (define-values (spec program-items data-items problems)
-                   (build-layout-spec (hash-ref in 'loko-ir)))
+                   (build-layout-spec ir plan))
                  (when (pair? problems)
                    (error 'loko-image "~e" problems))
                  (hash 'program-items program-items

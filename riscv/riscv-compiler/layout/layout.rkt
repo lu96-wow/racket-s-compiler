@@ -69,11 +69,20 @@
 
 (struct segment (name kind start end align) #:transparent)
 
-;; 段声明的形状只有一种: (segment (name s) (kind code) (start x) (end y) (align n))
+;; 段声明: (segment (name s) (kind code) [(start x)] [(end y)|(size n)] (align k))
+;;   (start …)  解: 给了就是固定地址(手写 spec / freestanding)
+;;   (size …)   约束: 相对容量 -> end = start + size
+;;   (end …)    约束: 绝对容量
+;;   (align …)  约束: 段起点必须对齐到它; 缺 start 时 layout 用它递增求解
+;; start 可以缺省 —— 地址由本层求解, 所以"页边界"这类约束能以 (align …)
+;; 的形式流进来, 不必让上一层自己猜地址。end / size 至少给一个。
 ;; 产物多 (items …) (size …)，最终产物 (build) 把 items 换成 (bytes …)。
 (define (segment-field* s key)
   (define hit (assoc key (cdr s)))
   (and hit (cadr hit)))
+
+(define (align-up n align)
+  (* align (quotient (+ n (sub1 align)) align)))
 
 (define (parse-segments input)
   (append*
@@ -83,14 +92,31 @@
        (define kind  (and (segment-form? s) (segment-field* s 'kind)))
        (define start (and (segment-form? s) (segment-field* s 'start)))
        (define end   (and (segment-form? s) (segment-field* s 'end)))
+       (define size  (and (segment-form? s) (segment-field* s 'size)))
        (define align (and (segment-form? s) (segment-field* s 'align)))
        (unless (and (symbol? name)
                     (segment-kind? kind)
-                    (exact-nonnegative-integer? start)
-                    (exact-nonnegative-integer? end)
+                    (or (not start) (exact-nonnegative-integer? start))
+                    (or (not end) (exact-nonnegative-integer? end))
+                    (or (not size) (exact-nonnegative-integer? size))
+                    (or end size)
                     (exact-positive-integer? align))
          (error 'layout "bad segment: ~e" s))
-       (segment name kind start end align)))))
+       (list 'decl name kind start end size align)))))
+
+;; 地址求解: start 缺省时按声明顺序递增。
+;;   游标从 spec 的 (origin …) 起步(缺省 0), start = 对齐后的游标
+;;   给了 start 就用它; end 缺省时 = start + 容量
+;; 过了这一步, 段的 start/end 一定是整数, 下游不再需要关心地址从哪来。
+(define (resolve-segment-starts decls input)
+  (define origin (or (segment-field* (cons 'origin (clauses input 'origin)) 'origin) 0))
+  (define cursor origin)
+  (for/list ([d (in-list decls)])
+    (define-values (tag name kind start end size align) (apply values d))
+    (define start* (or start (align-up cursor align)))
+    (define end* (or end (+ start* size)))
+    (set! cursor end*)
+    (segment name kind start* end* align)))
 
 (define (parse-places input)
   (for/list ([cl (in-list (clauses input 'place))])
@@ -446,7 +472,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (layout-program target program data layout-input)
-  (define segs (parse-segments layout-input))
+  (define segs (resolve-segment-starts (parse-segments layout-input) layout-input))
   (define places (parse-places layout-input))
   (define problems '())
   (define requests '())

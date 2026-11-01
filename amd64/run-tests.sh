@@ -31,7 +31,8 @@ for test in \
   loko-compatibility/test.rkt \
   loko-compatibility/test-flow.rkt \
   loko-compatibility/lower/test.rkt \
-  loko-compatibility/image/test.rkt
+  loko-compatibility/image/test.rkt \
+  tools/smoke-loko-elf.rkt
 do
   printf '== %s\n' "$test"
   racket "$test"

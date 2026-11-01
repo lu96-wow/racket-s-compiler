@@ -412,6 +412,31 @@
     (define align (or (and p (plan-field p 'align)) 4096))
     (image-load id start end file-end align flags rs)))
 
+;; 内核按 4 KiB 页映射 PT_LOAD: 两个 load 落在同一页时, 后映射的那个会覆盖
+;; 前一个 —— 权限和内容都会错(实测: .text 页被 .bss 的匿名页盖掉, 入口第一条
+;; 指令就 SIGSEGV)。这种事必须在写字节前报出来, 而不是产出一个会崩的镜像。
+;; 空 load(memsz = 0)不占页, 不算冲突。
+(define (load-pages load)
+  (define start (image-load-start load))
+  (define end (image-load-end load))
+  (and (> end start)
+       (cons (quotient start 4096) (quotient (+ end 4095) 4096))))
+
+(define (check-load-pages! loads)
+  (define entries
+    (for/list ([l (in-list loads)] #:when (load-pages l))
+      (cons (load-pages l) l)))
+  (for* ([a (in-list entries)] [b (in-list entries)]
+         #:unless (eq? (cdr a) (cdr b)))
+    (define ra (car a))
+    (define rb (car b))
+    (when (and (< (car ra) (cdr rb)) (< (car rb) (cdr ra)))
+      (error 'write-elf
+             "loads ~a [~x,~x) and ~a [~x,~x) share a page; \
+pad the earlier segment so loads do not share 4K pages"
+             (image-load-id (cdr a)) (image-load-start (cdr a)) (image-load-end (cdr a))
+             (image-load-id (cdr b)) (image-load-start (cdr b)) (image-load-end (cdr b))))))
+
 (define (write-phdr! out off type flags offset vaddr paddr filesz memsz align)
   (set-u32! out off type)
   (set-u32! out (+ off 4) flags)
@@ -436,6 +461,7 @@
     (error 'write-elf "build has no segments"))
   (define regions (normalize-regions segments plan*))
   (define loads (normalize-loads regions plan*))
+  (check-load-pages! loads)
   (define image-base
     (apply min (for/list ([r (in-list regions)]) (image-region-start r))))
   (define image-end

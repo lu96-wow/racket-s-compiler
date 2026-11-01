@@ -31,14 +31,30 @@
        (%label bss-end))))))
 
 (check-equal? problems '())
+;; 段声明只有约束(size / align), 没有地址: 起点由 compiler/layout 求解
 (check-equal? spec
-              '((segments
-                 (segment (name text) (kind code) (start #x200000) (end #x200001) (align 1))
-                 (segment (name data) (kind data) (start #x200001) (end #x200001) (align 1))
-                 (segment (name bss) (kind hole) (start #x200001) (end #x200021) (align 1)))
+              '((origin #x200000)
+                (segments
+                 (segment (name text) (kind code) (size 1) (align 1))
+                 (segment (name data) (kind data) (size 0) (align 1))
+                 (segment (name bss) (kind hole) (size 32) (align 1)))
                 (place text (text))
                 (place data (bss))
                 (place bss (loko-image-start-bss) (bss-end))))
+
+;; 计划里的对齐约束会进到 (align …): 页边界就是这么流进地址分配的
+(define-values (plan-spec _pi _di _pr)
+  (build-layout-spec
+   (loko-ir-of
+    '(loko-source
+      (text (%origin #x200000) (%mode 64) (%section text) (%label text) (ret))
+      (data (%label bss) (%section bss) (reserve 32) (%label bss-end))))
+   (loko-linux-image-plan)))
+(check-equal? (assq 'origin plan-spec) '(origin #x200000))
+(check-equal? (cdr (assq 'segments plan-spec))
+              '((segment (name text) (kind code) (size 1) (align 4096))
+                (segment (name data) (kind data) (size 0) (align 4096))
+                (segment (name bss) (kind hole) (size 32) (align 4096))))
 (check-equal? program-items '((label text) (ret)))
 (check-equal? data-items
               '((label bss)

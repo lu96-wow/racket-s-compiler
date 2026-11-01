@@ -44,8 +44,14 @@
 hole 段（有位置、没有文件字节）：
 
 ```scheme
-(segment (name bss) (kind hole) (start #x300000) (end #x301000) (align 16))
+(section bss)                    ; 名字叫 bss，后端 kind 是 hole
+(segment (name bss) (kind hole) (align 4096) (size 8192))   ; 起点由 layout 求解
 ```
+
+段的形状：`(segment (name s) (kind k) (align n) [(start a)] [(end e) | (size z)])`。
+`(start …)` 是**解**，可以不给；`(size …)` / `(end …)` 是容量约束；`(align …)` 是
+对齐约束。`start` 缺省时由 `layout` 从 spec 的 `(origin …)` 起按 `align` 递增求解 ——
+地址由编译器算，所以"页边界"这类约束只要写成 `align` 就能被兑现。
 
 `kind` 只回答两件事：**这一段收哪些 item**、**对齐补出来的空间怎么落**。
 

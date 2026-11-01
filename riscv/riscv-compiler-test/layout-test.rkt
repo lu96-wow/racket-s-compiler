@@ -189,6 +189,31 @@
         (place c (main))))
  'segment-bad-range)
 
+;; 地址求解: 段不给 (start …) 时由 layout 按 (align …) 递增, 游标从 (origin …) 起步
+(define auto-laid
+  (lay (one-block '((jalr x0 ra 0)))
+       '((label d t) (value 8 1))
+       '((origin #x400000)
+         (segments (segment (name c) (kind code) (size 16) (align 4096))
+                   (segment (name d) (kind data) (size 8) (align 4096)))
+         (place c (main))
+         (place d (d t)))))
+
+(check-equal? (layout-problem-list auto-laid) '())
+(check-equal? (layout-anchor-list auto-laid)
+              '((anchor (main) c 0) (anchor (d t) d 0)))
+(check-equal? (for/list ([seg (in-list (cdr (assq 'segments auto-laid)))])
+                       (cadr (assq 'start (cdr seg))))
+              (list #x400000 #x401000))
+;; (end …) 和 (size …) 等价: size 变成 end = start + size
+(check-equal? (for/list ([seg (in-list (cdr (assq 'segments auto-laid)))])
+                       (cadr (assq 'end (cdr seg))))
+              (list #x400010 #x401008))
+;; 两者都不给: 容量无从校验, 直接报错
+(check-error "段声明缺容量" (lambda () (lay (one-block '((jalr x0 ra 0))) '()
+                                        '((segments (segment (name c) (kind code) (align 4)))
+                                          (place c (main))))))
+
 ;; 空段合法(start == end): 还没有内容的 section 是常态, 不该逼上层丢 section
 (define empty-data-laid
   (lay (one-block '((jalr x0 ra 0))) '()

@@ -150,14 +150,20 @@
 (check-equal? (cadr (assq 'entry (cdr image2))) #x200000)
 
 ;; plan-only reserved region: NOBITS load with zero filesz.
+;; text/data/bss 挤在同一页, 所以它们必须共用一个 load(writer 会拒绝共享页的
+;; 两个 load); stack 是另一页上的 reserved region。
 (define reserved-plan
   '((entry (text))
     (region (id text) (content materialized) (section .text)
-            (perm r-x) (load text))
+            (perm r-x) (load img))
+    (region (id data) (content materialized) (section .data)
+            (perm rw-) (load img))
+    (region (id bss) (content reserved) (section .bss)
+            (perm rw-) (load img))
     (region (id stack) (content reserved) (section .stack)
             (perm rw-) (load stack)
             (start #x10000001000) (size #x1ff000))
-    (load (id text) (align 4096))
+    (load (id img) (align 4096))
     (load (id stack) (align 4096))))
 (define reserved-image (write-elf build symbols #:plan reserved-plan))
 (define rbytes (cadr (assq 'bytes (cdr reserved-image))))
@@ -183,5 +189,13 @@
 (check-equal? (list-ref reserved-phdr 2) 0)          ; p_offset
 (check-equal? (list-ref reserved-phdr 5) 0)          ; p_filesz
 (check-equal? (list-ref reserved-phdr 6) #x1ff000)   ; p_memsz
+
+;; 两个 load 落在同一页: 页映射会互相覆盖, 必须报错而不是产出会崩的镜像
+(check-exn exn:fail?
+           (lambda ()
+             (write-elf build symbols
+                        #:plan '((entry (text))
+                                 (region (id text) (content materialized) (load a))
+                                 (region (id data) (content materialized) (load b))))))
 
 (displayln "amd64 elf tests: ok")

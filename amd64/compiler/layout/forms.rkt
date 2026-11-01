@@ -231,8 +231,10 @@
 (define (place-segment x) (cadr x))
 (define (place-chains x) (cddr x))
 
-(define (make-layout-spec segments places)
-  (cons (cons 'segments segments) places))
+(define (make-layout-spec segments places [origin #f])
+  (append (if origin (list (list 'origin origin)) '())
+          (list (cons 'segments segments))
+          places))
 
 (define (layout-spec? x)
   (and (list? x)

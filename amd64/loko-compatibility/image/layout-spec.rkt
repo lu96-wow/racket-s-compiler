@@ -35,6 +35,7 @@
          (only-in "../../compiler/layout/forms.rkt"
                   item-size align-pad make-segment-form make-place
                   make-layout-spec)
+         (only-in "plan.rkt" segment-align-for)
          "../../compiler/expand-pseudo/rewrite.rkt")
 
 (provide build-layout-spec)
@@ -100,7 +101,13 @@
              #:when (not (= (cadr mode) 64)))
     (cadr mode)))
 
-(define (build-layout-spec ir)
+;; 输入:
+;;   ir     loko-ir
+;;   plan   解析后的 %elf 计划(可为 '()); 用来取每个 section 的对齐约束
+;;
+;; 输出只有"约束", 没有地址: (segment (name …) (kind …) (size …) (align …))。
+;; 起点由 compiler/layout 按 (align …) 递增求解 —— 谁分配地址, 谁就该看到约束。
+(define (build-layout-spec ir [plan '()])
   (define origin (or (ir-value ir 'origin) 0))
   (define sections (ir-list ir 'sections))
   (define used-labels (make-hash))
@@ -114,7 +121,6 @@
   (define places '())
   (define program-items '())
   (define data-items '())
-  (define cursor origin)
 
   (for ([section (in-list sections)])
     (define name (section-name section))
@@ -136,12 +142,14 @@
              (map near-measurement-item
                   (rewrite-program items #:short-transfers? #f))
              items))
-       (define size (measure-items cursor measured-items))
-       (define end (+ cursor size))
+       ;; 尺寸从 0 量: 段的起点由 layout 对齐到 (align …), 而 plan 的 align
+       ;; (页) 远大于段内 item 的对齐, 所以"从 0 量"和"从真实起点量"等价。
+       (define size (measure-items 0 measured-items))
        (define segment-name (section-segment-name name))
+       (define align (segment-align-for plan segment-name))
 
        (set! segments
-             (cons (make-segment-form segment-name kind cursor end 1)
+             (cons (make-segment-form segment-name kind #:align align #:size size)
                    segments))
 
        (define labels (section-label-paths items))
@@ -158,11 +166,9 @@
             (set! data-items
                   (append data-items
                           (list (make-comment 'section-boundary segment-name)))))
-          (set! data-items (append data-items items))])
+          (set! data-items (append data-items items))])]))
 
-       (set! cursor end)]))
-
-  (values (make-layout-spec (reverse segments) (reverse places))
+  (values (make-layout-spec (reverse segments) (reverse places) origin)
           program-items
           data-items
           (reverse problems)))

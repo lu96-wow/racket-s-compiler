@@ -78,7 +78,9 @@ test.rkt     header / program header / section / symtab 检查
   `p_memsz = size`，由内核补零。
 - 符号 `st_size` 默认 0；plan `symbol` 可以显式覆盖。
 - `%call` 生成的 Loko ELF header 还没有被替换。
-- `kind hole` 的段最好排在所有非 hole 段之后；夹在中间会让后面的字节按文件偏移错位。
+- 两个 load 落在同一个 4K 页时直接报错：内核按页映射，后映射的 load 会覆盖前一个
+  （权限和内容都会错，实测表现为入口第一条指令就 SIGSEGV）。约束由 plan 的
+  `(load (id …) (align 4096))` 表达，由 `compiler/layout` 求解地址时兑现。
 - section 尺寸来自已编码的 `build`，不在本层重新布局。
 
 ## 5. 测试
