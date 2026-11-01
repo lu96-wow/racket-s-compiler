@@ -12,6 +12,7 @@
 
 (provide plan-jmp-short
          plan-jmp-near
+         plan-jmp-far
          plan-jcc-short
          plan-jcc-near
          plan-call-near
@@ -35,6 +36,22 @@
      (check-s32 off 'plan-jmp-near)
      (literal-plan (bytes* '(#xe9) (u32 off)))]
     [_ (error 'plan-jmp-near "jmp-near takes one offset: ~e" operands)]))
+
+;; 远跳: (far 选择子 偏移) -> EA + 偏移(32) + 选择子(16)。
+;; 偏移是**绝对**地址表达式（不是相对位移），所以这里不做 relax，只是等
+;; encode 把符号解析成整数。尺寸固定 7 字节：多引导头的 32 位引导代码用它
+;; 切到长模式选择子，之后才是 64 位代码。
+(define (plan-jmp-far operands)
+  (match operands
+    [(list sel off)
+     (unless (and (exact-integer? sel) (<= 0 sel #xffff))
+       (error 'plan-jmp-far "far pointer selector must be 0..65535: ~e" sel))
+     (define value (if (immediate-form off) (immediate-value off) off))
+     (unless (exact-integer? value)
+       (error 'plan-jmp-far "far pointer offset must be resolved to an integer: ~e" off))
+     (check-imm32 value 'plan-jmp-far)
+     (literal-plan (bytes* '(#xea) (u32 value) (u16 sel)))]
+    [_ (error 'plan-jmp-far "jmp-far takes a selector and an offset: ~e" operands)]))
 
 (define (plan-jcc-short operands)
   (match operands

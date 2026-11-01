@@ -595,11 +595,18 @@
   (list (make-bytes-item (bytes->list bv))))
 
 (define (translate-u128 ctx expr)
-  (if (exact-integer? expr)
-      (let* ([low (bitwise-and expr (sub1 (expt 2 64)))]
-             [high (arithmetic-shift expr -64)])
-        (list (make-value 8 low) (make-value 8 high)))
-      (record-problem-as-comment! ctx (problem 'symbolic-u128 expr))))
+  (cond
+    [(exact-integer? expr)
+     (let* ([low (bitwise-and expr (sub1 (expt 2 64)))]
+            [high (arithmetic-shift expr -64)])
+       (list (make-value 8 low) (make-value 8 high)))]
+    ;; 符号值的 16 字节：拆成两个 8 字节 value（低位在前 = 小端），
+    ;; 交给 layout/bind/encode 求值。address-expr 已经支持
+    ;; bitwise-and/bitwise-ior/ash/bitwise-bit-field，所以不用新机制。
+    ;; 典型用例：pc 的 IDT 门描述符（handler 地址 + 选择子 + 类型位）。
+    [else
+     (list (make-value 8 (list 'bitwise-and expr #xFFFFFFFFFFFFFFFF))
+           (make-value 8 (list 'ash expr -64)))]))
 
 (define (translate-integer-value ctx width value)
   (cond
@@ -700,8 +707,15 @@
          [else
           (list (list 'prefix (car p) (car inner-out)))]))]
 
+    ;; 远跳 (jmpf (far 选择子 目标)) -> (jmp-far 选择子 目标)。目标是**绝对**
+    ;; 地址表达式, encode 时解析; 尺寸固定 7 字节, 不参与 relax。
     [(eq? h 'jmpf)
-     (record-problem-as-comment! ctx (problem 'far-jump-not-supported item))]
+     (match (cdr item)
+       [(list (list 'far sel target))
+        (if (exact-integer? sel)
+            (list (list 'jmp-far sel (translate-operand ctx target 4)))
+            (record-problem-as-comment! ctx (problem 'bad-far-jump item)))]
+       [_ (record-problem-as-comment! ctx (problem 'bad-far-jump item))])]
 
     [(eq? h 'setcc)
      (match (cdr item)

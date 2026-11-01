@@ -33,6 +33,7 @@
    'pop        (special-def 1 plan-pop)
    'jmp-short  (special-def 1 plan-jmp-short)
    'jmp-near   (special-def 1 plan-jmp-near)
+   'jmp-far    (special-def 2 plan-jmp-far)
    'jcc-short  (special-def 2 plan-jcc-short)
    'jcc-near   (special-def 2 plan-jcc-near)
    'call-near  (special-def 1 plan-call-near)
