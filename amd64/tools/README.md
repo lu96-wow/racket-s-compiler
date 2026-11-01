@@ -167,7 +167,52 @@ racket tools/cache-loko-layout.rkt /tmp/prog.sexp /tmp/prog.cache loko-near
 生成文件"重建它；**不要**手工 `rm -rf` 它之后跑 `make -B`（那会把工作树里的库
 文件换成悬空符号链接，见下一节）。
 
-## 5. 注意
+## 5. 在 QEMU 里跑产物（整机，不是用户态）
+
+```sh
+./tools/qemu-run.sh /tmp/prog.elf [程序参数…]
+```
+
+脚本把 ELF 当作 `/prog` 塞进一个最小 initramfs（busybox + 它的动态库），用宿主机
+`/boot/vmlinuz-$(uname -r)` 当 `-kernel` 启动，`/init` 跑程序并打印退出码，脚本
+把该退出码当自己的退出码。跑一次约 2 秒。
+
+这条路验证的是**真实内核装载**：`PT_LOAD` 的地址/权限、段是否重叠、入口是否可执行、
+内核 ABI。用户态直接执行（内核 execve 同一份 ELF）查不出“内核把某段放到别处”这类
+问题；QEMU 里 boot 一遍就能查出。
+
+```sh
+./tools/qemu-run.sh /tmp/prog2.elf
+# Tests passed
+# exit 0
+
+QEMU_ACCEL=tcg ./tools/qemu-run.sh /tmp/prog2.elf
+# Fatal: Loko can't run because the system does not support #AC.
+# exit 70
+```
+
+### 两个坑（都不是本后端的问题，但必须知道）
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| `Fatal: Loko can't run because the system does not support #AC.`（exit 70） | Loko 启动时验证 #AC 真能触发 SIGBUS（`arch/amd64/linux-init.sls` 的 `linux-init-check-alignment`，靠一次未对齐读）。QEMU 的 **TCG 不实现 AC 标志**，未对齐访问不陷入，于是走到 valgrind 探测分支直接 `exit 70` | 用 `-accel kvm`（默认）；`-cpu host` 也只支持 KVM/HVF，TCG 用 `-cpu max` |
+| `mmap` `errno: 12` ENOMEM，`&irritants: (#x10020000000 1 GiB 3 50 -1 0)` | Loko 启动就 `mmap` 1 GiB 堆（`MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS`），内核按 overcommit 记账；guest 内存 1 GB 时装不下 | `QEMU_MEM=2048`（默认）或更大 |
+
+### 已验证
+
+| 镜像 | 大小 | 用户态执行 | QEMU/KVM |
+| --- | --- | --- | --- |
+| `tests/test-bugs.sps`（本后端） | 3,763,416 B | `Tests passed` | `Tests passed` |
+| `tests/test-bugs.sps`（Loko 原生 `-ftarget=linux`） | 1,714,147 B | `Tests passed` | `Tests passed` |
+| `tests/test-bounded-control.sps`（本后端） | 3,785,592 B | 13 项全 OK，exit 0 | 同样输出，exit 0 |
+
+`run-tests.sh` 里也挂了这条冒烟，但只在显式指定镜像时才跑：
+
+```sh
+QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
+```
+
+## 6. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
 - dump/portableize 是 Loko 前端的外部工具，不属于 `compiler` 层。

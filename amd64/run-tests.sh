@@ -43,6 +43,15 @@ do
   fi
 done
 
+# 可选：QEMU 整机冒烟（真内核 + 真 boot，不是用户态直接运行）。
+# 需要 /dev/kvm；镜像用 QEMU_SMOKE_ELF=/path/to.elf 指定，不指定就不跑。
+if [ -n "${QEMU_SMOKE_ELF:-}" ]; then
+  printf '== tools/qemu-run.sh %s\n' "$QEMU_SMOKE_ELF"
+  if ! ./tools/qemu-run.sh "$QEMU_SMOKE_ELF"; then
+    failed="$failed qemu-run"
+  fi
+fi
+
 if [ -n "${failed:-}" ]; then
   printf '\nFAILED:%s\n' "$failed" >&2
   exit 1
