@@ -21,6 +21,7 @@
 ;;; 环境变量 AMD64_FLOW_TIMING=1 时每层打印耗时（和 run-flow 一致）。
 
 (require racket/cmdline
+         racket/serialize
          (file "../loko-compatibility/flow.rkt")
          (only-in (file "../compiler/analyze/analyze.rkt")
                   program? program->sexp sexp->program)
@@ -34,7 +35,7 @@
         (if (eof-object? x) (reverse items) (loop (cons x items)))))))
 
 (define (cache-path dir stage)
-  (build-path dir (string-append (symbol->string stage) ".sexp")))
+  (build-path dir (string-append (symbol->string stage) ".rktd")))
 
 ;; 输出是 struct 且没有 s-expression 形式转换的层：不缓存。
 (define not-cacheable '(layout))
@@ -57,15 +58,17 @@
   (define tmp (string->path (format "~a.tmp" path)))
   (call-with-output-file tmp #:exists 'replace
     (lambda (out)
-      (write (for/list ([(k v) (in-hash produced)])
-               (list k (car (encode-value v)) (cadr (encode-value v))))
+      ;; 注: 这个 Racket 的 serialize 返回的是"可写的 serialized 值"而不是
+      ;; bytes, 所以用 write/read 包一层; 它比直接打印原始 s-expression 快得多。
+      (write (serialize (for/list ([(k v) (in-hash produced)])
+                          (list k (car (encode-value v)) (cadr (encode-value v)))))
              out)))
   (rename-file-or-directory tmp path #t))
 
 (define (load-into! ctx path)
   (call-with-input-file path
     (lambda (in)
-      (for ([p (in-list (read in))])
+      (for ([p (in-list (deserialize (read in)))])
         (hash-set! ctx (car p) (decode-value (cdr p)))))))
 
 (command-line
