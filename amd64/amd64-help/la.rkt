@@ -6,6 +6,7 @@
 ;;; displacement is reachable is checked by layout, not here.
 
 (require "../amd64-asm/sexp.rkt"
+         "../amd64-asm/target.rkt"
          "../amd64-asm/insn.rkt"
          "li.rkt")
 
@@ -34,6 +35,6 @@
 (define (la-abs dst value)
   (li->form dst value))
 
-(define (la-size dst value)
+(define (la-size dst value #:target [target target-amd64])
   (define form (la-abs dst value))
-  (instruction-size (car form) (cdr form)))
+  (instruction-size target (car form) (cdr form)))

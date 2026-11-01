@@ -5,10 +5,11 @@
 
 (require rackunit
          "insn.rkt"
-         "sexp.rkt")
+         "sexp.rkt"
+         "target.rkt")
 
 (define (enc name . operands)
-  (encode-instruction name operands))
+  (encode-instruction target-amd64 name operands))
 
 (check-equal? (enc 'mov 'rax 'rbx) (bytes #x48 #x89 #xd8))
 (check-equal? (enc 'mov 'rax 'rcx) (bytes #x48 #x89 #xc8))
@@ -93,14 +94,14 @@
 (displayln "amd64 encode tests: ok")
 
 ;; size must agree with encoding
-(check-equal? (instruction-size 'mov '(rax rbx)) 3)
-(check-equal? (instruction-size 'add '(rax 8)) 4)
-(check-equal? (instruction-size 'add '(rax 1000)) 7)
-(check-equal? (instruction-size 'jmp-short '((done))) 2)
-(check-equal? (instruction-size 'jmp-near '((done))) 5)
-(check-equal? (instruction-size 'jcc-near '(e (done))) 6)
-(check-equal? (instruction-size 'call-near '((done))) 5)
-(check-equal? (instruction-size 'mov '(rax (b64 (base rbp) (disp -8)))) 4)
+(check-equal? (instruction-size target-amd64 'mov '(rax rbx)) 3)
+(check-equal? (instruction-size target-amd64 'add '(rax 8)) 4)
+(check-equal? (instruction-size target-amd64 'add '(rax 1000)) 7)
+(check-equal? (instruction-size target-amd64 'jmp-short '((done))) 2)
+(check-equal? (instruction-size target-amd64 'jmp-near '((done))) 5)
+(check-equal? (instruction-size target-amd64 'jcc-near '(e (done))) 6)
+(check-equal? (instruction-size target-amd64 'call-near '((done))) 5)
+(check-equal? (instruction-size target-amd64 'mov '(rax (b64 (base rbp) (disp -8)))) 4)
 
 ;; unary / test / shift / multiply / divide / extend / setcc
 (check-equal? (enc 'test 'rax 'rbx) (bytes #x48 #x85 #xd8))
@@ -194,7 +195,7 @@
               (bytes #xf0 #x48 #x0f #xc1 #x18))
 (check-equal? (enc 'prefix 'rep '(movs (b64 (base rdi)) (b64 (base rsi))))
               (bytes #xf3 #x48 #xa5))
-(check-equal? (instruction-size 'prefix
+(check-equal? (instruction-size target-amd64 'prefix
                                 (list 'lock '(xadd (b64 (base rax)) rbx)))
               5)
 
@@ -251,12 +252,12 @@
 
 ;; Unified resolved-plan facade: special and prefix forms use the same
 ;; plan-size/encode-plan boundary as generated forms.
-(define mov-plan (instruction-plan 'mov '(rax rbx)))
+(define mov-plan (instruction-plan target-amd64 'mov '(rax rbx)))
 (check-equal? (plan-size mov-plan) 3)
 (check-equal? (encode-plan mov-plan) (list #x48 #x89 #xd8))
 
 (define prefix-plan
-  (instruction-plan 'prefix '(lock (xadd (b64 (base rax)) rbx))))
+  (instruction-plan target-amd64 'prefix '(lock (xadd (b64 (base rax)) rbx))))
 (check-equal? (plan-size prefix-plan) 5)
 (check-equal? (encode-plan prefix-plan)
               (list #xf0 #x48 #x0f #xc1 #x18))

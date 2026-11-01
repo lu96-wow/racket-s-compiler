@@ -6,10 +6,11 @@
 
 (require rackunit
          "insn.rkt"
-         "insn-generic.rkt")
+         "insn-generic.rkt"
+         "target.rkt")
 
 (define (enc name . operands)
-  (encode-instruction name operands))
+  (encode-instruction target-amd64 name operands))
 
 ;; The table must actually be generated from a broad source snapshot, not a
 ;; hand-maintained mini table.
@@ -106,7 +107,7 @@
               (generic-plan-size adc-plan))
 
 ;; The facade exposes the same plan/size/encode boundary for every instruction.
-(define resolved-adc (instruction-plan 'adc '(rax 200)))
+(define resolved-adc (instruction-plan target-amd64 'adc '(rax 200)))
 (check-equal? (plan-size resolved-adc) 6)
 (check-equal? (encode-plan resolved-adc) (list #x48 #x15 #xc8 #x00 #x00 #x00))
 
@@ -116,11 +117,11 @@
                        (lzcnt ax cx)
                        (crc32 rax rbx)
                        (movdqu xmm1 (b128 (base rsp)))) )])
-  (check-equal? (instruction-size (car case) (cdr case))
+  (check-equal? (instruction-size target-amd64 (car case) (cdr case))
                 (bytes-length (apply enc (car case) (cdr case))))
   ;; These names are generic-only, so layout uses generic-instruction-size
   ;; (plan-size), never encode-plan.
-  (check-equal? (instruction-size (car case) (cdr case))
+  (check-equal? (instruction-size target-amd64 (car case) (cdr case))
                 (generic-instruction-size (car case) (cdr case))))
 
 (displayln "amd64 generated NASM table tests: ok")

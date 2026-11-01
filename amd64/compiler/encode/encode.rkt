@@ -60,7 +60,7 @@
      (list 'imm32 (resolve-address symbols op here))]
     [else op]))
 
-(define (encode-code name operands here symbols)
+(define (encode-code target name operands here symbols)
   (cond
     [(eq? name 'prefix)
      (unless (and (= 2 (length operands)) (form? (cadr operands)))
@@ -69,27 +69,27 @@
      (define inner (cadr operands))
      ;; The prefix byte shifts the inner instruction by one byte, so
      ;; RIP-relative operands inside it use here+1 and the inner size.
-     (define inner-size (instruction-size (car inner) (cdr inner)))
+     (define inner-size (instruction-size target (car inner) (cdr inner)))
      (define prepared (choose-symbolic-immediate-forms (car inner) (cdr inner)))
      (define inner* (cons (car inner)
                           (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbols))
                                prepared)))
-     (encode-instruction 'prefix (list pname inner*))]
+     (encode-instruction target 'prefix (list pname inner*))]
 
     [(memq name control-transfer-forms)
-     (let* ([target (last operands)]
-            [size (instruction-size name operands)]
-            [address (resolve-symbol symbols target)]
+     (let* ([target-operand (last operands)]
+            [size (instruction-size target name operands)]
+            [address (resolve-symbol symbols target-operand)]
             [offset (- address (+ here size))]
             [ops (append (drop-right operands 1) (list offset))])
-       (encode-instruction name ops))]
+       (encode-instruction target name ops))]
 
     [else
      (let* ([prepared (choose-symbolic-immediate-forms name operands)]
-            [size (instruction-size name operands)]
+            [size (instruction-size target name operands)]
             [ops (map (lambda (op) (resolve-operand op here size symbols))
                       prepared)])
-       (encode-instruction name ops))]))
+       (encode-instruction target name ops))]))
 
 ;; (offset k ...) is an assertion: by the time we reach this item the position
 ;; must be exactly k.  Both segment paths share it, so their errors cannot drift.
@@ -153,8 +153,8 @@
         [(value-form? it)
          (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
         [else
-         (define expect (instruction-size (car it) (cdr it)))
-         (define bs (encode-code (car it) (cdr it) here symbols))
+         (define expect (instruction-size target (car it) (cdr it)))
+         (define bs (encode-code target (car it) (cdr it) here symbols))
          (unless (= expect (bytes-length bs))
            (error 'encode
                   "item size mismatch at ~a/~a: layout ~a, encode ~a: ~e"

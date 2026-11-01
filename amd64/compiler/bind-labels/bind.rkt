@@ -11,7 +11,9 @@
 
 (require "../../amd64-asm/sexp.rkt"
          "../../amd64-help/ranges.rkt"
-         (only-in "../item.rkt" value-form? value-width value-payload))
+         (only-in "../item.rkt" value-form? value-width value-payload)
+         (only-in "../layout/forms.rkt"
+                  anchor? anchor-chain anchor-segment anchor-position))
 
 (provide bind-labels)
 
@@ -62,12 +64,14 @@
       (values (field-value 'name s) s)))
   (define symbols
     (for/list ([a (in-list anchors)])
-      (match a
-        [(list 'anchor chain seg offset)
-         (define s (hash-ref segment-info seg #f))
-         (unless s (error 'bind-labels "unknown segment in anchor: ~e" a))
-         (list 'symbol chain seg offset (+ (field-value 'start s) offset))]
-        [_ (error 'bind-labels "bad anchor: ~e" a)])))
+      (unless (anchor? a)
+        (error 'bind-labels "bad anchor: ~e" a))
+      (define chain (anchor-chain a))
+      (define seg (anchor-segment a))
+      (define offset (anchor-position a))
+      (define s (hash-ref segment-info seg #f))
+      (unless s (error 'bind-labels "unknown segment in anchor: ~e" a))
+      (list 'symbol chain seg offset (+ (field-value 'start s) offset))))
   (define table (symbols->addresses symbols))
   (define extra (check-value-widths segments table))
   (list (list 'phase 'bound)

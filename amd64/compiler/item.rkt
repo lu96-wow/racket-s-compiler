@@ -10,12 +10,62 @@
 (require "../amd64-asm/sexp.rkt")
 
 (provide form? name? path? normalize-path
+         make-label make-comment
+         make-align make-pad make-bytes-item make-fill make-value make-reserve
          label-form? label-chain
          comment-form?
          align-form? pad-form? bytes-form? fill-form? value-form?
          reserve-form? reserve-size
          value-width value-payload
          item-kind)
+
+;; ---------------------------------------------------------------------------
+;; Constructors (single source of canonical item shapes)
+;; ---------------------------------------------------------------------------
+
+(define (make-label chain)
+  (define path (normalize-path chain))
+  (unless path
+    (error 'make-label "label needs a non-empty name chain: ~e" chain))
+  (cons 'label path))
+
+(define (make-comment . data)
+  (cons 'comment data))
+
+(define (make-align n)
+  (unless (exact-positive-integer? n)
+    (error 'make-align "alignment must be a positive integer: ~e" n))
+  (list 'align n))
+
+(define (make-pad n)
+  (unless (exact-nonnegative-integer? n)
+    (error 'make-pad "pad size must be a non-negative integer: ~e" n))
+  (list 'pad n))
+
+(define (make-bytes-item bs)
+  (unless (and (list? bs) (andmap byte? bs))
+    (error 'make-bytes-item "bytes must be a list of 0..255: ~e" bs))
+  (cons 'bytes bs))
+
+(define (make-fill n b)
+  (unless (exact-nonnegative-integer? n)
+    (error 'make-fill "fill count must be a non-negative integer: ~e" n))
+  (unless (byte? b)
+    (error 'make-fill "fill byte must be 0..255: ~e" b))
+  (list 'fill n b))
+
+(define (make-value width payload)
+  (unless (memq width '(1 2 4 8))
+    (error 'make-value "value width must be 1/2/4/8: ~e" width))
+  (unless (address-expr? payload)
+    (error 'make-value "value must be an integer or address expression: ~e"
+           payload))
+  (list 'value width payload))
+
+(define (make-reserve n)
+  (unless (exact-nonnegative-integer? n)
+    (error 'make-reserve "reserve size must be a non-negative integer: ~e" n))
+  (list 'reserve n))
 
 (define (label-form? x)
   (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
@@ -55,7 +105,7 @@
 
 (define (value-form? x)
   (and (form? x) (eq? (car x) 'value) (= 3 (length x))
-       (memq (value-width x) '(1 2 4 8))))
+       (memq (value-width x) '(1 2 4 8)) #t))
 
 ;; item 的类别: 决定它能落进哪种段 (合法性表在 layout/forms.rkt)。
 ;;   marker       = label / comment, 不占字节, 三种段都行

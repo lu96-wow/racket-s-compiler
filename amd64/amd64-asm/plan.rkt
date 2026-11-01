@@ -9,7 +9,9 @@
 ;;;   resolved-plan -> encode-plan (bytes only)
 
 (require "sexp.rkt"
+         "target.rkt"
          "operand.rkt"
+         "encoding-plan.rkt"
          "special.rkt"
          "insn-generic.rkt")
 
@@ -37,32 +39,36 @@
 (define (encode-plan plan)
   ((resolved-plan-encode plan)))
 
-(define (special-plan name operands)
-  (define bytes (special-encode name operands))
-  (resolved-plan name (length bytes) (list 'special bytes)
-                 (lambda () bytes)))
+(define (special-resolved-plan name operands)
+  (define plan (special-plan name operands))
+  (resolved-plan name (encoding-plan-size plan) (list 'special plan)
+                 (lambda () (encoding-plan-bytes plan))))
 
 (define (generic-plan name operands)
   (define plan (generic-plan-instruction name operands))
   (resolved-plan name (generic-plan-size plan) (list 'generic plan)
                  (lambda () (generic-encode-plan plan))))
 
-(define (prefix-plan pname inner)
+(define (prefix-plan target pname inner)
   (unless (form? inner)
     (error 'instruction-plan "prefix body must be an instruction form: ~e" inner))
-  (define inner-plan (instruction-plan (car inner) (cdr inner)))
+  (define inner-plan (instruction-plan target (car inner) (cdr inner)))
   (define bytes (cons (prefix-byte pname) (encode-plan inner-plan)))
   (resolved-plan 'prefix (length bytes) (list 'prefix pname inner-plan)
                  (lambda () bytes)))
 
-(define (instruction-plan name operands)
+(define (instruction-plan target name operands)
+  (unless (target-64? target)
+    (error 'instruction-plan
+           "only 64-bit amd64 mode is supported (target mode: ~e)"
+           (and (target? target) (target-mode target))))
   (cond
     [(eq? name 'prefix)
      (match operands
-       [(list pname inner) (prefix-plan pname inner)]
+       [(list pname inner) (prefix-plan target pname inner)]
        [_ (error 'instruction-plan "prefix takes name and instruction: ~e"
                  operands)])]
-    [(special-known? name) (special-plan name operands)]
+    [(special-known? name) (special-resolved-plan name operands)]
     [(generic-instruction? name) (generic-plan name operands)]
     [else
      (error 'instruction-plan "unknown amd64 instruction: ~e" name)]))
@@ -78,8 +84,8 @@
     [(special-arity name)]
     [else (generic-instruction-arity name)]))
 
-(define (encode-instruction name operands)
-  (list->bytes (encode-plan (instruction-plan name operands))))
+(define (encode-instruction target name operands)
+  (list->bytes (encode-plan (instruction-plan target name operands))))
 
 ;; ---------------------------------------------------------------------------
 ;; layout-facing size: prepare symbolic operands and use the same plan
@@ -108,14 +114,14 @@
      (list 0)]
     [else operands]))
 
-(define (instruction-size name operands)
+(define (instruction-size target name operands)
   (cond
     [(eq? name 'prefix)
      (match operands
        [(list _pname inner)
         (unless (form? inner)
           (error 'instruction-size "prefix body must be an instruction form: ~e" inner))
-        (+ 1 (instruction-size (car inner) (cdr inner)))]
+        (+ 1 (instruction-size target (car inner) (cdr inner)))]
        [_ (error 'instruction-size "prefix takes name and instruction: ~e" operands)])]
     [else
      (define branch? (memq name '(jmp-short jmp-near
@@ -125,4 +131,4 @@
      (define ops (if branch?
                      (branch-operands-for-sizing name prepared)
                      (map operand-for-sizing prepared)))
-     (plan-size (instruction-plan name ops))]))
+     (plan-size (instruction-plan target name ops))]))

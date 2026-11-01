@@ -15,7 +15,7 @@
 | 仓库根 | `run-tests.sh` + `tools/` | Loko dump/cache 依赖外部 Loko 仓库，已在 `tools/` 提供 patch 和步骤 |
 | `compiler/flow/` | core stage 引擎 + 兼容入口 | Loko/ELF 已移到 `loko-compatibility/flow.rkt`；核心 flow 不再 require 可选层 |
 | `amd64-help/` | `li` / `ranges` / `cc` / `branch` / `main` | 还缺 `la` / `jump` / `scratch` 和 far/trampoline 策略 |
-| `amd64-asm/special/*.rkt` | 手写 form 仍产出 bytes | 下一步改成返回 plan 片段；物理拆分已完成 |
+| `amd64-asm/special/*.rkt` | 全部手写 special 已产出 `encoding-plan` | 下一步是 target/mode 参数化和 far/trampoline |
 | `amd64-asm/sexp.rkt` | 兼容 facade | 新代码应直接用 `shape.rkt` / `memory.rkt`；target mode 已加入 |
 
 ## 2. Loko 编译链缺口

@@ -3,7 +3,8 @@
 ;;;
 ;;; Small helpers shared by handwritten special form families.
 
-(require "../insn-core.rkt")
+(require "../insn-core.rkt"
+         "../encoding-plan.rkt")
 
 (provide cc-index
          make-fixed-encoder
@@ -25,7 +26,7 @@
   (lambda (operands)
     (unless (null? operands)
       (error name "~a takes no operands: ~e" name operands))
-    bytes))
+    (literal-plan bytes)))
 
 (define (prefix-byte pname)
   (case pname

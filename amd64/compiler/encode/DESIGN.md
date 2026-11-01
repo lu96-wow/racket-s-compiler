@@ -28,7 +28,7 @@
 - 每条 `(offset k item)` 是断言：实际写出的游标必须正好到 k。
 - 段末尾再断言一次：实际字节数必须等于 layout 的 `size`。
 - 符号内存 displacement、RIP-relative displacement、分支相对偏移都在本层解析。
-- 指令字节由 `insn.rkt` 的同一套 `instruction-size` / `encode-instruction` 提供，
+- 指令字节由 `insn.rkt` 的同一套 `instruction-size target` / `encode-instruction target` 提供，
   不在 encode 层重新维护指令尺寸。
 - `prefix` form 的内部操作数递归解析；内部 RIP-relative 以 `here + 1` 为基准。
 - 两种段两条路径：`code` / `data` 逐条落字节；`kind hole` 只推进位置。

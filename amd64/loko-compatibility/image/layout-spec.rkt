@@ -27,6 +27,7 @@
 ;;; 上界 gap，但不会溢出。等以后有更完整的 layout 预量层时再收紧。
 
 (require "../../amd64-asm/sexp.rkt"
+         "../../amd64-asm/target.rkt"
          "../ir.rkt"
          (only-in "../../compiler/item.rkt"
                   label-form? label-chain comment-form? align-form?)
@@ -90,7 +91,7 @@
       [(or (label-form? item) (comment-form? item))
        cursor]
       [else
-       (+ cursor (item-size item))])))
+       (+ cursor (item-size target-amd64 item))])))
 
 (define (unsupported-modes modes)
   (for/list ([mode (in-list modes)]

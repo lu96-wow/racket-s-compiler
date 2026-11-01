@@ -5,6 +5,7 @@
 > 指令类别、前缀和字符串指令的模型见 [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。
 > 指令编码内部的分层见 [`amd64-asm/DESIGN.md`](amd64-asm/DESIGN.md)；
 > 伪指令/装载/分支策略见 [`amd64-help/DESIGN.md`](amd64-help/DESIGN.md)。
+> s-expression 分层、owner 和阶段契约见 [`SEXP-DESIGN.md`](SEXP-DESIGN.md)。
 
 ## 1. 共享事实层
 
@@ -18,6 +19,7 @@
 | `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
 | `amd64-asm/insn.rkt` | 稳定 facade：`instruction-plan` / `plan-size` / `encode-plan` / `encode-instruction` |
 | `amd64-asm/plan.rkt` | 统一 `resolved-plan`；special 与 generated plan 的 size/encode 入口 |
+| `amd64-asm/encoding-plan.rkt` | 手写 special 的底层 plan：literal / rm-plan / size / bytes |
 | `amd64-asm/operand.rkt` | 操作数解析、rm helper、立即数 wrapper、symbolic immediate 策略 |
 | `amd64-asm/special.rkt` | 手写特殊 form facade；实现拆在 `special/{mov,integer,control,string,sse,system,table}.rkt` |
 | `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> generic plan -> 纯字节生成 |

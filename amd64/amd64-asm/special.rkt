@@ -9,5 +9,5 @@
 
 (provide special-known?
          special-arity
-         special-encode
+         special-plan
          prefix-byte)

@@ -84,6 +84,7 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 跨项目分层、依赖规则、错误模型 |
 | [`SEXP.md`](SEXP.md) | 程序/数据/内存/控制转移的 s-expression 形式 |
+| [`SEXP-DESIGN.md`](SEXP-DESIGN.md) | s-expression 分层、owner、阶段输入输出和局部性规则 |
 | [`PLAN.md`](PLAN.md) | 目标和进度 |
 | [`GAPS.md`](GAPS.md) | 拆分后仍缺的结构和能力 |
 | `*/DESIGN.md` | 每层职责、输入输出、边界 |

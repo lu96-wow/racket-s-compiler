@@ -74,8 +74,14 @@
 - [x] `resolved-plan`：special + generated 统一 plan-size/encode-plan
 - [x] `compiler` core flow 与 Loko/ELF flow 解耦
 - [x] `special.rkt` 继续拆成 `mov/integer/control/string/sse/system/table`
-- [ ] special 各家族从“直接产出 bytes”改为 plan 片段
+- [x] `encoding-plan.rkt`：literal/rm plan + size/bytes
+- [x] special 的 control/string/system/sse 和多数 integer RM 形式改为 plan 片段
+- [x] special 剩余自定义立即数/寄存器 bytes 分支改为显式 plan
 - [x] `sexp.rkt` 拆成 `shape.rkt` + `memory.rkt` facade；target 增加 mode
+- [x] `compiler/item.rkt` 增加 `make-*` 构造函数；expand-data/layout 开始使用
+- [x] layout IR 的 segment/offset/anchor/request/problem 构造与 accessor
+- [ ] measured/bound 外层构造与 `place` accessor 化
+- [ ] `program` / `block` / `flow` 的 s-expression 契约（或明确保留 struct）
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
 - [ ] 通用 `%call` 的声明式替代

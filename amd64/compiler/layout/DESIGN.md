@@ -59,7 +59,7 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 - `align` 按**绝对地址** `start + cursor` 换算成事实；产物写事实，不写请求。
   补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见下）。
 - `comment` 零尺寸，不进入 items。
-- item 尺寸来自 `layout/forms.rkt` -> `instruction-size`。
+- item 尺寸来自 `layout/forms.rkt` -> `instruction-size target`；target 由 layout 显式传入。
 - 段起始对齐、段重叠、段容量都在本层检查；空段允许 `start == end`
   （自动布局会产出没内容的 data section）。
 

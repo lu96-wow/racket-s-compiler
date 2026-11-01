@@ -25,6 +25,7 @@ for test in \
   compiler/analyze/test.rkt \
   compiler/layout/test.rkt \
   compiler/relax/test.rkt \
+  compiler/test/item-test.rkt \
   compiler/test/end-to-end.rkt \
   compiler/test/flow-test.rkt \
   loko-compatibility/test.rkt \

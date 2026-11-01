@@ -76,6 +76,9 @@ fits-imm64?
 | 地址表达式 | `lea r64, [rip+disp32]` | 7 |
 | 强制宽度 | `(imm8 ...)` / `(imm32 ...)` / `(imm64 ...)` | 由 form 决定 |
 
+`li-size` / `la-size` 接受可选 `#:target`，默认 `target-amd64`；底层
+`instruction-size` 必须显式收到 target。
+
 要求：
 
 - 选择函数返回值必须已经带固定 immediate wrapper，不能把宽度选择留给编码器；

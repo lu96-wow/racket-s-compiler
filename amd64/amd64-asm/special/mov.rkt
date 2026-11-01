@@ -4,6 +4,7 @@
 ;;; mov immediate-selection policy and control/debug-register moves.
 
 (require "../sexp.rkt"
+         "../encoding-plan.rkt"
          "../registers.rkt"
          "../insn-core.rkt"
          "../operand.rkt")
@@ -33,12 +34,13 @@
   (define rex-r (if (>= (reg-index sr) 8) 1 0))
   (define rex-b (if (>= (reg-index gpr) 8) 1 0))
   (define rex (make-rex #f (list gpr) rex-r 0 rex-b))
-  (append (if rex (list rex) '())
-          (list #x0f opcode
-                (bitwise-ior #b11000000
-                             (arithmetic-shift
-                              (bitwise-and (reg-index sr) #b111) 3)
-                             (bitwise-and (reg-index gpr) #b111)))))
+  (literal-plan
+   (append (if rex (list rex) '())
+           (list #x0f opcode
+                 (bitwise-ior #b11000000
+                              (arithmetic-shift
+                               (bitwise-and (reg-index sr) #b111) 3)
+                              (bitwise-and (reg-index gpr) #b111))))))
 
 (define (encode-special-mov dst src)
   (cond
@@ -81,19 +83,19 @@
                [opcode (if (= width 8) '(#x88) '(#x89))])
           (unless (= width (reg-width src*))
             (error 'encode-mov "register widths do not match: ~e ~e" dst src))
-          (emit-rm width regs rm opcode))]
+          (rm-plan width regs rm opcode))]
 
        [(and (reg? dst*) (mem? src*))
         (unless (= (reg-width dst*) (mem-width src*))
           (error 'encode-mov "register/memory widths do not match: ~e ~e" dst src))
-        (emit-rm (reg-width dst*)
+        (rm-plan (reg-width dst*)
                  (list dst*) (encode-rm src* dst*)
                  (list (if (= (reg-width dst*) 8) #x8a #x8b)))]
 
        [(and (mem? dst*) (reg? src*))
         (unless (= (mem-width dst*) (reg-width src*))
           (error 'encode-mov "memory/register widths do not match: ~e ~e" dst src))
-        (emit-rm (mem-width dst*)
+        (rm-plan (mem-width dst*)
                  (list src*) (encode-rm dst* src*)
                  (list (if (= (mem-width dst*) 8) #x88 #x89)))]
 
@@ -104,26 +106,30 @@
                [regs (list dst*)])
           (define (emit-imm8)
             (check-imm8 value 'encode-mov)
-            (append (prefixes 8 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                    (u8 (+ #xb0 (bitwise-and (reg-index dst*) #b111)))
-                    (u8 value)))
+            (literal-plan
+             (append (prefixes 8 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                     (u8 (+ #xb0 (bitwise-and (reg-index dst*) #b111)))
+                     (u8 value))))
           (define (emit-imm16)
             (check-imm16 value 'encode-mov)
-            (append (prefixes 16 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                    (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                    (u16 value)))
+            (literal-plan
+             (append (prefixes 16 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                     (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                     (u16 value))))
           (define (emit-imm32)
             (check-imm32 value 'encode-mov)
-            (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
-                    (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                    (u32 value)))
+            (literal-plan
+             (append (prefixes 32 regs 0 0 (if (>= (reg-index dst*) 8) 1 0))
+                     (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                     (u32 value))))
           (define (emit-imm64)
             (unless (= width 64)
               (error 'encode-mov "imm64 needs a 64-bit destination: ~e" dst))
             (let ([rex (make-rex #t regs 0 0 (if (>= (reg-index dst*) 8) 1 0))])
-              (append (if rex (list rex) '())
-                      (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
-                      (u64 value))))
+              (literal-plan
+               (append (if rex (list rex) '())
+                       (u8 (+ #xb8 (bitwise-and (reg-index dst*) #b111)))
+                       (u64 value)))))
           (define (emit-by-value)
             (case width
               [(8) (emit-imm8)]
@@ -134,7 +140,7 @@
                  [(<= (- (expt 2 31)) value (sub1 (expt 2 31)))
                   (check-imm32/signed value 'encode-mov)
                   (let ([rm (encode-rm dst* 0)])
-                    (emit-rm 64 regs rm '(#xc7) (u32 value)))]
+                    (rm-plan 64 regs rm '(#xc7) (u32 value)))]
                  [(<= 0 value (sub1 (expt 2 32)))
                   ;; mov r32, imm32 zero-extends to r64
                   (emit-imm32)]
@@ -155,16 +161,16 @@
           (case width
             [(8)
              (check-imm8 value 'encode-mov)
-             (emit-rm 8 regs (encode-rm dst* 0) '(#xc6) (u8 value))]
+             (rm-plan 8 regs (encode-rm dst* 0) '(#xc6) (u8 value))]
             [(16)
              (check-imm16 value 'encode-mov)
-             (emit-rm 16 regs (encode-rm dst* 0) '(#xc7) (u16 value))]
+             (rm-plan 16 regs (encode-rm dst* 0) '(#xc7) (u16 value))]
             [(32)
              (check-imm32 value 'encode-mov)
-             (emit-rm 32 regs (encode-rm dst* 0) '(#xc7) (u32 value))]
+             (rm-plan 32 regs (encode-rm dst* 0) '(#xc7) (u32 value))]
             [(64)
              (check-imm32/signed value 'encode-mov)
-             (emit-rm 64 regs (encode-rm dst* 0) '(#xc7) (u32 value))]))]
+             (rm-plan 64 regs (encode-rm dst* 0) '(#xc7) (u32 value))]))]
        [else
         (error 'encode-mov "unsupported mov operands: ~e" operands)])]
     [_ (error 'encode-mov "mov takes two operands: ~e" operands)]))

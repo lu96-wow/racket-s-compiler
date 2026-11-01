@@ -4,6 +4,7 @@
 ;;; Registry of handwritten special form families.
 
 (require "../operand.rkt"
+         "../encoding-plan.rkt"
          "common.rkt"
          "mov.rkt"
          "integer.rkt"
@@ -14,7 +15,7 @@
 
 (provide special-known?
          special-arity
-         special-encode)
+         special-plan)
 
 (struct insn-def (arity encode) #:transparent)
 
@@ -137,12 +138,17 @@
   (define d (hash-ref instruction-table name #f))
   (and d (insn-def-arity d)))
 
-(define (special-encode name operands)
+(define (special-plan name operands)
   (define d (hash-ref instruction-table name #f))
   (unless d
-    (error 'special-encode "unknown special amd64 instruction: ~e" name))
+    (error 'special-plan "unknown special amd64 instruction: ~e" name))
   (define arity (insn-def-arity d))
   (when (and arity (not (= (length operands) arity)))
-    (error 'special-encode "~a expects ~a operand(s), got ~a: ~e"
+    (error 'special-plan "~a expects ~a operand(s), got ~a: ~e"
            name arity (length operands) operands))
-  ((insn-def-encode d) operands))
+  (define result ((insn-def-encode d) operands))
+  (unless (encoding-plan? result)
+    (error 'special-plan
+           "special encoder for ~a did not return an encoding plan: ~e"
+           name result))
+  result)

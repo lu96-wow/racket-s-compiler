@@ -16,8 +16,9 @@ amd64-asm/
   ranges.rkt      共享整数/立即数/disp/rel 范围谓词
   insn-core.rkt   共享 ModR/M + SIB + REX + 立即数范围
   operand.rkt     操作数解析/立即数 wrapper/rm helper
-  special.rkt     手写特殊 form facade
-  special/        mov/integer/control/string/sse/system + table
+  encoding-plan.rkt 手写 form 的底层 plan（literal/rm; size/bytes）
+  special.rkt       手写特殊 form facade
+  special/          mov/integer/control/string/sse/system + table
   insn-generic.rkt NASM 生成表：约束/选 form -> plan -> 字节生成
   plan.rkt        resolved-plan facade：plan-size / encode-plan
   insn.rkt        稳定公共入口（instruction-plan/size/encode）

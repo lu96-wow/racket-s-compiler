@@ -12,7 +12,8 @@
          racket/list
          racket/string
          racket/system
-         "insn.rkt")
+         "insn.rkt"
+         "target.rkt")
 
 (define cases
   (list
@@ -136,7 +137,7 @@
 (check-equal? (length encodings) (length cases) "llvm-mc did not encode every case")
 (for ([c (in-list cases)] [expected (in-list encodings)])
   (define form (car c))
-  (check-equal? (bytes->list (encode-instruction (car form) (cdr form)))
+  (check-equal? (bytes->list (encode-instruction target-amd64 (car form) (cdr form)))
                 expected
                 (format "encoding mismatch for ~a (`~a`)" form (cdr c))))
 

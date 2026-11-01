@@ -7,13 +7,13 @@
          "layout.rkt"
          "forms.rkt")
 
-(check-equal? (item-size '(value 8 1)) 8)
-(check-equal? (item-size '(pad 5)) 5)
-(check-equal? (item-size '(reserve 32)) 32)
-(check-equal? (item-size '(comment liveness)) 0)
-(check-equal? (item-size '(align 16)) #f)
-(check-equal? (item-size '(mov rax rbx)) 3)
-(check-equal? (item-size '(jmp-near (done))) 5)
+(check-equal? (item-size target-amd64 '(value 8 1)) 8)
+(check-equal? (item-size target-amd64 '(pad 5)) 5)
+(check-equal? (item-size target-amd64 '(reserve 32)) 32)
+(check-equal? (item-size target-amd64 '(comment liveness)) 0)
+(check-equal? (item-size target-amd64 '(align 16)) #f)
+(check-equal? (item-size target-amd64 '(mov rax rbx)) 3)
+(check-equal? (item-size target-amd64 '(jmp-near (done))) 5)
 (check-equal? (align-pad #x200003 8) 5)
 (check-equal? (align-pad #x200000 16) 0)
 
@@ -251,3 +251,35 @@
 (check-true
  (for/or ([r (in-list (cdr (assq 'requests far-branch-out)))])
    (eq? (car r) 'needs-far)))
+
+;; Layout IR explicit constructors/accessors.
+(define seg (parse-segment-form
+             '(segment (name text) (kind code) (start 0) (end 16) (align 4))))
+(check-true (segment? seg))
+(check-equal? (segment-name seg) 'text)
+(check-equal? (segment-kind seg) 'code)
+(check-equal? (segment-start seg) 0)
+(check-equal? (segment-end seg) 16)
+(check-equal? (segment-align seg) 4)
+(check-exn exn:fail? (lambda () (make-segment 'x 'bad 0 1 1)))
+
+(define off (make-offset 3 '(ret)))
+(check-true (offset? off))
+(check-equal? (offset-position off) 3)
+(check-equal? (offset-item off) '(ret))
+
+(define anc (make-anchor '(text) 'text 3))
+(check-true (anchor? anc))
+(check-equal? (anchor-chain anc) '(text))
+(check-equal? (anchor-segment anc) 'text)
+(check-equal? (anchor-position anc) 3)
+
+(define req (make-request 'needs-near '(code 0 1) 'text 3 '(jmp-short (x)) -20))
+(check-true (request? req))
+(check-equal? (request-kind req) 'needs-near)
+(check-equal? (length (request-payload req)) 5)
+
+(define prob (make-problem 'undefined-target 'text 3 '(jmp-near (x))))
+(check-true (problem? prob))
+(check-equal? (problem-kind prob) 'undefined-target)
+(check-equal? (length (problem-detail prob)) 3)

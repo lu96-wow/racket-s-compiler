@@ -4,6 +4,7 @@
 ;;; Legacy SSE/XMM special forms.
 
 (require "../sexp.rkt"
+         "../encoding-plan.rkt"
          "../registers.rkt"
          "../insn-core.rkt"
          "../operand.rkt")
@@ -36,7 +37,7 @@
     (error who "memory width must be b~a: ~e" width op)))
 
 (define (emit-sse prefix width regs rm-enc opcode [imm '()])
-  (emit-rm-with-prefixes width regs rm-enc opcode imm prefix))
+  (rm-plan width regs rm-enc opcode imm prefix))
 
 (define (encode-movss operands)
   (match operands

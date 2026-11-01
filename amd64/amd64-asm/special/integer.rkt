@@ -4,6 +4,7 @@
 ;;; Integer ALU/memory/unary/shift/multiply/bit/IO special encoders.
 
 (require "../sexp.rkt"
+         "../encoding-plan.rkt"
          "../registers.rkt"
          "../insn-core.rkt"
          "../operand.rkt")
@@ -52,12 +53,12 @@
         (define width (rm-width dst*))
         (unless (= width (reg-width src*))
           (error 'encode-alu "operand widths do not match: ~e ~e" dst src))
-        (emit-rm width (list src*) (encode-rm dst* src*) (list op-rm-reg))]
+        (rm-plan width (list src*) (encode-rm dst* src*) (list op-rm-reg))]
        [(and (reg? dst*) (mem? src))
         (define width (reg-width dst*))
         (unless (= width (mem-width src))
           (error 'encode-alu "operand widths do not match: ~e ~e" dst src))
-        (emit-rm width (list dst*) (encode-rm src dst*) (list op-reg-rm))]
+        (rm-plan width (list dst*) (encode-rm src dst*) (list op-reg-rm))]
        [(immediate-value src)
         (define value (immediate-value src))
         (define width (rm-width dst*))
@@ -67,30 +68,30 @@
         (cond
           [(eq? forced 'imm8)
            (check-imm8 value 'encode-alu)
-           (emit-rm width regs (encode-rm dst* digit)
+           (rm-plan width regs (encode-rm dst* digit)
                     (list (if (= width 8) #x80 #x83)) (u8 value))]
           [(eq? forced 'imm16)
            (check-imm16 value 'encode-alu)
-           (emit-rm width regs (encode-rm dst* digit) '(#x81) (u16 value))]
+           (rm-plan width regs (encode-rm dst* digit) '(#x81) (u16 value))]
           [(eq? forced 'imm32)
            (check-imm32 value 'encode-alu) ; 64-bit uses sign-extended imm32
-           (emit-rm width regs (encode-rm dst* digit) '(#x81) (u32 value))]
+           (rm-plan width regs (encode-rm dst* digit) '(#x81) (u32 value))]
           [(= width 8)
            (check-imm8 value 'encode-alu)
-           (emit-rm 8 regs (encode-rm dst* digit) '(#x80) (u8 value))]
+           (rm-plan 8 regs (encode-rm dst* digit) '(#x80) (u8 value))]
           [(small? value)
-           (emit-rm width regs (encode-rm dst* digit) '(#x83) (u8 value))]
+           (rm-plan width regs (encode-rm dst* digit) '(#x83) (u8 value))]
           [else
            (case width
              [(16)
               (check-imm16 value 'encode-alu)
-              (emit-rm 16 regs (encode-rm dst* digit) '(#x81) (u16 value))]
+              (rm-plan 16 regs (encode-rm dst* digit) '(#x81) (u16 value))]
              [(32)
               (check-imm32 value 'encode-alu)
-              (emit-rm 32 regs (encode-rm dst* digit) '(#x81) (u32 value))]
+              (rm-plan 32 regs (encode-rm dst* digit) '(#x81) (u32 value))]
              [(64)
               (check-imm32/signed value 'encode-alu)
-              (emit-rm 64 regs (encode-rm dst* digit) '(#x81) (u32 value))]
+              (rm-plan 64 regs (encode-rm dst* digit) '(#x81) (u32 value))]
              [else (error 'encode-alu "bad operand width: ~e" width)])])]
        [else
         (error 'encode-alu "unsupported ~a operands: ~e" name operands)])]
@@ -102,7 +103,7 @@
      (define dst* (parse-reg dst))
      (define src* (parse-rm src))
      (unless (mem? src*) (error 'encode-lea "lea source must be memory: ~e" src))
-     (emit-rm (reg-width dst*) (list dst*) (encode-rm src* dst*) '(#x8d))]
+     (rm-plan (reg-width dst*) (list dst*) (encode-rm src* dst*) '(#x8d))]
     [_ (error 'encode-lea "lea takes two operands: ~e" operands)]))
 
 (define (encode-push operands)
@@ -115,17 +116,18 @@
         (unless (memq width '(16 64))
           (error 'encode-push "push register must be 16 or 64 bits: ~e" src))
         (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
-        (append (if (= width 16) (list #x66) '())
-                (if rex (list rex) '())
-                (u8 (+ #x50 (bitwise-and (reg-index r) #b111))))]
+        (literal-plan
+         (append (if (= width 16) (list #x66) '())
+                 (if rex (list rex) '())
+                 (u8 (+ #x50 (bitwise-and (reg-index r) #b111)))))]
        [(immediate-value src)
         (define v (immediate-value src))
         (cond
           [(and (not (eq? (immediate-form src) 'imm8)) (<= -128 v 127))
-           (bytes* '(#x6a) (u8 v))]
+           (literal-plan (bytes* '(#x6a) (u8 v)))]
           [else
            (check-imm32/signed v 'encode-push)
-           (bytes* '(#x68) (u32 v))])]
+           (literal-plan (bytes* '(#x68) (u32 v)))])]
        [(or (mem? src) (mem-form? src))
         (define m (parse-rm src))
         (unless (mem? m) (error 'encode-push "bad push operand: ~e" src))
@@ -134,7 +136,7 @@
           (error 'encode-push "push memory must be b16 or b64: ~e" src))
         ;; 64-bit push/pop has a 64-bit default operand size; do not emit
         ;; a redundant REX.W (GNU as and Loko's assembler both omit it).
-        (emit-rm (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 6) '(#xff))]
+        (rm-plan (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 6) '(#xff))]
        [else (error 'encode-push "unsupported push operand: ~e" src)])]
     [_ (error 'encode-push "push takes one operand: ~e" operands)]))
 
@@ -148,16 +150,17 @@
         (unless (memq width '(16 64))
           (error 'encode-pop "pop register must be 16 or 64 bits: ~e" dst))
         (define rex (make-rex #f (list r) 0 0 (if (>= (reg-index r) 8) 1 0)))
-        (append (if (= width 16) (list #x66) '())
-                (if rex (list rex) '())
-                (u8 (+ #x58 (bitwise-and (reg-index r) #b111))))]
+        (literal-plan
+         (append (if (= width 16) (list #x66) '())
+                 (if rex (list rex) '())
+                 (u8 (+ #x58 (bitwise-and (reg-index r) #b111)))))]
        [(or (mem? dst) (mem-form? dst))
         (define m (parse-rm dst))
         (unless (mem? m) (error 'encode-pop "bad pop operand: ~e" dst))
         (define width (mem-width m))
         (unless (memq width '(16 64))
           (error 'encode-pop "pop memory must be b16 or b64: ~e" dst))
-        (emit-rm (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 0) '(#x8f))]
+        (rm-plan (if (= width 64) 32 16) (regs-in-op m) (encode-rm m 0) '(#x8f))]
        [else (error 'encode-pop "unsupported pop operand: ~e" dst)])]
     [_ (error 'encode-pop "pop takes one operand: ~e" operands)]))
 
@@ -171,7 +174,7 @@
         (define width (rm-width dst*))
         (unless (= width (reg-width src*))
           (error 'encode-test "operand widths do not match: ~e ~e" dst src))
-        (emit-rm width (list src*) (encode-rm dst* src*) '(#x85))]
+        (rm-plan width (list src*) (encode-rm dst* src*) '(#x85))]
        [(immediate-value src)
         (define value (immediate-value src))
         (define width (rm-width dst*))
@@ -179,16 +182,16 @@
         (case width
           [(8)
            (check-imm8 value 'encode-test)
-           (emit-rm 8 regs (encode-rm dst* 0) '(#xf6) (u8 value))]
+           (rm-plan 8 regs (encode-rm dst* 0) '(#xf6) (u8 value))]
           [(16)
            (check-imm16 value 'encode-test)
-           (emit-rm 16 regs (encode-rm dst* 0) '(#xf7) (u16 value))]
+           (rm-plan 16 regs (encode-rm dst* 0) '(#xf7) (u16 value))]
           [(32)
            (check-imm32 value 'encode-test)
-           (emit-rm 32 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
+           (rm-plan 32 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
           [(64)
            (check-imm32/signed value 'encode-test)
-           (emit-rm 64 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
+           (rm-plan 64 regs (encode-rm dst* 0) '(#xf7) (u32 value))]
           [else (error 'encode-test "bad width: ~e" width)])]
        [else (error 'encode-test "unsupported operands: ~e" operands)])]
     [_ (error 'encode-test "test takes two operands: ~e" operands)]))
@@ -205,7 +208,7 @@
          [(not) (values #xf6 #xf7 2)]
          [(neg) (values #xf6 #xf7 3)]
          [else (error 'encode-unary "unknown unary instruction: ~e" name)]))
-     (emit-rm width (regs-in-op rm*)
+     (rm-plan width (regs-in-op rm*)
               (encode-rm rm* digit)
               (list (if (= width 8) op8 op)))]
     [_ (error 'encode-unary "~a takes one operand: ~e" name operands)]))
@@ -221,13 +224,13 @@
                      [else (error 'encode-shift "unknown shift: ~e" name)]))
      (cond
        [(eq? count 'cl)
-        (emit-rm width (regs-in-op rm*)
+        (rm-plan width (regs-in-op rm*)
                  (encode-rm rm* digit)
                  (list (if (= width 8) #xd2 #xd3)))]
        [(immediate-value count)
         (define value (immediate-value count))
         (check-imm8 value 'encode-shift)
-        (emit-rm width (regs-in-op rm*)
+        (rm-plan width (regs-in-op rm*)
                  (encode-rm rm* digit)
                  (list (if (= width 8) #xc0 #xc1))
                  (u8 value))]
@@ -239,7 +242,7 @@
     [(list src)
      (define src* (parse-rm src))
      (define width (rm-width src*))
-     (emit-rm width (regs-in-op src*)
+     (rm-plan width (regs-in-op src*)
               (encode-rm src* 5)
               (list (if (= width 8) #xf6 #xf7)))]
     [(list dst src)
@@ -248,7 +251,7 @@
      (define width (reg-width dst*))
      (unless (= width (rm-width src*))
        (error 'encode-imul "operand widths do not match: ~e ~e" dst src))
-     (emit-rm width (list dst*) (encode-rm src* dst*) '(#x0f #xaf))]
+     (rm-plan width (list dst*) (encode-rm src* dst*) '(#x0f #xaf))]
     [(list dst src imm)
      (define dst* (parse-reg dst))
      (define src* (parse-rm src))
@@ -261,18 +264,18 @@
                        (error 'encode-imul "imul immediate must be an integer: ~e" imm)))
      (cond
        [(and (not (eq? (immediate-form imm) 'imm32)) (<= -128 value 127))
-        (emit-rm width (list dst*) (encode-rm src* dst*) '(#x6b) (u8 value))]
+        (rm-plan width (list dst*) (encode-rm src* dst*) '(#x6b) (u8 value))]
        [else
         (case width
           [(16)
            (check-imm16 value 'encode-imul)
-           (emit-rm 16 (list dst*) (encode-rm src* dst*) '(#x69) (u16 value))]
+           (rm-plan 16 (list dst*) (encode-rm src* dst*) '(#x69) (u16 value))]
           [(32)
            (check-imm32 value 'encode-imul)
-           (emit-rm 32 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))]
+           (rm-plan 32 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))]
           [(64)
            (check-imm32/signed value 'encode-imul)
-           (emit-rm 64 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))])])]
+           (rm-plan 64 (list dst*) (encode-rm src* dst*) '(#x69) (u32 value))])])]
     [_ (error 'encode-imul "imul takes 1, 2 or 3 operands: ~e" operands)]))
 
 (define (encode-divide name operands)
@@ -282,7 +285,7 @@
      (define width (rm-width rm*))
      (define digit (case name [(div) 6] [(idiv) 7]
                          [else (error 'encode-divide "unknown divide: ~e" name)]))
-     (emit-rm width (regs-in-op rm*)
+     (rm-plan width (regs-in-op rm*)
               (encode-rm rm* digit)
               (list (if (= width 8) #xf6 #xf7)))]
     [_ (error 'encode-divide "~a takes one operand: ~e" name operands)]))
@@ -302,22 +305,22 @@
          [(and (not signed?) (= sw 8)) '(#x0f #xb6)]
          [(and (not signed?) (= sw 16)) '(#x0f #xb7)]
          [else (error 'encode-mov-extend "unsupported width combination: ~e -> ~e" sw dw)]))
-     (emit-rm dw (list dst*) (encode-rm src* dst*) opcode)]
+     (rm-plan dw (list dst*) (encode-rm src* dst*) opcode)]
     [_ (error 'encode-mov-extend "~a takes two operands: ~e"
               (if signed? 'movsx 'movzx) operands)]))
 
 (define (encode-cqo operands)
   (unless (null? operands) (error 'encode-cqo "cqo takes no operands: ~e" operands))
-  '(#x48 #x99))
+  (literal-plan '(#x48 #x99)))
 
 (define (encode-cdq operands)
   (unless (null? operands) (error 'encode-cdq "cdq takes no operands: ~e" operands))
-  '(#x99))
+  (literal-plan '(#x99)))
 
 (define (encode-cdqe operands)
   (unless (null? operands)
     (error 'encode-cdqe "cdqe takes no operands: ~e" operands))
-  '(#x48 #x98))
+  (literal-plan '(#x48 #x98)))
 
 (define (encode-bswap operands)
   (match operands
@@ -328,8 +331,9 @@
        (error 'encode-bswap "bswap needs a 32/64-bit register: ~e" reg))
      (define rex (make-rex (= width 64) (list r) 0 0
                            (if (>= (reg-index r) 8) 1 0)))
-     (append (if rex (list rex) '())
-             (list #x0f (+ #xc8 (bitwise-and (reg-index r) #b111))))]
+     (literal-plan
+      (append (if rex (list rex) '())
+              (list #x0f (+ #xc8 (bitwise-and (reg-index r) #b111)))))]
     [_ (error 'encode-bswap "bswap takes one register: ~e" operands)]))
 
 (define (encode-xchg operands)
@@ -343,17 +347,17 @@
         (define width (reg-width a*))
         (unless (= width (reg-width b*))
           (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
-        (emit-rm width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
+        (rm-plan width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
        [(and (reg? a*) (mem? b*))
         (define width (reg-width a*))
         (unless (= width (mem-width b*))
           (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
-        (emit-rm width regs (encode-rm b* a*) (list (if (= width 8) #x86 #x87)))]
+        (rm-plan width regs (encode-rm b* a*) (list (if (= width 8) #x86 #x87)))]
        [(and (mem? a*) (reg? b*))
         (define width (reg-width b*))
         (unless (= width (mem-width a*))
           (error 'encode-xchg "operand widths do not match: ~e ~e" a b))
-        (emit-rm width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
+        (rm-plan width regs (encode-rm a* b*) (list (if (= width 8) #x86 #x87)))]
        [else (error 'encode-xchg "unsupported xchg operands: ~e" operands)])]
     [_ (error 'encode-xchg "xchg takes two operands: ~e" operands)]))
 
@@ -368,9 +372,9 @@
      (unless (= width (rm-width s))
        (error name "operand widths do not match: ~e ~e" dst src))
      (case name
-       [(bsf) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbc))]
-       [(bsr) (emit-rm width (list d) (encode-rm s d) '(#x0f #xbd))]
-       [(popcnt) (emit-rm-with-prefixes width (list d) (encode-rm s d)
+       [(bsf) (rm-plan width (list d) (encode-rm s d) '(#x0f #xbc))]
+       [(bsr) (rm-plan width (list d) (encode-rm s d) '(#x0f #xbd))]
+       [(popcnt) (rm-plan width (list d) (encode-rm s d)
                                '(#x0f #xb8) '() (list #xf3))]
        [else (error name "unknown bit-scan instruction: ~e" name)])]
     [_ (error name "~a takes two operands: ~e" name operands)]))
@@ -387,11 +391,11 @@
        (error 'encode-shrd "operand widths do not match: ~e ~e" dst src))
      (define regs (append (regs-in-op d) (list s)))
      (cond
-       [(eq? count 'cl) (emit-rm width regs (encode-rm d s) '(#x0f #xad))]
+       [(eq? count 'cl) (rm-plan width regs (encode-rm d s) '(#x0f #xad))]
        [(immediate-value count)
         (define v (immediate-value count))
         (check-imm8 v 'encode-shrd)
-        (emit-rm width regs (encode-rm d s) '(#x0f #xac) (u8 v))]
+        (rm-plan width regs (encode-rm d s) '(#x0f #xac) (u8 v))]
        [else (error 'encode-shrd "shrd count must be imm8 or cl: ~e" count)])]
     [_ (error 'encode-shrd "shrd takes dst, src, count: ~e" operands)]))
 
@@ -403,7 +407,7 @@
      (define width (if (mem? d) (mem-width d) (reg-width d)))
      (unless (= width (reg-width s))
        (error name "operand widths do not match: ~e ~e" dst src))
-     (emit-rm width (append (regs-in-op d) (list s))
+     (rm-plan width (append (regs-in-op d) (list s))
               (encode-rm d s)
               (if (= width 8) eight-op wide-op))]
     [_ (error name "~a takes dst, src: ~e" name operands)]))
@@ -415,7 +419,7 @@
      (define width (rm-width r))
      (unless (memq width '(16 32 64))
        (error name "~a needs a 16/32/64-bit operand: ~e" name rm))
-     (emit-rm width (regs-in-op r) (encode-rm r digit) '(#x0f #xc7))]
+     (rm-plan width (regs-in-op r) (encode-rm r digit) '(#x0f #xc7))]
     [_ (error name "~a takes one operand: ~e" name operands)]))
 
 (define (encode-clflush operands)
@@ -423,7 +427,7 @@
     [(list m)
      (define m* (parse-rm m))
      (unless (mem? m*) (error 'encode-clflush "clflush needs a memory operand: ~e" m))
-     (emit-rm 8 (regs-in-op m*) (encode-rm m* 7) '(#x0f #xae))]
+     (rm-plan 8 (regs-in-op m*) (encode-rm m* 7) '(#x0f #xae))]
     [_ (error 'encode-clflush "clflush takes one memory operand: ~e" operands)]))
 
 (define (port-reg? x)
@@ -442,11 +446,11 @@
      (define width (reg-width d))
      (define p (if (= width 16) (list #x66) '()))
      (cond
-       [(port-reg? port) (append p (list (if (= width 8) #xec #xed)))]
+       [(port-reg? port) (literal-plan (append p (list (if (= width 8) #xec #xed))))]
        [(immediate-value port)
         (define v (immediate-value port))
         (unless (<= 0 v 255) (error 'encode-in "port immediate out of range: ~e" port))
-        (append p (list (if (= width 8) #xe4 #xe5)) (u8 v))]
+        (literal-plan (append p (list (if (= width 8) #xe4 #xe5)) (u8 v)))]
        [else (error 'encode-in "port must be dx or imm8: ~e" port)])]
     [_ (error 'encode-in "in takes dst, port: ~e" operands)]))
 
@@ -457,10 +461,10 @@
      (define width (reg-width s))
      (define p (if (= width 16) (list #x66) '()))
      (cond
-       [(port-reg? port) (append p (list (if (= width 8) #xee #xef)))]
+       [(port-reg? port) (literal-plan (append p (list (if (= width 8) #xee #xef))))]
        [(immediate-value port)
         (define v (immediate-value port))
         (unless (<= 0 v 255) (error 'encode-out "port immediate out of range: ~e" port))
-        (append p (list (if (= width 8) #xe6 #xe7)) (u8 v))]
+        (literal-plan (append p (list (if (= width 8) #xe6 #xe7)) (u8 v)))]
        [else (error 'encode-out "port must be dx or imm8: ~e" port)])]
     [_ (error 'encode-out "out takes port, src: ~e" operands)]))

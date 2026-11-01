@@ -36,7 +36,10 @@
 ;;; 值域: v ∈ [-2^(8N-1), 2^(8N)), 按补码取低 8N 位。
 
 
-(require "../../amd64-asm/sexp.rkt")
+(require "../../amd64-asm/sexp.rkt"
+         (only-in "../item.rkt"
+                  label-form? align-form? pad-form? bytes-form? fill-form? value-form?
+                  make-bytes-item make-fill make-value))
 
 (provide expand-data
          expand-item
@@ -54,37 +57,16 @@
 
 
 
-(define (label-form? x)
-  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
-
 ;; (module 名 item...) 是**结构壳**: 名字前缀/可见性是 flatten 的事, 本层不解释它,
 ;; 只是递归进去把数据展开, 壳原样留着。它的子句 (provide …) / (require …) 同理。
 (define (module-form? x) (and (form? x) (eq? (car x) 'module)))
 (define (module-clause? x) (and (form? x) (memq (car x) '(provide require))))
 
-(define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
-
-(define (bytes-form? x)
-  (and (form? x) (eq? (car x) 'bytes) (andmap byte? (cdr x))))
-
-(define (align-form? x)
-  (and (form? x) (eq? (car x) 'align) (= 2 (length x))
-       (exact-positive-integer? (cadr x))))
-
 ;; (pad n): 精确插 n 个字节（填什么由段的 kind 决定，见 target.rkt 的填充策略）。
 ;; 和 (align n) 的区别: align 是"位置要对齐到 n"，补多少取决于当前地址；
 ;; pad 是"就插 n 字节"，与地址无关。名字归 layout，本层只透传。
-(define (pad-item? x)
-  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
-       (exact-nonnegative-integer? (cadr x))))
-
 ;; (fill 字节数 b): b 重复 字节数 次。**名字归 layout**(padding 需要它), 本层只是生产者,
 ;; 所以这里的谓词不导出: 一个名字只能有一个归属。
-(define (fill-item? x)
-  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
-       (exact-nonnegative-integer? (cadr x))
-       (byte? (caddr x))))
-
 ;; ---------------------------------------------------------------------------
 ;; 宽度表
 ;; ---------------------------------------------------------------------------
@@ -131,15 +113,10 @@
 ;; 一个值 -> 一条 (value 宽度 值)。宽度是数据, 不是名字: 下游不用认识 b16。
 ;; 值可以是整数或地址表达式（rich 和 core 同形，原样透传）。
 (define (value-item w v)
-  (list 'value w (check-value-shape w v)))
+  (make-value w (check-value-shape w v)))
 
 ;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 layout(它要量宽度), 这里不导出。
 ;; 和 layout/forms.rkt 的 value-form? 是同一个形状; 本层只做透传, 所以不导出。
-(define (value-form? x)
-  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
-       (memq (cadr x) '(1 2 4 8))
-       (address-expr? (caddr x))))
-
 ;; ---------------------------------------------------------------------------
 ;; 字符串
 ;; ---------------------------------------------------------------------------
@@ -151,9 +128,9 @@
   (unless (and (= 2 (length it)) (string? (cadr it)))
     (error 'expand-data "~a needs exactly one string: ~e" (car it) it))
   (define bs (string-bytes (cadr it)))
-  (list (cons 'bytes (if (eq? (car it) 'utf-stringz)
-                         (append bs (list 0))
-                         bs))))
+  (list (make-bytes-item (if (eq? (car it) 'utf-stringz)
+                                (append bs (list 0))
+                                bs))))
 
 ;; ---------------------------------------------------------------------------
 ;; item
@@ -189,7 +166,7 @@
   (define n (cadr it))
   (define inits (cddr it))
   (cond
-    [(zero? n) (list (cons 'bytes '()))]
+    [(zero? n) (list (make-bytes-item '()))]
     [else
      (define lastv (last inits))
      ;; 与端序无关 = 宽度 1(一个元素就一个字节) 或值全 0
@@ -197,13 +174,13 @@
      (cond
        ;; 整个数组就是一个值, 且与端序无关 -> 一条 fill
        [(and (= 1 (length inits)) same-tail?)
-        (list (list 'fill (* n w) (bitwise-and lastv #xFF)))]
+        (list (make-fill (* n w) (bitwise-and lastv #xFF)))]
        [else
         ;; 前 k 个逐条给; 尾部(都是 vk)在端序无关时压成 fill, 否则也逐条给
         (define tail-n (- n (length inits)))
         (append (for/list ([v (in-list inits)]) (value-item w v))
                 (if (and same-tail? (positive? tail-n))
-                    (list (list 'fill (* tail-n w) (bitwise-and lastv #xFF)))
+                    (list (make-fill (* tail-n w) (bitwise-and lastv #xFF)))
                     (for/list ([_ (in-range tail-n)]) (value-item w lastv))))])]))
 
 (define (expand-item it)
@@ -217,8 +194,8 @@
                                   (expand-item sub))))))]
     [(or (module-clause? it) (label-form? it)) (list it)]
     [(bytes-form? it) (list it)]
-    [(fill-item? it) (list it)]
-    [(pad-item? it) (list it)]
+    [(fill-form? it) (list it)]
+    [(pad-form? it) (list it)]
     [(value-form? it) (list it)]
     [(align-form? it) (list it)]
     [(width-form? it) (list (value-item (width-of it) (cadr it)))]

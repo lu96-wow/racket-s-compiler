@@ -9,6 +9,8 @@
 
 (require "../../amd64-asm/sexp.rkt"
          "../layout/layout.rkt"
+         (only-in "../layout/forms.rkt"
+                  request? request-kind request-payload)
          (only-in "../analyze/analyze.rkt"
                   program program-blocks program-flows
                   block-head block-items make-block))
@@ -20,9 +22,9 @@
 (define max-rounds 64)
 
 (define (needs-near? request)
-  (and (form? request)
-       (eq? (car request) 'needs-near)
-       (let ([origin (cadr request)])
+  (and (request? request)
+       (eq? (request-kind request) 'needs-near)
+       (let ([origin (car (request-payload request))])
          (and (form? origin) (eq? (car origin) 'code)))))
 
 (define (promote-short-control-transfer item)
@@ -33,9 +35,10 @@
 
 (define (collect-edits requests)
   (for/list ([r (in-list requests)] #:when (needs-near? r))
-    (define origin (cadr r))
+    (define origin (car (request-payload r)))
+    (define item (list-ref (request-payload r) 3))
     (cons (list (cadr origin) (caddr origin))
-          (promote-short-control-transfer (list-ref r 4)))))
+          (promote-short-control-transfer item))))
 
 (define (apply-edits prog edits)
   (define table (make-hash))

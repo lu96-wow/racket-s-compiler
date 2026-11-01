@@ -9,6 +9,7 @@
 ;;; 超出 ±2GiB 的地址不在这一层判断；由 layout 的 RIP-relative 检查处理。
 
 (require "../amd64-asm/sexp.rkt"
+         "../amd64-asm/target.rkt"
          "../amd64-asm/insn.rkt")
 
 (provide li->form
@@ -28,6 +29,6 @@
             "li value is neither an integer nor an address expression: ~e"
             value)]))
 
-(define (li-size dst value)
+(define (li-size dst value #:target [target target-amd64])
   (define form (li->form dst value))
-  (instruction-size (car form) (cdr form)))
+  (instruction-size target (car form) (cdr form)))

@@ -224,16 +224,20 @@ wait prefix + segment prefix + mandatory prefixes + REX
   `special/{mov,integer,control,string,sse,system,table}.rkt`；
 - `plan.rkt` 提供统一 `resolved-plan`，generated 和 special 都走
   `instruction-plan -> plan-size/encode-plan`；
-- `instruction-size` 对两类指令都走 plan，不再以 `encode-instruction`
-  作为唯一尺寸来源；
-- `generated` 表继续由 `binary-build/` 生成。
+- `encoding-plan.rkt` 提供 special 的底层 plan：`literal-plan` / `rm-plan` /
+  `encoding-plan-size` / `encoding-plan-bytes`；
+- 所有手写 special encoder 现在都返回 `encoding-plan`（literal 或 rm-plan）；
+  `special/table.rkt` 强制检查返回值，bytes 不再能漏进 plan 层；
+- `instruction-size` 对两类指令都走 plan；
+- `sexp.rkt` 已缩成兼容 facade；通用形状在 `shape.rkt`，内存形状在
+  `memory.rkt`；`target.rkt` 已显式包含 mode。
+
+- `instruction-plan` / `encode-instruction` / `instruction-size` 已显式接收
+  target，并检查 `target-mode = 64`。
 
 仍待完成：
 
-- `special/*.rkt` 仍以“直接产出 bytes”的旧 encoder 为主体；下一步把
-  各家族改成返回 plan 片段；
-- `sexp.rkt` 已缩成兼容 facade；通用形状在 `shape.rkt`，内存形状在
-  `memory.rkt`；`target.rkt` 已显式包含 mode。
+- 接入真正的 far/trampoline 序列。
 
 ## 5. 不变量
 

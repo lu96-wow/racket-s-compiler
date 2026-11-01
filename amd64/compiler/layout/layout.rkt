@@ -13,6 +13,7 @@
 ;;; 绝对地址由 bind-labels 统一产生。
 
 (require "../../amd64-asm/sexp.rkt"
+         (only-in "../item.rkt" make-pad make-reserve)
          "../../amd64-asm/target.rkt"
          "../../amd64-help/ranges.rkt"
          "forms.rkt"
@@ -27,39 +28,17 @@
 ;; 段 / 放置规则
 ;; ---------------------------------------------------------------------------
 
-(struct segment (name kind start end align) #:transparent)
-
-(define (field-value key fields)
-  (cond ((assq key fields) => cadr)
-        [else #f]))
-
-(define (parse-segment-form s)
-  (unless (and (form? s) (eq? (car s) 'segment))
-    (error 'layout "bad segment form: ~e" s))
-  (define fields (cdr s))
-  (define name (field-value 'name fields))
-  (define kind (field-value 'kind fields))
-  (define start (field-value 'start fields))
-  (define end (field-value 'end fields))
-  (define align (field-value 'align fields))
-  (unless (symbol? name) (error 'layout "segment needs name: ~e" s))
-  (unless (memq kind '(code data hole)) (error 'layout "bad segment kind: ~e" s))
-  (unless (exact-integer? start) (error 'layout "segment needs start: ~e" s))
-  (unless (exact-integer? end) (error 'layout "segment needs end: ~e" s))
-  (unless (exact-positive-integer? align) (error 'layout "segment needs align: ~e" s))
-  (segment name kind start end align))
-
 (define (validate-segments segments problem!)
   (define names (map segment-name segments))
   (unless (= (length names) (length (remove-duplicates names)))
-    (problem! (list 'segment-name-duplicated names)))
+    (problem! (make-problem 'segment-name-duplicated names)))
   (for ([s (in-list segments)])
     ;; Empty sections are valid: start may equal end (an unused data section, a
     ;; hole with no addresses yet, ...).  RISC-V is stricter here; amd64 is not.
     (unless (<= (segment-start s) (segment-end s))
-      (problem! (list 'segment-bad-range (segment-name s))))
+      (problem! (make-problem 'segment-bad-range (segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
-      (problem! (list 'segment-misaligned
+      (problem! (make-problem 'segment-misaligned
                       (segment-name s) (segment-start s) (segment-align s)))))
   (define n (length segments))
   (for* ([i (in-range n)] [j (in-range n)] #:when (< i j))
@@ -67,7 +46,7 @@
     (define b (list-ref segments j))
     (when (and (< (segment-start a) (segment-end b))
                (< (segment-start b) (segment-end a)))
-      (problem! (list 'segment-overlap (segment-name a) (segment-name b))))))
+      (problem! (make-problem 'segment-overlap (segment-name a) (segment-name b))))))
 
 ;; rules: ((链 . 段名) ...); wildcard: 段名或 #f
 (define (parse-places spec segments problem!)
@@ -80,22 +59,22 @@
       [(cons seg chains)
        (cond
          [(not (memq seg names))
-          (problem! (list 'unknown-segment seg))]
+          (problem! (make-problem 'unknown-segment seg))]
          [(null? chains)
-          (problem! (list 'bad-place p))]
+          (problem! (make-problem 'bad-place p))]
          [else
           (for ([c (in-list chains)])
             (cond
               [(eq? c '*)
                (if wildcard
-                   (problem! (list 'ambiguous-wildcard wildcard seg))
+                   (problem! (make-problem 'ambiguous-wildcard wildcard seg))
                    (set! wildcard seg))]
               [else
                (define path (normalize-path c))
                (if path
                    (set! rules (cons (cons path seg) rules))
-                   (problem! (list 'bad-place-chain c)))]))])]
-      [_ (problem! (list 'bad-place p))]))
+                   (problem! (make-problem 'bad-place-chain c)))]))])]
+      [_ (problem! (make-problem 'bad-place p))]))
   (values (reverse rules) wildcard))
 
 (define (parse-spec spec problem!)
@@ -196,7 +175,7 @@
     (define hits (matching-segment-names rules labels))
     (cond
       [(> (length hits) 1)
-       (problem! (list 'ambiguous-placement labels hits))]
+       (problem! (make-problem 'ambiguous-placement labels hits))]
       [(= 1 (length hits))
        (set! current (car hits))
        (add-unit! by-seg current u)]
@@ -205,7 +184,7 @@
        (set! current wildcard)
        (add-unit! by-seg current u)]
       [else
-       (problem! (list 'unplaced-block (unit-id u) labels))]))
+       (problem! (make-problem 'unplaced-block (unit-id u) labels))]))
   by-seg)
 
 (define (place-exact-units units rules wildcard problem! unplaced-kind)
@@ -214,15 +193,15 @@
     (define labels (unit-labels u))
     (cond
       [(null? labels)
-       (problem! (list 'unlabeled-run (unit-id u) (unit-items u)))]
+       (problem! (make-problem 'unlabeled-run (unit-id u) (unit-items u)))]
       [else
        (define hits (matching-segment-names rules labels))
        (cond
          [(> (length hits) 1)
-          (problem! (list 'ambiguous-placement labels hits))]
+          (problem! (make-problem 'ambiguous-placement labels hits))]
          [(= 1 (length hits)) (add-unit! by-seg (car hits) u)]
          [wildcard (add-unit! by-seg wildcard u)]
-         [else (problem! (list unplaced-kind (unit-id u) labels))])]))
+         [else (problem! (make-problem unplaced-kind (unit-id u) labels))])]))
   by-seg)
 
 ;; ---------------------------------------------------------------------------
@@ -242,7 +221,7 @@
   (define entries '())
 
   (define (anchor! chain)
-    (set! anchors (cons (list 'anchor chain name cursor) anchors)))
+    (set! anchors (cons (make-anchor chain name cursor) anchors)))
 
   ;; item 类别的合法性只有一张表(forms.rkt 的 item-kind-allowed-in?);
   ;; 这里只把"不合法"翻译成本层的问题名, 不在这里塞策略。
@@ -251,9 +230,9 @@
     (unless (item-kind-allowed-in? ik kind)
       (problem!
        (cond
-         [(eq? kind 'hole) (list 'hole-materialized-item name cursor it)]
-         [(eq? ik 'space)  (list 'reserve-outside-hole name cursor it)]
-         [else (list 'segment-item-kind-mismatch name kind cursor it)]))))
+         [(eq? kind 'hole) (make-problem 'hole-materialized-item name cursor it)]
+         [(eq? ik 'space)  (make-problem 'reserve-outside-hole name cursor it)]
+         [else (make-problem 'segment-item-kind-mismatch name kind cursor it)]))))
 
   (define (emit-item! it origin)
     (cond
@@ -266,16 +245,16 @@
        ;;   hole        -> (reserve n)  只推进位置, 文件里没有
        ;; 这一句就是本层唯一的 kind 分叉: 它让 hole 段的 items 永远只含
        ;; reserve（label 只进 anchors），encode 不用再判"洞从哪儿开始"。
-       (define fact (if (eq? kind 'hole) (list 'reserve n) (list 'pad n)))
+       (define fact (if (eq? kind 'hole) (make-reserve n) (make-pad n)))
        (check-item-kind! fact)
-       (set! out (cons (list 'offset cursor fact) out))
+       (set! out (cons (make-offset cursor fact) out))
        (set! cursor (+ cursor n))]
       [else
        (check-item-kind! it)
-       (define size (item-size it))
+       (define size (item-size target it))
        (unless (and (exact-integer? size) (>= size 0))
          (error 'layout "cannot size item in segment ~a: ~e" name it))
-       (set! out (cons (list 'offset cursor it) out))
+       (set! out (cons (make-offset cursor it) out))
        (set! entries (cons (list seg cursor it size origin) entries))
        (set! cursor (+ cursor size))]))
 
@@ -304,10 +283,9 @@
       (values (segment-name (measured-segment-segment m))
               (segment-start (measured-segment-segment m)))))
   (for/hash ([a (in-list anchors)])
-    (define chain (cadr a))
-    (define seg (caddr a))
-    (define off (cadddr a))
-    (values chain (+ (hash-ref start-of seg) off))))
+    (values (anchor-chain a)
+            (+ (hash-ref start-of (anchor-segment a))
+               (anchor-position a)))))
 
 (define (check-control-transfer entry positions problem! request!)
   (define seg (car entry))
@@ -319,12 +297,12 @@
     (define target (normalize-path (control-transfer-target item)))
     (cond
       [(not target)
-       (problem! (list 'undefined-target (segment-name seg) offset item))]
+       (problem! (make-problem 'undefined-target (segment-name seg) offset item))]
       [else
        (define addr (hash-ref positions target #f))
        (cond
          [(not addr)
-          (problem! (list 'undefined-target (segment-name seg) offset item))]
+          (problem! (make-problem 'undefined-target (segment-name seg) offset item))]
          [else
           (define here (+ (segment-start seg) offset))
           (define disp (- addr (+ here size)))
@@ -332,8 +310,8 @@
           (when (and range
                      (not (<= (car range) disp (cdr range))))
             (request! (if (short-control-transfer-form? item)
-                          (list 'needs-near origin (segment-name seg) offset item disp)
-                          (list 'needs-far origin (segment-name seg) offset item disp))))])])))
+                          (make-request 'needs-near origin (segment-name seg) offset item disp)
+                          (make-request 'needs-far origin (segment-name seg) offset item disp))))])])))
 
 (define (item-memory-sites item here size)
   (cond
@@ -366,18 +344,18 @@
           (not (hash-ref positions c #f))))
       (cond
         [missing?
-         (problem! (list 'undefined-target (segment-name seg) offset item))]
+         (problem! (make-problem 'undefined-target (segment-name seg) offset item))]
         [else
          (define value (eval-address d (lambda (c) (hash-ref positions c)) m-here))
          (cond
            [(eq? (mem-base m) 'rip)
             (define rel (- value (+ m-here m-size)))
             (unless (fits-rel32? rel)
-              (problem! (list 'rip-out-of-range
+              (problem! (make-problem 'rip-out-of-range
                               (segment-name seg) offset item rel)))]
            [else
             (unless (fits-disp32? value)
-              (problem! (list 'absolute-out-of-range
+              (problem! (make-problem 'absolute-out-of-range
                               (segment-name seg) offset item value)))])]))))
 
 (define (check-value-chains entry positions problem!)
@@ -389,14 +367,14 @@
     (unless (exact-integer? v)
       (for ([c (in-list (address-expr-chains v))])
         (unless (hash-ref positions c #f)
-          (problem! (list 'undefined-target (segment-name seg) offset item)))))))
+          (problem! (make-problem 'undefined-target (segment-name seg) offset item)))))))
 
 (define (check-segment-overflow measured problem!)
   (for ([m (in-list measured)])
     (define seg (measured-segment-segment m))
     (define capacity (- (segment-end seg) (segment-start seg)))
     (when (> (measured-segment-size m) capacity)
-      (problem! (list 'segment-overflow
+      (problem! (make-problem 'segment-overflow
                       (segment-name seg) (measured-segment-size m) capacity)))))
 
 (define (check-fallthrough code-by-seg flows problem!)
@@ -412,7 +390,7 @@
                             (unit-id (list-ref units (add1 i)))))
           (define next-bi (and next (eq? (car next) 'code) (cadr next)))
           (unless (eqv? next-bi ft)
-            (problem! (list 'broken-fallthrough seg bi ft next-bi))))))))
+            (problem! (make-problem 'broken-fallthrough seg bi ft next-bi))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 输出
