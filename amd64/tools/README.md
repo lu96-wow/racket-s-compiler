@@ -10,8 +10,11 @@
 ```sh
 cd /path/to/loko
 git apply /path/to/amd64/tools/loko-dump.patch
-make loko
+make -B loko
 ```
+
+补丁使用 `(loko runtime init)` 的 `get-environment-variable` 和 R6RS
+`write`，不依赖外部 SRFI-98 / `io-printer` 库。
 
 编译目标程序：
 
@@ -65,7 +68,24 @@ racket tools/cache-loko-layout.rkt /tmp/prog.sexp.p /tmp/prog.cache loko
 racket tools/write-cached-elf.rkt /tmp/prog.cache /tmp/prog.elf
 ```
 
-## 4. 注意
+## 4. 已验证
+
+使用 `tests/test-bugs.sps` 做过完整验证：
+
+```sh
+LOKO_DUMP_PROGRAM=/tmp/loko-tiny.sexp \
+  ./loko -ftarget=linux --compile tests/test-bugs.sps --output /tmp/loko-tiny.bin
+
+python3 tools/loko-portableize.py /tmp/loko-tiny.sexp
+racket tools/cache-loko-layout.rkt /tmp/loko-tiny.sexp.p /tmp/loko-tiny-full.cache loko
+racket tools/write-cached-elf.rkt /tmp/loko-tiny-full.cache /tmp/loko-tiny-full.elf
+/tmp/loko-tiny-full.elf
+# Tests passed
+```
+
+`loko-near` 和完整 `loko`（short+relax）两条路径都通过了运行验证。
+
+## 5. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
 - dump/portableize 是 Loko 前端的外部工具，不属于 `compiler` 层。
