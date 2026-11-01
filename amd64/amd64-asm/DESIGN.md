@@ -220,7 +220,8 @@ wait prefix + segment prefix + mandatory prefixes + REX
 
 - `insn.rkt` 只保留 facade；
 - `operand.rkt` 收纳操作数解析和 symbolic immediate 策略；
-- `special.rkt` 收纳原手写特殊 encoder/表；
+- `special.rkt` 只保留 facade；手写 encoder/表已拆到
+  `special/{mov,integer,control,string,sse,system,table}.rkt`；
 - `plan.rkt` 提供统一 `resolved-plan`，generated 和 special 都走
   `instruction-plan -> plan-size/encode-plan`；
 - `instruction-size` 对两类指令都走 plan，不再以 `encode-instruction`
@@ -229,8 +230,8 @@ wait prefix + segment prefix + mandatory prefixes + REX
 
 仍待完成：
 
-- `special.rkt` 仍以“直接产出 bytes”的旧 encoder 为主体；下一步把
-  `mov/control/prefix/string/system` 各自改成返回 plan 片段；
+- `special/*.rkt` 仍以“直接产出 bytes”的旧 encoder 为主体；下一步把
+  各家族改成返回 plan 片段；
 - `sexp.rkt` 的 amd64 内存形状还未迁到 `facts/operand.rkt`；
 - `target.rkt` 还没显式包含 mode。
 

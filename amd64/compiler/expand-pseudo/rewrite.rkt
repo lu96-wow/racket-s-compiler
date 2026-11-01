@@ -44,7 +44,7 @@
           [_ item])]
        [(call)
         (match item
-          [(list 'call target) (list 'call-near target)]
+          [(list 'call target) (call-form target)]
           [_ item])]
        [(li)
         (match item

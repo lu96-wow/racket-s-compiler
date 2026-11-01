@@ -24,6 +24,28 @@
 (check-equal? (branch-inverse 'e) 'ne)
 (check-equal? (branch-inverse 'b) 'ae)
 
+;; Address/call/scratch helpers.
+(check-equal? (la-pcrel 'rax '(data))
+              '(lea rax (b64 (base rip) (disp (data)))))
+(check-equal? (la-frame 'rax 'rbp -8)
+              '(lea rax (b64 (base rbp) (disp -8))))
+(check-equal? (la-abs 'rax 42) '(mov rax 42))
+(check-true (positive? (la-size 'rax '(data))))
+(check-equal? (call-form '(f)) '(call-near (f)))
+(check-equal? (call-indirect-form '(b64 (base rax)))
+              '(call-indirect (b64 (base rax))))
+(check-equal? (jump-indirect-form 'rax) '(jmp-indirect rax))
+(check-exn exn:fail? (lambda () (jump-far-form '(f))))
+(check-exn exn:fail? (lambda () (call-far-form '(f))))
+
+(check-equal? (scratch-list 'rax) '(rax))
+(check-equal? (scratch-list '(rax rcx)) '(rax rcx))
+(check-equal? (take-scratch! 'test '(rax rcx) 1) '(rax))
+(check-exn exn:fail? (lambda () (check-distinct! 'test '(rax rax))))
+(check-exn exn:fail? (lambda () (check-scratch-register! 'test 'rsp)))
+(check-exn exn:fail? (lambda () (check-scratch-register! 'test 'xmm0)))
+(check-exn exn:fail? (lambda () (take-scratch! 'test '(rax) 2)))
+
 (check-true (fits-rel8? -128))
 (check-false (fits-rel8? 128))
 (check-true (fits-disp32? #xffffffff))

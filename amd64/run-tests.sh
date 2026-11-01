@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 # Compile modules once; reruns then load .zo instead of expanding source.
 raco make \
   amd64-asm/*.rkt \
+  amd64-asm/special/*.rkt \
   amd64-help/*.rkt \
   amd64-elf/*.rkt \
   compiler/*/*.rkt \

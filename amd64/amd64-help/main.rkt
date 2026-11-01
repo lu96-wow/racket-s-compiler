@@ -7,13 +7,34 @@
 
 (require "ranges.rkt"
          "li.rkt"
+         "la.rkt"
          "cc.rkt"
-         "branch.rkt")
+         "branch.rkt"
+         "jump.rkt"
+         "scratch.rkt")
 
 (provide
  ;; constant / RIP-relative address expansion
  li->form
  li-size
+ la-pcrel
+ la-frame
+ la-abs
+ la-size
+
+ ;; call / indirect / far placeholders
+ call-form
+ call-indirect-form
+ jump-indirect-form
+ jump-far-form
+ call-far-form
+
+ ;; scratch rules
+ default-scratch
+ scratch-list
+ check-distinct!
+ check-scratch-register!
+ take-scratch!
 
  ;; condition codes / branch forms
  canonical-cc

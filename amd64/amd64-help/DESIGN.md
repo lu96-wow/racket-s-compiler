@@ -188,6 +188,9 @@ amd64-elf           ----optional---->  build + symbols + image plan
 ranges.rkt   纯范围谓词
 cc.rkt       条件码规范名/别名
 branch.rkt   jmp/jcc 显式 form + 反转
+jump.rkt     call/indirect/far 占位
+la.rkt       pcrel/frame/abs 地址 form
+scratch.rkt  scratch 参数规范化与校验
 li.rkt       li->form + li-size
 main.rkt     稳定公共 API
 test.rkt     叶子函数/API 测试
@@ -198,12 +201,11 @@ test.rkt     叶子函数/API 测试
 
 后续迁移：
 
-1. `jump.rkt`：`call`/间接跳转/远跳预留；
-2. `la.rkt`：`li` 的 RIP-relative 部分和显式地址策略拆开；
-3. `scratch.rkt`：far/trampoline 的 scratch 规则；
-4. `li.rkt`：把整数选择进一步改成显式 `(imm8/imm32/imm64 ...)` 或 form plan，
+1. `li.rkt`：把整数选择进一步改成显式 `(imm8/imm32/imm64 ...)` 或 form plan，
    让 immediate 宽度完全不依赖编码器的值判断；
-5. 测试继续按叶子函数 + 公共 API 分层，和 `riscv-help/test/` 一样。
+2. `jump.rkt` / `scratch.rkt`：接入真正的 far/trampoline 序列；
+3. `la.rkt`：增加 absolute/GOT 等显式策略；
+4. 测试继续按叶子函数 + 公共 API 分层，和 `riscv-help/test/` 一样。
 
 ## 6. 边界
 
