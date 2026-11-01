@@ -171,22 +171,30 @@
 ;; 放置
 ;; ---------------------------------------------------------------------------
 
-(define (matching-segment-names rules labels)
-  (remove-duplicates
-   (for*/list ([chain (in-list labels)]
-               [r (in-list rules)]
-               #:when (equal? chain (car r)))
-     (cdr r))))
+;; 规则表: (链 . 段名) 的列表 -> 链 -> (段名 …)。
+;; 原来这里是"每个 unit 的每个 label 扫一遍全部规则"(labels × rules), 在大镜像
+;; 上就是二次的: pc-repl 的 dump 有 22 万条规则、十万级 unit。
+(define (rules->table rules)
+  (for/fold ([h (make-hash)]) ([r (in-list rules)])
+    (hash-update! h (car r) (lambda (xs) (cons (cdr r) xs)) '())
+    h))
 
+(define (matching-segment-names rule-table labels)
+  (remove-duplicates
+   (append* (for/list ([chain (in-list labels)])
+              (hash-ref rule-table chain '())))))
+
+;; 先 cons 后 reverse: 原来用 (append xs (list u)), 每个段是 O(单位数²)。
 (define (add-unit! table seg u)
-  (hash-update! table seg (lambda (xs) (append xs (list u))) '()))
+  (hash-update! table seg (lambda (xs) (cons u xs)) '()))
 
 (define (place-code-units units rules wildcard problem!)
   (define by-seg (make-hash))
+  (define rule-table (rules->table rules))
   (define current #f)
   (for ([u (in-list units)])
     (define labels (unit-labels u))
-    (define hits (matching-segment-names rules labels))
+    (define hits (matching-segment-names rule-table labels))
     (cond
       [(> (length hits) 1)
        (problem! (make-problem 'ambiguous-placement labels hits))]
@@ -199,24 +207,25 @@
        (add-unit! by-seg current u)]
       [else
        (problem! (make-problem 'unplaced-block (unit-id u) labels))]))
-  by-seg)
+  (ordered-table by-seg))
 
 (define (place-exact-units units rules wildcard problem! unplaced-kind)
   (define by-seg (make-hash))
+  (define rule-table (rules->table rules))
   (for ([u (in-list units)])
     (define labels (unit-labels u))
     (cond
       [(null? labels)
        (problem! (make-problem 'unlabeled-run (unit-id u) (unit-items u)))]
       [else
-       (define hits (matching-segment-names rules labels))
+       (define hits (matching-segment-names rule-table labels))
        (cond
          [(> (length hits) 1)
           (problem! (make-problem 'ambiguous-placement labels hits))]
          [(= 1 (length hits)) (add-unit! by-seg (car hits) u)]
          [wildcard (add-unit! by-seg wildcard u)]
          [else (problem! (make-problem unplaced-kind (unit-id u) labels))])]))
-  by-seg)
+  (ordered-table by-seg))
 
 ;; ---------------------------------------------------------------------------
 ;; 度量
@@ -280,12 +289,17 @@
 
   (measured-segment seg (reverse out) cursor (reverse entries) (reverse anchors)))
 
+;; add-unit! 是 cons 累积(避免二次 append), place-* 返回前在这里反一次。
+(define (ordered-table table)
+  (for/hash ([(k v) (in-hash table)]) (values k (reverse v))))
+
 (define (units-by-segment segments code-by-seg data-by-seg)
+  (define (units-of table name) (hash-ref table name '()))
   (for/hash ([seg (in-list segments)])
     (define name (segment-name seg))
     (values name
-            (append (hash-ref code-by-seg name '())
-                    (hash-ref data-by-seg name '())))))
+            (append (units-of code-by-seg name)
+                    (units-of data-by-seg name)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 校验
