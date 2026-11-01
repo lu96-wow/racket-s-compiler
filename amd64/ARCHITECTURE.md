@@ -12,7 +12,9 @@
 
 | 模块 | 内容 |
 | --- | --- |
-| `amd64-asm/sexp.rkt` | form / name / path / 地址表达式 / 内存操作数 |
+| `amd64-asm/sexp.rkt` | 兼容 facade：shape.rkt + memory.rkt |
+| `amd64-asm/shape.rkt` | form / name / path / 地址表达式 |
+| `amd64-asm/memory.rkt` | amd64 内存操作数形状与解析 |
 | `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
 | `amd64-asm/insn.rkt` | 稳定 facade：`instruction-plan` / `plan-size` / `encode-plan` / `encode-instruction` |
 | `amd64-asm/plan.rkt` | 统一 `resolved-plan`；special 与 generated plan 的 size/encode 入口 |

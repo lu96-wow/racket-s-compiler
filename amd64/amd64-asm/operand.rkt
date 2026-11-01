@@ -5,7 +5,8 @@
 ;;; and by the plan facade.  This module does not choose instruction forms and
 ;;; does not emit bytes.
 
-(require "sexp.rkt"
+(require "shape.rkt"
+         "memory.rkt"
          "registers.rkt")
 
 (provide rm-width

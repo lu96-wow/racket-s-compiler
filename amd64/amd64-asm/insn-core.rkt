@@ -6,7 +6,7 @@
 ;;; Both the handwritten special encoders and the generated NASM table
 ;;; interpreter use this module, so size and bytes cannot drift apart.
 
-(require "sexp.rkt"
+(require "memory.rkt"
          "registers.rkt"
          "ranges.rkt")
 

@@ -75,7 +75,7 @@
 - [x] `compiler` core flow 与 Loko/ELF flow 解耦
 - [x] `special.rkt` 继续拆成 `mov/integer/control/string/sse/system/table`
 - [ ] special 各家族从“直接产出 bytes”改为 plan 片段
-- [ ] `sexp.rkt` 的内存形状迁到 `facts/operand.rkt`；target 增加 mode
+- [x] `sexp.rkt` 拆成 `shape.rkt` + `memory.rkt` facade；target 增加 mode
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
 - [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
 - [ ] 通用 `%call` 的声明式替代

@@ -5,12 +5,18 @@
 
 (provide (struct-out target)
          target-amd64
+         target-64?
          integer->bytes
          padding-bytes)
 
-(struct target (arch pointer-width features) #:transparent)
+;; MODE is the address/operand-size mode used by instruction selection
+;; (16/32/64).  The current encoder only accepts 64.
+(struct target (arch mode pointer-width features) #:transparent)
 
-(define target-amd64 (target 'amd64 64 '()))
+(define target-amd64 (target 'amd64 64 64 '()))
+
+(define (target-64? target)
+  (and (target? target) (= 64 (target-mode target))))
 
 (define (integer->bytes width value)
   (define bits (* 8 width))

@@ -8,7 +8,9 @@ amd64 的二进制编码层：寄存器事实、target 事实、单条真实指�
 
 ```text
 amd64-asm/
-  sexp.rkt        共享 s-exp 形状 + 内存操作数
+  shape.rkt       通用 form/chain/地址表达式
+  memory.rkt      amd64 内存操作数
+  sexp.rkt        shape + memory 兼容 facade
   registers.rkt   寄存器 class / 编码事实
   target.rkt      目标事实 + 填充
   ranges.rkt      共享整数/立即数/disp/rel 范围谓词

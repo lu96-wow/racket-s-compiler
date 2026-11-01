@@ -16,7 +16,7 @@
 | `compiler/flow/` | core stage 引擎 + 兼容入口 | Loko/ELF 已移到 `loko-compatibility/flow.rkt`；核心 flow 不再 require 可选层 |
 | `amd64-help/` | `li` / `ranges` / `cc` / `branch` / `main` | 还缺 `la` / `jump` / `scratch` 和 far/trampoline 策略 |
 | `amd64-asm/special/*.rkt` | 手写 form 仍产出 bytes | 下一步改成返回 plan 片段；物理拆分已完成 |
-| `amd64-asm/sexp.rkt` | 通用形状 + amd64 内存形状 | 内存形状应迁到 `amd64-asm/operand.rkt`；target 还应显式带 mode |
+| `amd64-asm/sexp.rkt` | 兼容 facade | 新代码应直接用 `shape.rkt` / `memory.rkt`；target mode 已加入 |
 
 ## 2. Loko 编译链缺口
 

@@ -232,8 +232,8 @@ wait prefix + segment prefix + mandatory prefixes + REX
 
 - `special/*.rkt` 仍以“直接产出 bytes”的旧 encoder 为主体；下一步把
   各家族改成返回 plan 片段；
-- `sexp.rkt` 的 amd64 内存形状还未迁到 `facts/operand.rkt`；
-- `target.rkt` 还没显式包含 mode。
+- `sexp.rkt` 已缩成兼容 facade；通用形状在 `shape.rkt`，内存形状在
+  `memory.rkt`；`target.rkt` 已显式包含 mode。
 
 ## 5. 不变量
 
