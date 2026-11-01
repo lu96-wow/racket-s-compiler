@@ -19,7 +19,9 @@
                   layout-segment-start layout-segment-size layout-segment-items
                   offset? offset-position offset-item)
          (only-in "../bind-labels/forms.rkt"
-                  symbol-entry? symbol-chain symbol-address))
+                  symbol-entry? symbol-chain symbol-address)
+         (only-in "../../amd64-help/branch.rkt"
+                  control-transfer-name?))
 
 (provide encode-layout)
 
@@ -38,8 +40,6 @@
 
 (define (value->bytes width expr symbols here)
   (list->bytes (integer->bytes width (resolve-address symbols expr here))))
-
-(define control-transfer-forms '(jmp-short jmp-near jcc-short jcc-near call-near))
 
 (define (resolve-mem m here size symbols)
   (define d (mem-disp m))
@@ -79,7 +79,7 @@
                                prepared)))
      (encode-instruction target 'prefix (list pname inner*))]
 
-    [(memq name control-transfer-forms)
+    [(control-transfer-name? name)
      (let* ([target-operand (last operands)]
             [size (instruction-size target name operands)]
             [address (resolve-symbol symbols target-operand)]
