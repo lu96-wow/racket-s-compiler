@@ -25,21 +25,25 @@
 
 (provide encode-layout)
 
-(define (resolve-symbol symbols chain)
-  (define chain* (normalize-path chain))
-  (define row
-    (for/first ([s (in-list symbols)]
-                #:when (and (symbol-entry? s)
-                            (equal? (symbol-chain s) chain*)))
-      s))
-  (unless row (error 'encode "undefined symbol: ~e" chain))
-  (symbol-address row))
+;; 符号表: 链 -> 地址。原来是每个引用扫一遍全部符号(几十万条), 在大镜像上是
+;; 二次的 —— pc-repl 有 22 万条符号, encode 会跑成几十分钟。
+;; 同一个链出现多次时保留**第一个**(和原来的 for/first 一致)。
+(define (symbols->table symbols)
+  (for/fold ([h (make-hash)]) ([s (in-list symbols)])
+    (cond
+      [(not (symbol-entry? s)) h]
+      [(hash-has-key? h (symbol-chain s)) h]
+      [else (hash-set! h (symbol-chain s) (symbol-address s)) h])))
 
-(define (resolve-address symbols expr here)
-  (eval-address expr (lambda (chain) (resolve-symbol symbols chain)) here))
+(define (resolve-symbol symbol-table chain)
+  (hash-ref symbol-table (normalize-path chain)
+            (lambda () (error 'encode "undefined symbol: ~e" chain))))
 
-(define (value->bytes width expr symbols here)
-  (list->bytes (integer->bytes width (resolve-address symbols expr here))))
+(define (resolve-address symbol-table expr here)
+  (eval-address expr (lambda (chain) (resolve-symbol symbol-table chain)) here))
+
+(define (value->bytes width expr symbol-table here)
+  (list->bytes (integer->bytes width (resolve-address symbol-table expr here))))
 
 (define (make-build-segment name kind start size bytes)
   (list 'segment
@@ -49,29 +53,29 @@
         (list 'size size)
         (list 'bytes bytes)))
 
-(define (resolve-mem m here size symbols)
+(define (resolve-mem m here size symbol-table)
   (define d (mem-disp m))
   (define resolved
     (cond
       [(exact-integer? d) d]
       [(eq? (mem-base m) 'rip)
-       (- (resolve-address symbols d here) (+ here size))]
-      [else (resolve-address symbols d here)]))
+       (- (resolve-address symbol-table d here) (+ here size))]
+      [else (resolve-address symbol-table d here)]))
   (struct-copy mem m [disp resolved]))
 
-(define (resolve-operand op here size symbols)
+(define (resolve-operand op here size symbol-table)
   (cond
-    [(mem? op) (resolve-mem op here size symbols)]
-    [(mem-form? op) (resolve-mem (parse-mem op) here size symbols)]
+    [(mem? op) (resolve-mem op here size symbol-table)]
+    [(mem-form? op) (resolve-mem (parse-mem op) here size symbol-table)]
     ;; Prepared immediate wrapper whose payload is still symbolic.
     [(and (immediate-form op)
           (symbolic-immediate? (cadr op)))
-     (list (immediate-form op) (resolve-address symbols (cadr op) here))]
+     (list (immediate-form op) (resolve-address symbol-table (cadr op) here))]
     [(and (address-expr? op) (not (exact-integer? op)))
-     (list 'imm32 (resolve-address symbols op here))]
+     (list 'imm32 (resolve-address symbol-table op here))]
     [else op]))
 
-(define (encode-code target name operands here symbols)
+(define (encode-code target name operands here symbol-table)
   (cond
     [(eq? name 'prefix)
      (unless (and (= 2 (length operands)) (form? (cadr operands)))
@@ -83,14 +87,14 @@
      (define inner-size (instruction-size target (car inner) (cdr inner)))
      (define prepared (choose-symbolic-immediate-forms (car inner) (cdr inner)))
      (define inner* (cons (car inner)
-                          (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbols))
+                          (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbol-table))
                                prepared)))
      (encode-instruction target 'prefix (list pname inner*))]
 
     [(control-transfer-name? name)
      (let* ([target-operand (last operands)]
             [size (instruction-size target name operands)]
-            [address (resolve-symbol symbols target-operand)]
+            [address (resolve-symbol symbol-table target-operand)]
             [offset (- address (+ here size))]
             [ops (append (drop-right operands 1) (list offset))])
        (encode-instruction target name ops))]
@@ -98,7 +102,7 @@
     [else
      (let* ([prepared (choose-symbolic-immediate-forms name operands)]
             [size (instruction-size target name operands)]
-            [ops (map (lambda (op) (resolve-operand op here size symbols))
+            [ops (map (lambda (op) (resolve-operand op here size symbol-table))
                       prepared)])
        (encode-instruction target name ops))]))
 
@@ -137,7 +141,7 @@
            name size cursor))
   (make-build-segment name 'hole (layout-segment-start seg) size #""))
 
-(define (encode-materialized-segment target seg symbols)
+(define (encode-materialized-segment target seg symbol-table)
   (unless (layout-segment? seg)
     (error 'encode "bad layout segment: ~e" seg))
   (define name (layout-segment-name seg))
@@ -165,10 +169,10 @@
         [(reserve-form? it)
          (error 'encode "reserve is only valid in a hole segment: ~e" it)]
         [(value-form? it)
-         (emit! (value->bytes (value-width it) (value-payload it) symbols here))]
+         (emit! (value->bytes (value-width it) (value-payload it) symbol-table here))]
         [else
          (define expect (instruction-size target (car it) (cdr it)))
-         (define bs (encode-code target (car it) (cdr it) here symbols))
+         (define bs (encode-code target (car it) (cdr it) here symbol-table))
          (unless (= expect (bytes-length bs))
            (error 'encode
                   "item size mismatch at ~a/~a: layout ~a, encode ~a: ~e"
@@ -183,12 +187,12 @@
 ;; Two kinds of segments, two paths: materialized ones emit bytes item by item,
 ;; hole ones only advance the position.  "Where the hole starts" is not a
 ;; runtime state -- the segment declares it.
-(define (encode-segment target seg symbols)
+(define (encode-segment target seg symbol-table)
   (unless (layout-segment? seg)
     (error 'encode "bad layout segment: ~e" seg))
   (if (eq? (layout-segment-kind seg) 'hole)
       (encode-hole-segment seg)
-      (encode-materialized-segment target seg symbols)))
+      (encode-materialized-segment target seg symbol-table)))
 (define (encode-layout target layout)
   (unless (eq? (layout-phase layout) 'bound)
     (error 'encode-layout "expected bound-layout, got phase ~e"
@@ -199,8 +203,8 @@
   (define problems (layout-problems layout))
   (unless (null? problems)
     (error 'encode-layout "layout still has problems: ~e" problems))
-  (define symbols (layout-symbols layout))
+  (define symbol-table (symbols->table (layout-symbols layout)))
   (define segments (layout-segments layout))
   (cons 'build
         (for/list ([seg (in-list segments)])
-          (encode-segment target seg symbols))))
+          (encode-segment target seg symbol-table))))
