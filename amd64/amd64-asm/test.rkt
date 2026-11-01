@@ -246,6 +246,32 @@
 (check-equal? (enc 'ltr 'ax) (bytes #x0f #x00 #xd8))
 (check-equal? (enc 'rdmsr) (bytes #x0f #x32))
 (check-equal? (enc 'wrmsr) (bytes #x0f #x30))
+;; 段寄存器移动: 8E /r (sreg <- r/m16) 与 8C /r。指令本身固定是 r/m16,
+;; 所以**没有** 66 前缀 —— Loko 自己的 pc-repl 里就是 `8e d8 8e c0 8e e0
+;; 8e e8 8e d0`(见 offset 0x19a). llvm-mc 给 `mov %ax,%ds` 会多写一个 66,
+;; 那是它自己的选择, 两条编码等价。
+(check-equal? (enc 'mov 'ds 'ax) (bytes #x8e #xd8))
+(check-equal? (enc 'mov 'es 'ax) (bytes #x8e #xc0))
+(check-equal? (enc 'mov 'ss 'ax) (bytes #x8e #xd0))
+(check-equal? (enc 'mov 'fs 'ax) (bytes #x8e #xe0))
+(check-equal? (enc 'mov 'gs 'ax) (bytes #x8e #xe8))
+(check-equal? (enc 'mov 'ax 'ds) (bytes #x8c #xd8))
+(check-equal? (enc 'mov 'ax 'fs) (bytes #x8c #xe0))
+(check-exn exn:fail? (lambda () (enc 'mov 'cs 'ax)))
+
+;; x87 / SSE 状态: fninit = DB E3, fxsave/fxrstor = 0F AE /0,/1
+(check-equal? (enc 'fninit) (bytes #xdb #xe3))
+(check-equal? (enc 'fxsave '(b64 (base rdi) (disp 1024)))
+              (bytes #x0f #xae #x87 #x00 #x04 #x00 #x00))
+(check-equal? (enc 'fxrstor '(b64 (base rdi) (disp 1024)))
+              (bytes #x0f #xae #x8f #x00 #x04 #x00 #x00))
+
+;; 远跳: EA + 偏移(32) + 选择子(16)。偏移是绝对地址, 不是相对位移。
+(check-equal? (enc 'jmp-far 8 '(imm32 #x200123))
+              (bytes #xea #x23 #x01 #x20 #x00 #x08 #x00))
+(check-equal? (instruction-size target-amd64 'jmp-far (list 8 (list 'somewhere)))
+              (+ 7 0))
+
 (check-equal? (enc 'swapgs) (bytes #x0f #x01 #xf8))
 (check-equal? (enc 'sysretq) (bytes #x48 #x0f #x07))
 (check-equal? (enc 'iretq) (bytes #x48 #xcf))

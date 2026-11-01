@@ -36,7 +36,9 @@
                   item-size align-pad make-segment-form make-place
                   make-layout-spec)
          (only-in "plan.rkt" segment-align-for)
-         "../../compiler/expand-pseudo/rewrite.rkt")
+         "../../compiler/expand-pseudo/rewrite.rkt"
+         "../mode32.rkt"
+         "../ir.rkt")
 
 (provide build-layout-spec)
 
@@ -96,10 +98,34 @@
       [else
        (+ cursor (item-size target-amd64 item))])))
 
-(define (unsupported-modes modes)
-  (for/list ([mode (in-list modes)]
-             #:when (not (= (cadr mode) 64)))
-    (cadr mode)))
+;; 段里的模式 run: (modes ((起始下标 模式) …))。模式是 Loko 的 %mode 指令,
+;; 记录的是"从哪个 item 起换成这个模式", 一直到下一个标记。
+;;
+;; 本后端只有 64 位编码路径, 所以 32 位 run 只放行"用 64 位路径编码出的字节与
+;; 32 位模式一致"的 item —— 判据在 loko-compatibility/mode32.rkt 里, 逐字节
+;; 一致性由和 Loko 自己的 bin/pc-repl 对比来守。其余模式(16 位)仍然不支持。
+(define (mode-runs modes nitems)
+  (for/list ([pair (in-list modes)] [i (in-naturals)])
+    (define start (car pair))
+    (define end (if (< (add1 i) (length modes))
+                    (car (list-ref modes (add1 i)))
+                    nitems))
+    (list start end (cadr pair))))
+
+(define (check-section-modes section problem!)
+  (define items (section-items section))
+  (define name (section-name section))
+  (for ([run (in-list (mode-runs (section-modes section) (length items)))])
+    (define-values (start end mode) (apply values run))
+    (case (if (exact-integer? mode) mode #f)
+      [(64) (void)]
+      [(32)
+       (for ([item (in-list items)] [idx (in-naturals)]
+             #:when (and (>= idx start) (< idx end)))
+         (define rewritten (rewrite-item item #:short-transfers? #f))
+         (unless (mode32-compatible-item? rewritten)
+           (problem! 'mode32-unsupported-form name item)))]
+      [else (problem! 'mode-unsupported name mode)])))
 
 ;; 输入:
 ;;   ir     loko-ir
@@ -128,10 +154,8 @@
     (define modes (section-modes section))
     (define items (ensure-start-label section used-labels))
 
-    (define bad-modes (unsupported-modes modes))
-    (when (and (eq? kind 'code) (pair? bad-modes))
-      (for ([mode (in-list bad-modes)])
-        (problem! 'mode-unsupported name mode)))
+    (when (eq? kind 'code)
+      (check-section-modes section problem!))
 
     (cond
       [(null? items) (void)]

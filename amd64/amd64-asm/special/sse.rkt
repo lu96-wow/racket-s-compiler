@@ -16,7 +16,8 @@
          plan-sse-scalar
          plan-roundss
          plan-cvtsi2ss
-         plan-mxcsr)
+         plan-mxcsr
+         plan-fpstate)
 
 (define (xmm-operand? x)
   (define r (cond
@@ -157,6 +158,17 @@
      (sse-rm-plan (list #xf3) (if (= width 64) 64 32)
                (list d) (make-rm-encoding s d) '(#x0f #x2a))]
     [_ (error 'plan-cvtsi2ss "cvtsi2ss takes dst, src: ~e" operands)]))
+
+;;; FXSAVE / FXRSTOR: 0F AE /0 和 /1，操作数是 512 字节的保存区。
+;;; 和 ldmxcsr/stmxcsr 一样只收内存操作数；这里**不检查**操作数宽度 ——
+;;; 那条指令的"宽度"是 512 字节，和 mem 宽度的标注无关，编码只需要地址。
+(define (plan-fpstate name digit operands)
+  (match operands
+    [(list m)
+     (define m* (parse-rm m))
+     (unless (mem? m*) (error name "~a needs a memory operand: ~e" name m))
+     (sse-rm-plan '() 32 (regs-in-op m*) (make-rm-encoding m* digit) '(#x0f #xae))]
+    [_ (error name "~a takes one memory operand: ~e" name operands)]))
 
 (define (plan-mxcsr name digit operands)
   (match operands

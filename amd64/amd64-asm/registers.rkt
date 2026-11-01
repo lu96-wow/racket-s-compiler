@@ -1,13 +1,14 @@
 #lang racket
 ;;; amd64/amd64-asm/registers.rkt
 ;;;
-;;; 寄存器名、class（GPR/XMM）、宽度和编码编号。只放事实，不做分配。
+;;; 寄存器名、class（GPR/XMM/control/debug/segment）、宽度和编码编号。只放事实，不做分配。
 
 (provide (struct-out reg)
          lookup-register
          register-name?
          gpr-register?
          xmm-register?
+         segment-register?
          reg-class
          reg-width
          reg-index
@@ -110,6 +111,11 @@
   (for/list ([i (in-range 8)])
     (list (string->symbol (format "dr~a" i)) i)))
 
+;; 段寄存器: 编号就是 ModRM.reg 的取值（ES=0, CS=1, SS=2, DS=3, FS=4, GS=5）。
+;; 宽度报 16 是因为它们只按 r/m16 参与; `mov` 里用 rm-plan 32 来抑制 66。
+(define segment-register-list
+  '((es 0) (cs 1) (ss 2) (ds 3) (fs 4) (gs 5)))
+
 (define registers
   (let ([h (make-hash)])
     (for ([r (in-list register-list)])
@@ -120,6 +126,8 @@
       (hash-set! h (car r) (reg (car r) 64 (cadr r) #f #f 'control)))
     (for ([r (in-list debug-register-list)])
       (hash-set! h (car r) (reg (car r) 64 (cadr r) #f #f 'debug)))
+    (for ([r (in-list segment-register-list)])
+      (hash-set! h (car r) (reg (car r) 16 (cadr r) #f #f 'segment)))
     h))
 
 (define missing (gensym 'missing-register))
@@ -134,3 +142,4 @@
 (define (register-name? name) (and (hash-ref registers name #f) #t))
 (define (gpr-register? r) (and (reg? r) (eq? (reg-class r) 'gpr)))
 (define (xmm-register? r) (and (reg? r) (eq? (reg-class r) 'xmm)))
+(define (segment-register? r) (and (reg? r) (eq? (reg-class r) 'segment)))

@@ -19,7 +19,7 @@
   (and r (reg-class r)))
 
 (define (special-register? x)
-  (memq (reg-class-of x) '(control debug)))
+  (memq (reg-class-of x) '(control debug segment)))
 
 (define (parse-special-register op)
   (define r (cond
@@ -62,13 +62,55 @@
                        sr g)]
     [else (error 'plan-mov "expected a control/debug register: ~e ~e" dst src)]))
 
+;;; 段寄存器移动: `mov sreg, r/m16` = 8E /r, `mov r/m16, sreg` = 8C /r。
+;;; 指令本身固定是 r/m16，所以用 rm-plan 32 来**抑制** 66 操作数前缀；
+;;; 只要求操作数宽度不超过 16。cs 不能做目标。
+(define (plan-segment-mov dst src)
+  (define (sreg-of x)
+    (define r (cond [(reg? x) x]
+                    [(symbol? x) (lookup-register x #f)]
+                    [else #f]))
+    (and r (segment-register? r) r))
+  (define (check-rm16 op)
+    (define w (cond [(mem? op) (mem-width op)]
+                    [(reg? op) (reg-width op)]
+                    [else #f]))
+    (unless (and w (<= w 16))
+      (error 'plan-mov "segment move needs a 16-bit r/m operand: ~e" op)))
+  (cond
+    ;; mov sreg, r/m16  ->  8E /r
+    [(and (sreg-of dst) (not (sreg-of src)))
+     (define sr (sreg-of dst))
+     (when (eq? (reg-name sr) 'cs)
+       (error 'plan-mov "cs cannot be a move destination"))
+     (define rm (parse-rm src))
+     (check-rm16 rm)
+     (rm-plan 32 (regs-in-op rm) (make-rm-encoding rm sr) '(#x8e))]
+    ;; mov r/m16, sreg  ->  8C /r
+    [(and (sreg-of src) (not (sreg-of dst)))
+     (define sr (sreg-of src))
+     (define rm (parse-rm dst))
+     (check-rm16 rm)
+     (rm-plan 32 (regs-in-op rm) (make-rm-encoding rm sr) '(#x8c))]
+    [else
+     (error 'plan-mov "segment move needs exactly one segment register: ~e ~e"
+            dst src)]))
+
 (define (plan-mov operands)
   (match operands
     [(list dst src)
-     (if (or (special-register? dst) (special-register? src))
-         (plan-special-mov dst src)
-         (plan-mov-normal operands))]
+     (cond
+       [(or (segment-register? (->reg dst)) (segment-register? (->reg src)))
+        (plan-segment-mov dst src)]
+       [(or (special-register? dst) (special-register? src))
+        (plan-special-mov dst src)]
+       [else (plan-mov-normal operands)])]
     [_ (error 'plan-mov "mov takes two operands: ~e" operands)]))
+
+(define (->reg x)
+  (cond [(reg? x) x]
+        [(symbol? x) (lookup-register x #f)]
+        [else #f]))
 
 (define (plan-mov-normal operands)
   (match operands

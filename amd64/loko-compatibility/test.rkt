@@ -2,7 +2,8 @@
 ;;; amd64/loko-compatibility/test.rkt
 
 (require rackunit
-         "translate.rkt")
+         "translate.rkt"
+         "mode32.rkt")
 
 (define (field name out)
   (cdr (assq name (loko-compat-fields out))))
@@ -489,3 +490,81 @@
 (check-true
  (for/or ([p (in-list (field 'problems raw-call))])
    (eq? (cadr p) 'directive-needs-image-layer)))
+
+;; ---------------------------------------------------------------------------
+;; 裸机 (pc) 写法: 远跳、段寄存器、符号 u128
+;; ---------------------------------------------------------------------------
+
+;; (jmpf (far 选择子 目标)) -> (jmp-far 选择子 目标): 偏移是绝对地址表达式,
+;; 尺寸固定 7 字节(EA + imm32 + sel16), 不参与 relax。
+(define far-jump
+  (translate-loko-source
+   '(loko-source
+     (text (%label begin) (jmpf (far 8 begin)) (jmpf (far 24 begin)))
+     (data))))
+(check-equal? (field 'program-items far-jump)
+              '((label begin) (jmp-far 8 (begin)) (jmp-far 24 (begin))))
+
+;; 段寄存器写成单元素路径 (mov (ds) ax) 时归一成寄存器写法
+(define segment-move
+  (translate-loko-source
+   '(loko-source
+     (text (%label t) (mov (ds) ax) (mov (es) ax) (mov fs ax) (ret))
+     (data))))
+(check-equal? (field 'program-items segment-move)
+              '((label t) (mov ds ax) (mov es ax) (mov fs ax) (ret)))
+
+;; 符号 %u128 拆成两个 8 字节 value(低位在前), 交给 layout 求值:
+;; IDT 门描述符就是"handler 地址 + 选择子 + 类型位"。
+(define symbolic-u128
+  (translate-loko-source
+   '(loko-source
+     (text (%label t))
+     (data (%label gate) (%u128 (bitwise-ior gate 8 #x8e00))))))
+(check-equal? (field 'data-items symbolic-u128)
+              '((label gate)
+                (value 8 (bitwise-and (bitwise-ior (gate) 8 36352) 18446744073709551615))
+                (value 8 (ash (bitwise-ior (gate) 8 36352) -64))))
+
+;; ---------------------------------------------------------------------------
+;; 32 位模式子集: 用 64 位路径编码是否等价
+;;
+;; 裸机引导段是 (%mode 32)。本后端只有 64 位编码路径, 所以只放行"字节相同"的
+;; item; 下面就是那份判据的正反例。
+;; ---------------------------------------------------------------------------
+
+(define (mode32-ok? item) (mode32-compatible-item? item))
+
+;; pc-repl 引导段实际出现的形态: 全部必须放行
+(for ([item (in-list '((mov eax 16)
+                       (mov al 0)
+                       (cmp eax 732803074)
+                       (jmp-near (loko-obj-vector-0))
+                       (jcc-near e (loko-obj-vector-0))
+                       (mov ds ax)
+                       (jmp-far 8 (multiboot:start64))
+                       (lgdt (b64 (disp (gdtr32))))
+                       (lidt (b64 (disp (idtr32))))
+                       (mov cr4 eax)
+                       (mov eax cr0)
+                       (rdmsr)
+                       (wrmsr)
+                       (out 128 al)
+                       (label start)                 ; 数据 item 与模式无关
+                       (value 4 (bss))))])
+  (unless (mode32-ok? item)
+    (fail "32 位模式下应当放行: ~e" item)))
+
+;; 这些在 32 位下语义/编码不同, 必须拦下
+(for ([item (in-list '((push 5)                      ; 64 位下压 8 字节
+                       (mov rax 5)                   ; r64
+                       (mov rax 8589934592)          ; imm64
+                       (mov (b64 (base rax)) r15)    ; 需要 REX
+                       (mov rax (b64 (base rip) (disp 0))) ; 32 位没有 RIP 相对
+                       (syscall)                     ; 长模式专有
+                       (sysretq)
+                       (swapgs)
+                       (cqo)
+                       (cmpxchg (b64 (base rax)) rbx)))])  ; 未审计
+  (when (mode32-ok? item)
+    (fail "32 位模式下应当拒绝: ~e" item)))

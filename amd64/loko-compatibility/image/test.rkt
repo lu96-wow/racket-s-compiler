@@ -63,16 +63,40 @@
                 (reserve 32)
                 (label bss-end)))
 
-;; non-64-bit code sections are reported, not silently measured as 64-bit
+;; 32 位代码不再一律报错: 只有"用 64 位路径编码不等价"的 item 才报
+;; (判据见 loko-compatibility/mode32.rkt; 那 101 个引导 item 全部通过)
 (define-values (_spec2 _p2 _d2 problems2)
   (build-layout-spec
    (loko-ir-of
     '(loko-source
-      (text (%origin 0) (%mode 32) (%section text) (%label text) (ret))
+      (text (%origin 0) (%mode 32) (%section text) (%label text)
+            (mov eax 16) (mov ds ax) (ret))
+      (data)))))
+(check-equal? problems2 '())
+
+;; 32 位段里出现模式敏感指令 -> 报出具体的 item, 而不是默默按 64 位编码
+(define-values (_spec3 _p3 _d3 problems3)
+  (build-layout-spec
+   (loko-ir-of
+    '(loko-source
+      (text (%origin 0) (%mode 32) (%section text) (%label text) (mov rax 5) (ret))
       (data)))))
 (check-true
- (for/or ([p (in-list problems2)])
-   (equal? p '(problem mode-unsupported text 32))))
+ (for/or ([p (in-list problems3)])
+   (and (eq? (cadr p) 'mode32-unsupported-form)
+        (equal? (caddr p) 'text)
+        (equal? (cadddr p) '(mov rax 5)))))
+
+;; 16 位模式仍然不支持
+(define-values (_spec4 _p4 _d4 problems4)
+  (build-layout-spec
+   (loko-ir-of
+    '(loko-source
+      (text (%origin 0) (%mode 16) (%section text) (%label text) (ret))
+      (data)))))
+(check-true
+ (for/or ([p (in-list problems4)])
+   (equal? p '(problem mode-unsupported text 16))))
 
 ;; Loko Linux plan: plan-only stack/heap regions, no host callbacks.
 (check-equal? (choose-loko-linux-image-plan '() '()) '())

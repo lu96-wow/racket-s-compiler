@@ -518,6 +518,9 @@
   (cond
     [(hash-has-key? (ctx-raw-aliases ctx) op)
      (resolve-alias ctx op '())]
+    ;; 段寄存器写成单元素路径: (mov (ds) ax)。这是一个寄存器操作数，不是标签。
+    [(and (form? op) (null? (cdr op)) (memq (car op) '(es cs ss ds fs gs)))
+     (car op)]
     [(loko-memory? op) (translate-mem ctx op default-width)]
     [(exact-integer? op) op]
     [(symbol? op)

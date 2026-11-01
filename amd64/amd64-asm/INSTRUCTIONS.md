@@ -215,7 +215,14 @@ SSE/SSE2 legacy forms（addsd/addps/movapd/pxor/paddq/movdqu/...）
 xgetbv clts rdpkru stac 等 fixed-opcode 系统指令
 ```
 
-尚未实现：x87/MMX、AVX/VEX/EVEX/APX、`jmpf`/`far`、16/32 位模式。
+已实现（为裸机 pc 路径补的）：`jmpf` + `(far 选择子 目标)`（绝对偏移，
+定长 7 字节 `EA + imm32 + sel16`）、段寄存器 `mov ds/es/ss/fs/gs, r/m16`
+（`8E /r`，反向 `8C /r`）、`fninit`、`fxsave`/`fxrstor`（`0F AE /0,/1`）。
+
+尚未实现：x87 其余指令、MMX、AVX/VEX/EVEX/APX、16 位模式；32 位模式**没有**
+逐 item 的模式感知编码——只放行"64 位路径编出的字节与 32 位一致"的那部分，
+判据在 `loko-compatibility/mode32.rkt`，逐字节一致性靠和 Loko 自己的
+`bin/pc-repl` 对比。
 
 ## 9. 内存/REX 不变量
 
@@ -241,7 +248,9 @@ xgetbv clts rdpkru stac 等 fixed-opcode 系统指令
 
 后续大块能力：
 
-1. **PC 模式/远跳**：`%mode` 16/32/64、`jmpf` + `(far seg offset)`。
+1. **逐 item 的 16/32 位模式编码**：现在 32 位段走的是"审计过的等价子集"
+   （`mode32.rkt`）。要做真正的 16/32 位模式感知，需要把模式一路带到
+   layout/encode，并让 `target` 的模式参数真正参与选形。
 2. **SSE 扩展**：按需补 `movsd/addsd/...` 等双精度和更多 packed 指令。
 
 ## 11. 测试
