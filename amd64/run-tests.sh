@@ -13,6 +13,7 @@ raco make \
   loko-compatibility/*/*.rkt \
   tools/*.rkt
 
+failed=''
 for test in \
   amd64-asm/test.rkt \
   amd64-asm/test-oracle.rkt \
@@ -35,5 +36,15 @@ for test in \
   tools/smoke-loko-elf.rkt
 do
   printf '== %s\n' "$test"
-  racket "$test"
+  # 用 run-test.rkt 跑: rackunit 的 check-* 失败本身不改退出码，包装器会。
+  # 单个测试失败不中断，跑完再一起报告，方便一次看到全部问题。
+  if ! racket tools/run-test.rkt "$test"; then
+    failed="$failed $test"
+  fi
 done
+
+if [ -n "${failed:-}" ]; then
+  printf '\nFAILED:%s\n' "$failed" >&2
+  exit 1
+fi
+printf '\nall tests passed\n' 
