@@ -125,11 +125,53 @@ cmp /tmp/loko-tiny-full.elf /tmp/loko-tiny-new.elf && echo identical
 内核把 `.bss` 的匿名页盖在 `.text` 上 → 入口 SIGSEGV。这条路径由
 `tools/smoke-loko-elf.rkt` 守住（构建 + 真执行 + 每段独占一页）。
 
+## 4.1 我们已经不需要这个补丁了：`sexp` target
+
+`loko-target/` 里是 Loko 的一个 **target 插件**（用 Loko 公开的
+`(loko arch asm) register-target` 接口）：它不发射 ELF 头/尾，也不产字节，
+而是把 assembler 输入直接写成 Racket 能读的 s-expression。于是下面这些全都不需要：
+
+| 不需要 | 原因 |
+| --- | --- |
+| `tools/loko-dump.patch` | 不再往 `compiler/main.sls` 里加 dump 钩子 |
+| `tools/loko-portableize.py` | 我们自己的 printer 直接吐可读形式 |
+| `%call` / `%elf-header` / `%elf-tail` | target 根本不发射 ELF writer 的内容 |
+
+target 的源码在 **Loko 仓库里**（`arch/amd64/sexp-asm.sls`），本仓库不保留副本，
+避免两处漂移。安装面共 4 处（一次性，都在 Loko 树里）：
+
+```text
+arch/amd64/sexp-asm.sls                    新文件（target 插件）
+compile-loko.sps                           +2 行（import + sexp-asm:visit）
+compiler/static.sls                        +1 行（静态库列表）
+compiler/static.sls                        +1 行 get-scheme-libraries: [(sexp) '(linux)]
+```
+
+最后一行的作用：`get-scheme-libraries` 按 `target-kernel` 决定要静态链接哪些运行库。
+`-ftarget=sexp` 如果不映射成 `linux`，`kernels` 就是空表，`loko/arch/amd64/linux-start`、
+`linux-init`、`linux-syscalls`、`elf-start` 都不会进程序 —— 编出来的镜像能链接、能运行，
+但初始化缺一大堆，启动就对着一堆小整数当指针解引用（实测 SIGBUS，`rax=0x2f`）。
+
+**已验证**：`tests/test-bugs.sps` 用这条路编出来的镜像跑出 `Tests passed`
+（3,763,416 B，与旧路径同尺寸）。
+
+用 `tools/build-loko-target.sh` 装好并重建；之后：
+
+```sh
+LOKO_PROGRAM_SEXP=/tmp/prog.sexp ./loko-prebuilt -ftarget=sexp \
+    --compile tests/test-bugs.sps --output /tmp/prog.bin
+racket tools/cache-loko-layout.rkt /tmp/prog.sexp /tmp/prog.cache loko-near
+```
+
+注意：`.akku/lib/loko` 是 akku 的构建产物，脚本会用"工作树副本 + 系统安装里的
+生成文件"重建它；**不要**手工 `rm -rf` 它之后跑 `make -B`（那会把工作树里的库
+文件换成悬空符号链接，见下一节）。
+
 ## 5. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
 - dump/portableize 是 Loko 前端的外部工具，不属于 `compiler` 层。
-- **不要用 `make -B loko`**：`-B` 会重跑 `akku install`，而 akku 会把
+- **不要用 `make -B loko` / `akku install` 之后再手工改 `.akku/lib/loko`**：`-B` 会重跑 `akku install`，而 akku 会把
   `.akku/lib/loko`（`LOKO_SOURCE` 指向的自有库目录）换成它自己的副本，
   打补丁的 `compiler/main.sls` 就丢了。正确做法是 `touch loko-prebuilt &&
   make loko`，并且保证 `.akku/lib/loko` 是**工作树的副本**（不是系统安装）。
