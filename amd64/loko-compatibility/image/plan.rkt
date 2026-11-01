@@ -10,7 +10,7 @@
 ;;; 这些常量必须与 Loko 的 arch/amd64/memory.sls 保持一致。
 
 (provide loko-linux-image-plan
-         loko-linux-image-plan-for
+         choose-loko-linux-image-plan
          loko-linux-stack-start
          loko-linux-stack-size
          loko-linux-heap-start
@@ -22,7 +22,7 @@
 (define loko-linux-heap-start (+ loko-linux-stack-start loko-linux-stack-size))
 (define loko-linux-heap-size (* 16 1024 1024))   ;16 MiB
 
-(define (region id section perm load)
+(define (materialized-region id section perm load)
   (list 'region
         (list 'id id)
         (list 'content (if (eq? id 'bss) 'reserved 'materialized))
@@ -30,7 +30,7 @@
         (list 'perm perm)
         (list 'load load)))
 
-(define (reserved id section perm load start size)
+(define (reserved-region id section perm load start size)
   (list 'region
         (list 'id id)
         (list 'content 'reserved)
@@ -40,7 +40,7 @@
         (list 'start start)
         (list 'size size)))
 
-(define (loko-linux-image-plan-for symbols declared-plan)
+(define (choose-loko-linux-image-plan symbols declared-plan)
   (cond
     [(pair? declared-plan) declared-plan]
     [(for/or ([s (in-list symbols)])
@@ -51,10 +51,10 @@
 (define (loko-linux-image-plan)
   (list
    (list 'entry (list 'elf-entry))
-   (region 'text ".text" 'r-x 'text)
-   (region 'data ".data" 'r-- 'data)
-   (region 'bss ".bss" 'rw- 'bss)
+   (materialized-region 'text ".text" 'r-x 'text)
+   (materialized-region 'data ".data" 'r-- 'data)
+   (materialized-region 'bss ".bss" 'rw- 'bss)
    ;; The first page of the stack is a guard page.
-   (reserved 'stack0 ".stack0" 'rw- 'stack
+   (reserved-region 'stack0 ".stack0" 'rw- 'stack
              (+ loko-linux-stack-start page-size) (- loko-linux-stack-size page-size))
-   (reserved 'heap0 ".heap0" 'rw- 'heap loko-linux-heap-start loko-linux-heap-size)))
+   (reserved-region 'heap0 ".heap0" 'rw- 'heap loko-linux-heap-start loko-linux-heap-size)))

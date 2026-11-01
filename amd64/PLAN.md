@@ -61,10 +61,14 @@
 - [x] 地址表达式支持符号 `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field`
 - [x] lower 第一版：伪寄存器 `(reg N)`、uses/sets、liveness、图着色分配
 - [x] lower 的调用点 save/restore 注记展开
-- [ ] lower 的跨调用值 spill / frame allocation
+- [x] 8 位内存 mov 使用 8A/88；REX.B 只由 base、REX.X 只由 index 决定
+- [x] Loko Linux 真实输出验证：tiny 运行通过；t2 的 near/full 结果与 Loko 一致
+- [x] `loko-near` 验证流 + `tools/cache-loko-layout.rkt` / `write-cached-elf.rkt`
+- [ ] lower 的跨调用值 spill / frame allocation（Loko 实际输入已由 Loko optimizer 分配）
 - [ ] `adc/sbb`、更多双精度/packed SSE
 - [ ] `jmpf`/`far`、`%mode` 16/32/64
-- [ ] image 层：`%call` 的声明式替代；自动 `layout-spec` / ELF 已可用
+- [x] image 层：Loko Linux `%elf` 计划 + plan-only reserved region；自动 `layout-spec` / ELF 可用
+- [ ] 通用 `%call` 的声明式替代
 - [x] block-aware layout：place/region/wildcard、data runs、fallthrough
 - [x] 段起始对齐/重叠、代码数据混放、RIP/绝对 disp32 范围检查
 - [x] relax 按 `(code 块下标 项下标)` origin 精确升级

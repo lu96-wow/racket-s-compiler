@@ -12,7 +12,7 @@
 | `amd64-help/` | `li.rkt`、`ranges.rkt` | 还没有 far/trampoline、符号表达式、branch/远地址辅助 |
 | `amd64-asm/` | 指令编码、寄存器、target、通用 `reserve`/hole 段 | 还缺 far form、16/32 模式、外部 reloc/loader |
 | `compiler/` | 纯 S-expression 编译流水线 | 没有 image writer；这是有意的，image 不属于编译器 |
-| 仓库根 | 分层测试脚本 | 还没有一个统一 test runner |
+| 仓库根 | `run-tests.sh` + `tools/` | Loko dump/cache 依赖外部 Loko 仓库，已在 `tools/` 提供 patch 和步骤 |
 
 ## 2. Loko 编译链缺口
 
@@ -30,7 +30,9 @@
 - `lower/ir.rkt`：`loko-ir` code section 的 lower，已接入 flow
 - `%init-bss` 的 64 位显式展开（`translate.rkt`）
 
-还缺：
+说明：Loko 实际导出的是 `pass-optimize` 之后的代码，真正的指令已经没有
+`(reg N)`；剩余的伪寄存器只在注释里。因此 Loko 验证路径不需要再分配。
+原始 codegen 输入仍缺：
 
 - 跨调用值的 preserved 分配或 spill
 - frame allocation / `LOCALS`
@@ -51,7 +53,8 @@
 还缺：
 
 - 精确尺寸（当前用 near 分支上界，DCE 后可能留 gap）
-- `%call` -> 声明式 ELF header / strtab/symtab，替代宿主回调
+- `%call` 通用替代；Loko Linux 路径已用 `image/plan.rkt` + `amd64-elf`
+  的 plan-only reserved region 替代 ELF header/footer
 - `%elf` / `image-plan` 已支持 canonical region/load/symbol；`content`/`perm` 派生 ELF 元数据；还需要覆盖 Loko 现有 ELF callback 的全部语义
 - 消费 `translate.rkt` 已采集的 symbol metadata（start/end/section/misc）
 - 多 PT_LOAD / text-data 权限分离
@@ -92,7 +95,7 @@
 
 - Racket 后端与 R6RS Loko 之间的调用/序列化桥
 - 使用真实 Loko codegen 输出做 golden test
-- 统一 test runner
+- 统一 test runner（已完成：`run-tests.sh`）
 
 ## 5. 建议顺序
 

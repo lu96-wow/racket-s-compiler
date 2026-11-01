@@ -170,15 +170,27 @@ swapgs sysretq iretq
 
 尚未实现：`jmpf`/`far`、16/32 位模式。
 
-## 9. 扩展顺序
+## 9. 内存/REX 不变量
+
+- `REX.B` 只由 **base** 决定；`REX.X` 只由 **index** 决定。
+  不要把 index 的扩展位 OR 进 `REX.B`，否则 `[rsp+r10]` 会变成 `[r12+r10]`。
+- `rsp` 不能作 index；`r12` 可以，编码为 SIB index=4 且 `REX.X=1`。
+- 8 位内存 load/store 必须用 `8A /r` / `88 /r`；用 `8B/89` 会把
+  `dl` 静默解释成 `edx`，写入 4 字节。
+- 符号立即数在 layout 时固定成 imm32/imm64，encode 只填入值；
+  不能在 layout 后根据最终值改宽度。
+
+## 10. 扩展顺序
 
 1. **PC 模式/远跳**：`%mode` 16/32/64、`jmpf` + `(far seg offset)`。
 2. **SSE 扩展**：按需补 `movsd/addsd/...` 等双精度和更多 packed 指令。
 
-## 10. 测试
+## 11. 测试
 
 ```sh
-racket amd64/encode/test.rkt
+cd amd64 && ./run-tests.sh
+# 或
+racket amd64-asm/test.rkt
 ```
 
 每条新 form 至少覆盖：

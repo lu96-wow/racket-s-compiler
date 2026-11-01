@@ -149,4 +149,39 @@
 (check-equal? (subbytes bytes2 0 4) #"\x7fELF")
 (check-equal? (cadr (assq 'entry (cdr image2))) #x200000)
 
+;; plan-only reserved region: NOBITS load with zero filesz.
+(define reserved-plan
+  '((entry (text))
+    (region (id text) (content materialized) (section .text)
+            (perm r-x) (load text))
+    (region (id stack) (content reserved) (section .stack)
+            (perm rw-) (load stack)
+            (start #x10000001000) (size #x1ff000))
+    (load (id text) (align 4096))
+    (load (id stack) (align 4096))))
+(define reserved-image (write-elf build symbols #:plan reserved-plan))
+(define rbytes (cadr (assq 'bytes (cdr reserved-image))))
+(define phnum (u16 rbytes 56))
+(define (phdr i)
+  (define off (+ 64 (* 56 i)))
+  (list (u32 rbytes off)              ; type
+        (u32 rbytes (+ off 4))        ; flags
+        (u64 rbytes (+ off 8))        ; offset
+        (u64 rbytes (+ off 16))       ; vaddr
+        (u64 rbytes (+ off 24))       ; paddr
+        (u64 rbytes (+ off 32))       ; filesz
+        (u64 rbytes (+ off 40))       ; memsz
+        (u64 rbytes (+ off 48))))     ; align
+(define reserved-phdr
+  (for/first ([i (in-range phnum)]
+              #:do [(define p (phdr i))]
+              #:when (= (list-ref p 3) #x10000001000))
+    p))
+(check-true (and reserved-phdr #t))
+(check-equal? (list-ref reserved-phdr 0) 1)          ; PT_LOAD
+(check-equal? (list-ref reserved-phdr 1) #x6)        ; R|W
+(check-equal? (list-ref reserved-phdr 2) 0)          ; p_offset
+(check-equal? (list-ref reserved-phdr 5) 0)          ; p_filesz
+(check-equal? (list-ref reserved-phdr 6) #x1ff000)   ; p_memsz
+
 (displayln "amd64 elf tests: ok")

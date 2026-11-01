@@ -105,29 +105,56 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - `build` + symbols -> 静态 ELF64（默认单 PT_LOAD，plan 可多 PT_LOAD；NOBITS BSS、symtab/strtab）
 - `%elf` / `image-plan`：canonical region/load/symbol；content/perm 派生 ELF 元数据
 
+已实现：Loko Linux 默认 `%elf` 计划（text/data/bss/stack0/heap0，多 PT_LOAD、
+plan-only reserved region）、loko-near 验证流、Loko 输出缓存工具。
+
 未实现：
 
-- lower 的跨调用值 spill、frame allocation
+- 原始 codegen 输出的完整 lower：跨调用 spill、frame allocation；当前 Loko
+  验证路径使用 Loko `pass-optimize` 之后的已分配代码
+- `%call` 的通用声明式替代（Loko Linux 路径用 `image/plan.rkt`）
 - `needs-far` / far form / trampoline / scratch 寄存器
-- image 层：`%call`、多 PT_LOAD / 权限分离、reloc/dynamic linking
-- 外部符号 / loader
+- 外部符号 / loader、reloc/dynamic linking
 - `jmpf`/`far`、16/32 位模式
 - `adc/sbb`、AVX、更多双精度/packed SSE
 
 ## 测试
 
+先 `raco make` 再跑，避免每次展开模块：
+
+```sh
+cd amd64
+./run-tests.sh
+```
+
+单独跑某个测试：
+
 ```sh
 racket amd64/amd64-asm/test.rkt
-racket amd64/compiler/expand-data/test.rkt
-racket amd64/compiler/flatten/test.rkt
-racket amd64/compiler/expand-pseudo/test.rkt
-racket amd64/compiler/analyze/test.rkt
-racket amd64/compiler/layout/test.rkt
-racket amd64/compiler/relax/test.rkt
 racket amd64/compiler/test/end-to-end.rkt
-racket amd64/compiler/test/flow-test.rkt
-racket amd64/loko-compatibility/test.rkt
-racket amd64/loko-compatibility/image/test.rkt
-racket amd64/amd64-elf/test.rkt
-racket amd64/loko-compatibility/lower/test.rkt
 ```
+
+## Loko 验证：缓存 + 快速迭代
+
+完整 `analyze -> dce -> relax -> encode` 对 Loko 运行时约 15 分钟，其中
+`relax` 会反复 layout。验证编码/镜像时不要每次重跑：
+
+```sh
+# 1. 从 Loko 仓库导出程序（需要先应用 tools/loko-dump.patch）
+LOKO_DUMP_PROGRAM=/tmp/prog.sexp \
+  ./loko -ftarget=linux --compile program.sps --output /tmp/prog.bin
+
+# 2. 转成 Racket 能读的形式（gensym/bytevector/字符转义）
+python3 tools/loko-portableize.py /tmp/prog.sexp
+
+# 3. 跑一次布局并缓存 bound-layout；loko-near 用 near 分支，只 layout 一次
+#    全量 short+relax 用 loko（约 15 分钟）
+AMD64_FLOW_TIMING=1 racket tools/cache-loko-layout.rkt \
+  /tmp/prog.sexp.p /tmp/prog.cache loko-near
+
+# 4. 之后改 encoder/ELF 只需重新编码，几秒完成
+racket tools/write-cached-elf.rkt /tmp/prog.cache /tmp/prog.elf
+```
+
+`loko-near` 只用于正确性验证：它不跑 `relax`，分支全部是 near，代码更大但
+语义相同。发布路径仍应使用 `loko`（short 起步，relax 只增）。

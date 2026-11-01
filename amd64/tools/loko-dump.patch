@@ -1,0 +1,103 @@
+--- a/compiler/main.sls
++++ b/compiler/main.sls
+@@ -25,8 +25,73 @@
+     (loko compiler global)
+     (loko compiler optimize)
+     (only (psyntax compat) pretty-print)
++    (srfi :98 os-environment-variables)
++    (only (loko runtime io-printer) write-simple)
+     (rnrs))
+ 
++(define (elf-start-label? x)
++  (and (pair? x) (eq? (car x) '%label)
++       (let ((l (cadr x)))
++         (and (vector? l) (= 2 (vector-length l))
++              (eq? (vector-ref l 0) 'elf)
++              (eq? (vector-ref l 1) 'start)))))
++
++(define (elf-notice? x)
++  (and (pair? x) (eq? (car x) '%utf8z)
++       (string? (cadr x))
++       (string=? (cadr x) "Built with Loko Scheme <https://scheme.fail/>")))
++
++(define (drop-elf-tail xs)
++  (cond ((null? xs) '())
++        ((and (pair? (car xs)) (memq (caar xs) '(%call %section))
++              (or (eq? (caar xs) '%call)
++                  (eq? (cadar xs) 'elf)))
++         '())
++        (else (cons (car xs) (drop-elf-tail (cdr xs))))))
++
++(define (drop-elf-header xs)
++  (let loop ((xs xs))
++    (cond ((null? xs) '())
++          ((elf-start-label? (car xs))
++           (let skip ((ys (cdr xs)))
++             (cond ((null? ys) '())
++                   ((elf-notice? (car ys)) ys)
++                   (else (skip (cdr ys))))))
++          (else (cons (car xs) (loop (cdr xs)))))))
++
++(define (portable-tree x memo)
++  ;; Vectors are Loko labels, and labels are compared by object identity.
++  ;; Text serialization would make distinct labels with equal contents look
++  ;; the same, so give every vector object a stable unique symbol.
++  (cond
++    [(vector? x)
++     (or (hashtable-ref memo x #f)
++         (let ((s (string->symbol
++                   (string-append "loko-obj-vector-"
++                                  (number->string (hashtable-size memo))))))
++           (hashtable-set! memo x s)
++           s))]
++    [(pair? x)
++     (cons (portable-tree (car x) memo)
++           (portable-tree (cdr x) memo))]
++    [else x]))
++
++(define (dump-items path items)
++  (call-with-port
++   (open-file-output-port path (file-options no-fail) 'block
++                          (make-transcoder (utf-8-codec)))
++   (lambda (p)
++     (for-each (lambda (x) (write-simple x p) (newline p)) items))))
++
++(define (dump-loko-program path asm)
++  (call-with-port
++   (open-file-output-port path (file-options no-fail) 'block
++                          (make-transcoder (utf-8-codec)))
++   (lambda (p)
++     (define memo (make-eq-hashtable))
++     (for-each (lambda (x) (write-simple (portable-tree x memo) p) (newline p))
++               (drop-elf-header (drop-elf-tail asm))))))
++
+ (define (assemble-text-file filename codes primlocs locs-ht locs-rev verbose codegen-options)
+   (define (print . x)
+     (when verbose (for-each display x) (newline)))
+@@ -44,8 +109,15 @@
+                                               'make-init-code codegen-options)])
+       (print "Optimizing code...")
+       (cond ((instruction-analyzer (config-target-cpu))
+-             => (lambda (a) (pass-optimize text data a
+-                                           (target-convention (config-target-cpu)))))
++             => (lambda (a)
++                  (let-values ([(optimized-text optimized-data)
++                                (pass-optimize text data a
++                                               (target-convention (config-target-cpu)))])
++                    (let ((dump (get-environment-variable "LOKO_DUMP_OPT")))
++                      (when dump
++                        (dump-items (string-append dump ".text") optimized-text)
++                        (dump-items (string-append dump ".data") optimized-data)))
++                    (values optimized-text optimized-data))))
+             (else
+              ;; No instruction analyzer? No optimizations for you.
+              (values text data)))))
+@@ -62,6 +134,8 @@
+                                         (config-target-kernel)
+                                         text data)))
+             ;; (for-each (lambda (x) (write x) (newline)) asm)
++            (let ((dump (get-environment-variable "LOKO_DUMP_PROGRAM")))
++              (when dump (dump-loko-program dump asm)))
+             (let-values ([(binary symbols)
+                           (assemble (config-target-cpu) asm)])
+               (display filename)

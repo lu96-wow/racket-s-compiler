@@ -156,8 +156,9 @@
          (define expect (instruction-size (car it) (cdr it)))
          (define bs (encode-code (car it) (cdr it) here symbols))
          (unless (= expect (bytes-length bs))
-           (eprintf "SIZE MISMATCH at ~a/~a: layout ~a encode ~a item ~e\n"
-                    name at expect (bytes-length bs) it))
+           (error 'encode
+                  "item size mismatch at ~a/~a: layout ~a, encode ~a: ~e"
+                  name at expect (bytes-length bs) it))
          (emit! bs)]))
     (unless (= cursor size)
       (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"

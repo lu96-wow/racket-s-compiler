@@ -1,7 +1,7 @@
 #lang racket
 ;;; amd64/tools/write-cached-elf.rkt
 ;;;
-;;; 从 cache-loko-build.rkt 的缓存生成 ELF，不重跑编译流水线。
+;;; 从 cache-loko-layout.rkt 的缓存生成 ELF，不重跑编译流水线。
 ;;;
 ;;; 用法：
 ;;;   racket tools/write-cached-elf.rkt <cache.sexp> <out.elf>
@@ -10,7 +10,7 @@
          (file "../compiler/encode/encode.rkt")
          (file "../amd64-elf/writer.rkt")
          (only-in (file "../loko-compatibility/image/plan.rkt")
-                  loko-linux-image-plan-for))
+                  choose-loko-linux-image-plan))
 
 (define (cache-field cache key)
   (cadr (assq key (cdr cache))))
@@ -22,7 +22,7 @@
  (define bound (cache-field cache 'bound-layout))
  (define symbols (cdr (assq 'symbols bound)))
  (define declared-plan (cache-field cache 'image-plan))
- (define plan (loko-linux-image-plan-for symbols declared-plan))
+ (define plan (choose-loko-linux-image-plan symbols declared-plan))
  (define build (encode-layout (hash 'arch 'amd64) bound))
  (define image (write-elf build symbols #:plan plan))
  (define bytes (cadr (assoc 'bytes (cdr image))))

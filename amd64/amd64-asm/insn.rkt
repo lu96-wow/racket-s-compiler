@@ -87,7 +87,7 @@
     (u32 x))
   (define rex-r (reg-field-rex-r reg-field))
   (define rex-x (if (and index (>= (reg-index index) 8)) 1 0))
-  (define rex-b-base (if (and base (>= (reg-index base) 8)) 1 0))
+  (define rex-b (if (and base (>= (reg-index base) 8)) 1 0))
   (define rm (bitwise-and (reg-field-index reg-field) #b111))
 
   (cond
@@ -160,7 +160,7 @@
                   disp-bytes
                   rex-r
                   rex-x
-                  rex-b-base
+                  rex-b
                   seg-prefix)]))
 
 ;; ---------------------------------------------------------------------------

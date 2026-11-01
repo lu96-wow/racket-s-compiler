@@ -38,7 +38,9 @@ test.rkt     header / program header / section / symtab 检查
   (symbol (name (text)) (region text) (size ...) (type func) (bind global)))
 ```
 
-`region` 是 canonical 身份：
+`region` 是 canonical 身份。除了 build 里的 segment，plan 也可以声明
+**plan-only region**：只给 `id`、`start`、`size`，内容必须是 `reserved`。
+这用于 stack/heap、guard page 等由运行时约定而不是程序字节定义的区间。
 
 - `content materialized` -> PROGBITS，要求 build bytes；
 - `content reserved` -> NOBITS，要求 build bytes 为空；
@@ -64,12 +66,16 @@ test.rkt     header / program header / section / symtab 检查
 - `.text` / `.data` / `.bss` / `.symtab` / `.strtab` / `.shstrtab` section headers；
 - `kind hole` 的段写成 `SHT_NOBITS`（段名叫 `bss` 时 section 名就是 `.bss`）；
 - 符号名做简单 mangle；plan 可以覆盖 `size` / `type` / `bind` / `section`；
+- plan entry 接受 `(entry expr)` 和 `(entry (entry expr))` 两种写法；
+  `expr` 是符号链（如 `(elf-entry)`）。
 - 入口优先 plan entry，其次 `elf-entry`，再回退第一个 code segment 起点。
 
 ## 4. 边界
 
 - 不做 reloc / dynamic linking。
 - 没有 plan 时默认单 `PT_LOAD` 且是 RWX；有 plan `load` 时可拆成 text/data/bss 独立段。
+- 只有 reserved region 的 load 生成 `p_filesz = 0`、`p_offset = 0`，
+  `p_memsz = size`，由内核补零。
 - 符号 `st_size` 默认 0；plan `symbol` 可以显式覆盖。
 - `%call` 生成的 Loko ELF header 还没有被替换。
 - `kind hole` 的段最好排在所有非 hole 段之后；夹在中间会让后面的字节按文件偏移错位。

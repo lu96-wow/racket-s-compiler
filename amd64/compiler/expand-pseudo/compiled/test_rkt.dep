@@ -1,1 +1,0 @@
-("9.3" ta6le ("809509fdbd2d915221704e9c7c2445bb4a635633" . "0107d45be101cd1180df4b1daee5e49b009213dc") #"/home/lu96/work/racket-s-compiler/amd64/compiler/expand-pseudo/rewrite.rkt" (collects #"racket" #"main.rkt") (collects #"racket" #"runtime-config.rkt") (collects #"rackunit" #"main.rkt"))

@@ -21,7 +21,21 @@ Loko `arch/amd64/codegen.sls` 会生成一类“还没有分配物理寄存器�
 (add rax rcx)
 ```
 
-它同时提供这条链上需要的三个纯函数部分：
+### 实际 Loko 输入是“已分配”的
+
+Loko 的 `compiler/main.sls` 在调用 `assembler-library` 之前已经跑了
+`pass-optimize`。因此 `LOKO_DUMP_PROGRAM` 导出的 text 里：
+
+- 真正的指令操作数已经没有 `(reg N)`；
+- 剩余的 `(reg N)` 只出现在 `%comment frame ...` 之类的调试注记里；
+- `(%comment save-live-registers)` / `restore-live-registers` 是非叶过程的
+  GC 标记，不是要求本层再插入栈保存。
+
+所以 Loko 验证路径上的 `lower` 实际上只做“替换掉任何残留伪寄存器”，不会
+改变已分配的指令。`calls.rkt` / 图着色 / 跨调用保存仍保留给原始 codegen
+输入和单元测试；它们不是当前 Loko 运行时的必需路径。
+
+它同时提供这条链上需要的几个纯函数部分：
 
 ```text
 pseudo.rkt      (reg N) 的形状、查找、替换
@@ -157,7 +171,9 @@ Loko codegen 用注释表示调用点要保存哪些伪寄存器：
 
 ## 4. 调用约定边界
 
-`calls.rkt` 会展开调用点的保存/恢复，但还没有解决“保存副本放在哪里”：
+`calls.rkt` 处理**原始 codegen** 输入里的保存/恢复注记；对已经过 Loko
+`pass-optimize` 的输入，这些注记只是 GC 标记，不应再展开。它还没有解决
+“保存副本放在哪里”：
 
 - 对于**不跨调用**的伪寄存器，图着色结果直接可用。
 - 对于**跨调用仍 live** 的伪寄存器（包括 save 产生的 `fresh` 副本），如果
