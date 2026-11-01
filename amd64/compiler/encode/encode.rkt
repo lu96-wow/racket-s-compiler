@@ -149,10 +149,13 @@
   (define start (layout-segment-start seg))
   (define size (layout-segment-size seg))
   (define entries (layout-segment-items seg))
-  (let ([chunks '()]
+  ;; 段大小在布局阶段就定死了, 所以直接写进一块预分配的字节串:
+  ;; 之前是每个 item 一个 bytevector, 最后再 (apply bytes-append …) 一次,
+  ;; 在大镜像上是几十万次分配 + 一次巨型 append。
+  (let ([out (make-bytes size)]
         [cursor 0])
     (define (emit! bs)
-      (set! chunks (cons bs chunks))
+      (bytes-copy! out cursor bs)
       (set! cursor (+ cursor (bytes-length bs))))
     (for ([entry (in-list entries)])
       (unless (offset? entry)
@@ -181,8 +184,7 @@
     (unless (= cursor size)
       (error 'encode "segment ~a size mismatch: layout says ~a, encoder wrote ~a"
              name size cursor))
-    (make-build-segment name kind start size
-                        (apply bytes-append (reverse chunks)))))
+    (make-build-segment name kind start size out)))
 
 ;; Two kinds of segments, two paths: materialized ones emit bytes item by item,
 ;; hole ones only advance the position.  "Where the hole starts" is not a
