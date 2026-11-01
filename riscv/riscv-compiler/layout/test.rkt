@@ -558,6 +558,12 @@
                                  (place a (main)))))
               '((segment-bad-range b)))
 
+;; 空段合法: start == end 不报问题(和 amd64 同一条规则)
+(check-equal? (problems-of (lay '((label main)) '()
+                               '((segments (segment (name a) (kind code) (start #x1000) (end #x1000) (align 4)))
+                                 (place a (main)))))
+              '())
+
 ;; ---------------------------------------------------------------------------
 ;; 边界: expand-data 的输出必须能被 layout 原样度量 (expand-data 的词汇就是 layout 的数据词汇)
 ;; ---------------------------------------------------------------------------

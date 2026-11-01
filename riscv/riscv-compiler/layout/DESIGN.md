@@ -51,7 +51,7 @@ data-items                               ; label / bytes / fill / pad / value / 
 - 因此 hole 段的 items 永远只含 `label` / `reserve`：encode 不用再判“洞从哪儿开始”，
   “这段是洞”是段声明，不是运行时状态。
 - `size` 照常累加（`reserve` 也推进游标），所以 anchor 和容量检查与其他段一致。
-- 空 hole（`start == end`）合法；没有 item、没有 `place` 的 hole 就是 guard page / MMIO 窗口。
+- 没有 item、没有 `place` 的 hole 就是 guard page / MMIO 窗口。
 - 本层**不解释**洞里的内容；清零与否、谁清，是前端/平台的事。
 
 本层为此报的两个问题（其余沿用）：
@@ -68,6 +68,8 @@ data-items                               ; label / bytes / fill / pad / value / 
 - `align` 在度量时换算成精确事实；产物写事实，不写请求。
   补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见上）。
 - 不透明代码的兜底 `4 字节 / 'code` 是设计，不是漏检。
+- 段范围：`start <= end` 合法（空段是常态：还没有内容的 section，或者还没占地址的洞）；
+  只有 `end < start` 报 `segment-bad-range`。和 amd64 同一条规则。
 - 只有 anchors + 段 start，所以本层只能算临时距离；`needs-far` / `la-too-far` 是请求。
 - `(value w 表达式)` 这里只查链存在；宽度等最终地址定了再查。
 

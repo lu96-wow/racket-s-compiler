@@ -104,20 +104,14 @@
 ;; 段表自检
 ;; ---------------------------------------------------------------------------
 
-;; 段范围是否成立。空段只在 hole 上合法: 洞可以不占任何地址,
-;; 要材料化的段则必须真的留出位置。
-(define (segment-range-ok? s)
-  (cond
-    [(> (segment-start s) (segment-end s)) #f]
-    [(= (segment-start s) (segment-end s)) (eq? (segment-kind s) 'hole)]
-    [else #t]))
-
 (define (validate-segments segs problem!)
   (define names (map segment-name segs))
   (unless (= (length names) (length (remove-duplicates names)))
     (problem! `(segment-name-duplicated ,names)))
   (for ([s (in-list segs)])
-    (unless (segment-range-ok? s)
+    ;; 空段合法: start 可以等于 end(还没有内容的 section, 一个还没占地址的空洞…)。
+    ;; 和 amd64 同一条规则; 只有 end < start 才是坏范围。
+    (unless (<= (segment-start s) (segment-end s))
       (problem! `(segment-bad-range ,(segment-name s))))
     (unless (zero? (modulo (segment-start s) (segment-align s)))
       (problem! `(segment-misaligned ,(segment-name s) ,(segment-start s) ,(segment-align s)))))

@@ -182,11 +182,23 @@
 
 (define (problems-of prog data spec) (layout-problem-list (lay prog data spec)))
 
+;; 只有 end < start 才是坏范围
 (check-problem
  (lay (one-block '((jalr x0 ra 0))) '()
-      '((segments (segment (name c) (kind code) (start 16) (end 16) (align 4)))
+      '((segments (segment (name c) (kind code) (start 16) (end 8) (align 4)))
         (place c (main))))
  'segment-bad-range)
+
+;; 空段合法(start == end): 还没有内容的 section 是常态, 不该逼上层丢 section
+(define empty-data-laid
+  (lay (one-block '((jalr x0 ra 0))) '()
+       '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                   (segment (name d) (kind data) (start #x2000) (end #x2000) (align 8)))
+         (place c (main)))))
+
+(check-equal? (layout-problem-list empty-data-laid) '())
+(check-equal? (layout-size empty-data-laid 'd) 0)
+(check-equal? (layout-item-forms empty-data-laid 'd) '())
 
 (check-problem
  (lay (one-block '((jalr x0 ra 0))) '()
