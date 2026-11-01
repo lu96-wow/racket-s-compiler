@@ -272,6 +272,22 @@ qemu-system-x86_64 -enable-kvm -m 2048 -M q35 -vga std -display none \
 | 镜像 | ELF（我们生成头/段表） | 平铺（`write-flat-image`） |
 | 结果 | `/tmp/prog.elf` 直接跑 | 装进 `loko-hdd.img` 里由 syslinux 的 `mboot.c32` 加载 |
 
+### 耗时（1.6M item 的 pc-repl 镜像，`loko-near`）
+
+早期这条流水线要 **~50 分钟**，现在 **~21 秒**。都是同一类 bug：把"对所有
+元素扫一遍"的操作放进逐 item 循环里。
+
+| 层 | 之前 | 现在 | 原因 |
+| --- | --- | --- | --- |
+| `loko-lower` | 10 分钟（含机器争用） | 4 s | — |
+| `dce` | 4–5 分钟 | 0.9 s | `(list-ref entries i)` / `(list-ref blocks (add1 i))` / `(length blocks)` 在逐块循环里 |
+| `layout` | 5.5 分钟（更早 18 分钟） | 4.3 s | 逐 unit 的 `(list-ref flows bi)`、`(list-ref units (add1 i))`；更早还有规则表和 unit 累积 |
+| `encode` | **39 分钟** | 3.6 s | `resolve-symbol` 对**每个**符号引用扫一遍全部符号表（22 万条） |
+
+教训：本后端是"纯函数、无状态"的层层变换，很容易写出这种"每层内部看起来
+O(1)"的代码；跑小镜像完全看不出来（linux 镜像 8.5 MB 只要 21 秒），只有
+裸机镜像（44 MB dump）才暴露。
+
 ### 32 位引导段
 
 裸机镜像开头的多引导 trampoline 是 `(%mode 32)`。本后端只有 64 位编码路径，
