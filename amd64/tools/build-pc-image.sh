@@ -9,7 +9,7 @@
 #
 # 步骤（每一步都能单独跑）：
 #   1. Loko 侧 dump:      -ftarget=sexp-pc  -> /tmp/pc.sexp
-#   2. 我们的流水线:      tools/loko-flow.rkt   （逐层缓存）
+#   2. 我们的流水线:      tools/loko-flow.rkt   （产物缓存：dump 没变就 1.7 s）
 #   3. 平铺镜像:          tools/write-flat-image.rkt（会核对 multiboot 头）
 #   4. 装进磁盘镜像副本:  mtools 替换 FAT 分区里的 boot/loko
 #
@@ -47,7 +47,7 @@ echo "== 1. dump ($LOKO/bin/pc-repl/pc-repl.sps)"
          --compile pc-repl.sps --output /tmp/pc.bin )
 ls -l "$DUMP"
 
-echo "== 2. 流水线（逐层缓存，第二次起很快）"
+echo "== 2. 流水线（产物缓存；dump 没变时 ~2 s）"
 ( cd "$HERE/.." && ulimit -v 8000000 && racket tools/loko-flow.rkt "$DUMP" "$CACHE" loko-near )
 
 echo "== 3. 平铺镜像 + multiboot 头检查"

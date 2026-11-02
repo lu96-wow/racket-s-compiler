@@ -143,27 +143,27 @@ racket amd64/compiler/test/end-to-end.rkt
 分别由本后端和 `llvm-mc` 编码，逐字节比较。没有 `llvm-mc` 时自动跳过。
 新增指令时先加 oracle case，再加手算 golden test。
 
-## Loko 验证：缓存 + 快速迭代
+## Loko 验证：dump -> 流水线 -> 镜像
 
-完整 `analyze -> dce -> relax -> encode` 对 Loko 运行时约 15 分钟，其中
-`relax` 会反复 layout。验证编码/镜像时不要每次重跑：
+完整 `analyze -> dce -> relax -> encode` 对 Loko 运行时约 15 分钟（pc-repl 的
+裸机镜像 1.6M 个 item，`loko-near` 约 24 s）。验证编码/镜像时不要每次重跑：
 
 ```sh
-# 1. 从 Loko 仓库导出程序（需要先应用 tools/loko-dump.patch）
-LOKO_DUMP_PROGRAM=/tmp/prog.sexp \
-  ./loko -ftarget=linux --compile program.sps --output /tmp/prog.bin
+# 1. 从 Loko 仓库导出程序（Loko 树里装了 sexp target，见 tools/README.md 第 1 节）
+LOKO_PROGRAM_SEXP=/tmp/prog.sexp ./loko-prebuilt -ftarget=sexp \
+    --compile program.sps --output /tmp/prog.bin
 
-# 2. 转成 Racket 能读的形式（gensym/bytevector/字符转义）
-python3 tools/loko-portableize.py /tmp/prog.sexp
+# 2. 流水线 + 产物缓存（dump 没变时 1.7 s；`--verify` 会重跑核对）
+racket tools/loko-flow.rkt /tmp/prog.sexp /tmp/cache elf
 
-# 3. 跑一次布局并缓存 bound-layout；loko-near 用 near 分支，只 layout 一次
-#    全量 short+relax 用 loko（约 15 分钟）
-AMD64_FLOW_TIMING=1 racket tools/cache-loko-layout.rkt \
-  /tmp/prog.sexp.p /tmp/prog.cache loko-near
-
-# 4. 之后改 encoder/ELF 只需重新编码，几秒完成
-racket tools/write-cached-elf.rkt /tmp/prog.cache /tmp/prog.elf
+# 3. 之后改 encoder/ELF/落盘，只需从缓存取出字节
+racket tools/write-cached-elf.rkt /tmp/cache/loko-elf.rktd /tmp/prog.elf
 ```
+
+缓存的是**这次流水的产物**（`encode` 的 `build`，或 `loko-elf` 的 `image`），
+不是中间层——逐层缓存在 pc-repl 上要写 443 MB、命中 189 s，比全量重算还慢。
+dump 解析也不再走 `read`：`loko-compatibility/sexp-read.rkt` 直接扫字节
+（44 MB：12 s -> 2.4 s，结果与 `read` 逐 item 相等）。
 
 `loko-near` 只用于正确性验证：它不跑 `relax`，分支全部是 near，代码更大但
 语义相同。发布路径仍应使用 `loko`（short 起步，relax 只增）。

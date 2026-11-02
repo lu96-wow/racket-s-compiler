@@ -1,173 +1,184 @@
 # tools
 
 这些工具只为**验证**：把真实 Loko 的 assembler 输出接到本后端，并避免每次
-重跑 15 分钟的编译流水线。
+重跑整条编译流水线。
 
-## 1. 导出 Loko 程序
-
-在 Loko 仓库应用 dump 补丁，然后重新构建 `loko`：
-
-```sh
-cd /path/to/loko
-git apply /path/to/amd64/tools/loko-dump.patch
-make -B loko
-```
-
-补丁使用 `(loko runtime init)` 的 `get-environment-variable` 和 R6RS
-`write`，不依赖外部 SRFI-98 / `io-printer` 库。
-
-编译目标程序：
-
-```sh
-LOKO_DUMP_PROGRAM=/tmp/prog.sexp \
-  ./loko -ftarget=linux --compile program.sps --output /tmp/prog.bin
-```
-
-补丁会：
-
-- 在 `generate-assembler` 之后导出 `pass-optimize` 的 text/data
-  （`LOKO_DUMP_OPT`）；
-- 在 `assembler-library` 之后导出完整 assembler 输入
-  （`LOKO_DUMP_PROGRAM`）；
-- 把 label vector 按对象身份换成唯一符号，避免 `equal?` 合并同名 label；
-- 把汇编期 ELF writer 的两段产物换成**声明式标记**（见下）。
-
-### ELF writer 的标记：`%elf-header` / `%elf-tail`
-
-`%call` 是汇编期闭包（`(%call proc arg …)`，`proc` 拿到 `assemble!/ip/symbols/bss`
-直接发 item 并返回位置增量），不可序列化。Loko 里它的三处用途**全部是 ELF
-writer**：头回卷、strtab、symtab。所以 dump 只负责标出这两段：
-
-| 标记 | 范围 | 谁负责 |
-| --- | --- | --- |
-| `(%elf-header)` | `#(elf start)` 到程序内容的第一条 | `amd64-elf` 重新生成 |
-| `(%elf-tail)` | 第一个 `%call` / `%section elf` 之后全部 | `amd64-elf` 重新生成 |
-
-`loko-compat` 丢掉它们（`strip-elf-wrapper`）：头部直接忽略，尾部之后没有任何
-程序内容所以直接截断。于是 `%call` 不会出现在编译器输入里，而"哪些东西属于
-镜像格式"这个判断留在编译器一侧，Loko 不打补丁也能说出形状。
-
-裸的 `%call` 仍然报 `directive-needs-image-layer` —— 那说明输入还带着汇编期的
-ELF writer，需要重新导出。
-
-## 2. 转成 Racket 可读形式
-
-```sh
-python3 tools/loko-portableize.py /tmp/prog.sexp
-```
-
-输出的 `/tmp/prog.sexp.p` 处理了：
+现在的链路只有三段（`--engine` 那条历史路线见第 5 节）：
 
 ```text
-#{gensym |unique|}      -> loko-gensym-N
-#vu8(1 2 3)             -> #"\x01\x02\x03"
-#<rtd name>             -> loko-rtd-name
-#\alarm / #\esc / ...   -> #\u...
-#\xNN                   -> #\uNN
-"\xNN;"                 -> "\xNN"
+Loko (-ftarget=sexp)  ->  dump.sexp
+       ↓ tools/loko-flow.rkt        流水线 + 产物缓存
+   <cache>/encode.rktd  或  <cache>/loko-elf.rktd
+       ↓ tools/write-flat-image.rkt / tools/write-cached-elf.rkt
+   平铺镜像 / ELF
 ```
 
-`\xHEX;` 的 `;` 是 Loko 的转义终止符；Racket 的 `\x` 只吃两个十六进制位，
-所以必须去掉它，否则字符串会多一个 `;`。
+## 1. 导出 Loko 程序：`sexp` target
 
-## 3. 缓存布局
+Loko 树里装一次 target 插件（源码在 Loko 仓库 `arch/amd64/sexp-asm.sls`，
+本仓库不保留副本）：
 
 ```sh
-# loko-near: 全 near 分支，不跑 relax，只 layout 一次（约 6 分钟）
-AMD64_FLOW_TIMING=1 racket tools/cache-loko-layout.rkt \
-  /tmp/prog.sexp.p /tmp/prog.cache loko-near
-
-# loko: short 起步 + relax（约 15 分钟，发布路径用）
-racket tools/cache-loko-layout.rkt /tmp/prog.sexp.p /tmp/prog.cache loko
+tools/build-loko-target.sh          # 装 target + 自举重建 loko-prebuilt
 ```
 
-缓存的是 `bound-layout`，不是最终字节。之后改 encoder / ELF writer 只需：
+它用 Loko 公开的 `(loko arch asm) register-target` 接口注册 `sexp` / `sexp-pc`
+两个 target：不发射 ELF 头/段表、不产字节，直接把 assembler 输入写成 Racket
+能读的 s-expression（label/gensym 按**对象身份**编号，vector/bytevector/字符
+用自己的 printer，所以不需要任何文本后处理）。
 
 ```sh
-racket tools/write-cached-elf.rkt /tmp/prog.cache /tmp/prog.elf
+# Linux ELF 用的 dump
+LOKO_PROGRAM_SEXP=/tmp/prog.sexp ./loko-prebuilt -ftarget=sexp \
+    --compile program.sps --output /tmp/prog.bin
+
+# 裸机（pc）用的 dump
+cd bin/pc-repl && LOKO_PROGRAM_SEXP=/tmp/pc.sexp .akku/env ../../loko-prebuilt \
+    -feval -ftarget=sexp-pc --compile pc-repl.sps --output /tmp/pc.bin
 ```
+
+`get-scheme-libraries` 必须把 `(sexp)` 映射成 `linux`（`compiler/static.sls`），
+否则 `linux-start`/`elf-start`/syscall 那几个库不会进程序：镜像能链接能跑，
+但启动就对着小整数解引用（实测 SIGBUS，`rax=0x2f`）。
+
+## 2. 读 dump：`loko-compatibility/sexp-read.rkt`
+
+dump 是"一行一个 item"的 s-expression 文本。`read` 能读，但 44 MB /
+1,615,886 个 item / 950 万个 token 要 **10–12 s**，时间几乎全花在"每个 token
+先造一个 string 再 `string->symbol` / `string->number`"上：
+
+| 事实 | 数字 |
+| --- | --- |
+| 符号实例 | 3,976,593（只有 257,583 种拼写，15 倍重复；最多的是 `mov` 43 万） |
+| 整数 | 1,150,766（最长 19 位，只有 16,379 个超出 fixnum） |
+| bytevector | 58,681（平均 82 字节） |
+| 字符串 / 字符 | 1,057 / 275 |
+
+`read-dump` 直接扫字节：符号按 `(bytes, start, len)` 查自建 intern 表（命中
+零分配），整数就地累加，bytevector 就地解码；只有 flonum、带转义的字符串、
+`|…|` 符号、字符名这些"`read` 才说得准"的东西才退回 `read`。
+
+```sh
+racket -e '(require (file "loko-compatibility/sexp-read.rkt")) \
+           (displayln (length (read-dump "/tmp/pc.sexp")))'
+# 1615886
+```
+
+| dump | `read` | `read-dump` |
+| --- | --- | --- |
+| pc-repl 44 MB | 10.5–12.4 s | **2.4 s** |
+| linux 8.5 MB | 2.3 s | **0.44 s** |
+
+判据只有一条：**和 `read` 读出来逐 item `equal?`**。快是目的，读得不一样就是
+错。`loko-compatibility/sexp-read-test.rkt` 用一段覆盖各种写法的语料 + 可选
+真实 dump 验这件事：
+
+```sh
+LS_EXPECT_DUMP=/tmp/pc.sexp racket tools/run-test.rkt \
+    loko-compatibility/sexp-read-test.rkt
+```
+
+踩过的坑（都在测试里有用例）：`#\x41` 是字符 `x` 后面跟整数 41、`#true` 是
+`#t` 后面跟 `rue`、`0.0` 是 flonum 而 `|0.0|` 是符号、`#[const value: …]` 是
+vector（Racket 的 reader 把 `#[` 当 `#(`）、`(` 和 `[` 混着写是错误不是宽容。
+所以慢路径不截 token 喂给 `read`，而是让它从同一个 port 的同一位置读，按它
+实际吃到哪儿继续。
+
+## 3. 流水线 + 产物缓存：`tools/loko-flow.rkt`、`tools/flow-cache.rkt`
+
+```sh
+# pc / 裸机（loko-near：全 near 分支，只 layout 一次）
+racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
+# -> /tmp/pcflow/encode.rktd    （encode 的 build：各段字节）
+
+# linux / ELF（elf：short 起步 + relax + writer）
+racket tools/loko-flow.rkt /tmp/prog.sexp /tmp/elfcache elf
+# -> /tmp/elfcache/loko-elf.rktd（loko-elf 的 image：ELF 字节 + 入口）
+
+# 之后落盘，不再重跑流水线
+racket tools/write-flat-image.rkt /tmp/pcflow/encode.rktd /tmp/pc-flat.bin
+racket tools/write-cached-elf.rkt /tmp/elfcache/loko-elf.rktd /tmp/prog.elf
+```
+
+缓存的是**这次流水的产物**（最后一层的输出），不是中间层。这个结论是量出来的：
+
+| 方案 | 缓存体积 | 命中耗时 | 全量重算 |
+| --- | --- | --- | --- |
+| 逐层缓存（旧的 `loko-flow`） | 443 MB | 189 s | 21 s |
+| 只缓存产物（现在） | 17 MB | **1.7 s** | 21 s + 2.4 s 解析 |
+
+逐层缓存的 189 s 全花在 `deserialize` 逐层重建那些 list 上（compat 112 MB→39 s、
+bind 76 MB→24 s、lower 66 MB→22 s、image 57 MB→19 s……）；而流水线本身在前面的
+二次复杂度修掉之后只要 21 s。**缓存中间层是纯负优化**——所以现在连 dump 都不解析：
+命中路径只 stat 一下 dump 和几个源目录。
+
+失效条件（`flow-cache.rkt` 开头有完整说明）：
+
+| 变了什么 | 怎么发现 |
+| --- | --- |
+| 缓存文件格式 | `format-version` 整数 |
+| 流水线语义 | `stage-version` 整数（改编译器就 +1） |
+| 选了哪些层 | `loko-near` 和 `loko` 的 `build` 不是一回事，必须进 key |
+| 输入 dump | 绝对路径 + 大小 + mtime |
+| 流水线源码 | `compiler/` 等目录里 `*.rkt` 的 (最大 mtime, 个数) |
+
+`stage-version` 和源文件指纹是重叠的：前者是"我知道我改了什么"，后者是
+"你忘了 +1 也不会拿到假结果"。两个都只在命中路径上花几毫秒。
+
+两个选项（要写在位置参数**前面**，`racket/cmdline` 的 `. rest` 之后不再解析）：
+
+```sh
+racket tools/loko-flow.rkt --refresh /tmp/pc.sexp /tmp/pcflow loko-near  # 忽略缓存
+racket tools/loko-flow.rkt --verify  /tmp/pc.sexp /tmp/pcflow loko-near  # 重跑核对
+```
+
+`--verify` 会重跑一遍并逐字节比较产物——怀疑缓存键漏了什么的时候用它。
 
 ## 4. 已验证
 
-使用 `tests/test-bugs.sps` 做过完整验证：
+`tests/test-bugs.sps` 走完整链路（`-ftarget=sexp` → `loko-flow … loko-near` →
+`write-flat-image`/`write-cached-elf`），产物跑出 `Tests passed`；pc-repl 的
+平铺镜像与改造前的验证镜像**逐字节相同**（7,286,784 B）。
 
-```sh
-LOKO_DUMP_PROGRAM=/tmp/loko-tiny.sexp \
-  ./loko -ftarget=linux --compile tests/test-bugs.sps --output /tmp/loko-tiny.bin
-
-python3 tools/loko-portableize.py /tmp/loko-tiny.sexp
-racket tools/cache-loko-layout.rkt /tmp/loko-tiny.sexp.p /tmp/loko-tiny-full.cache loko
-racket tools/write-cached-elf.rkt /tmp/loko-tiny-full.cache /tmp/loko-tiny-full.elf
-/tmp/loko-tiny-full.elf
-# Tests passed
-```
-
-`loko-near` 和完整 `loko`（short+relax）两条路径都通过了运行验证。
-
-### 布局改成"解由 layout 求解"之后（段声明只给 `size` / `align`）
-
-重跑同一条链路（`loko`，18m24s）：
-
-```sh
-racket tools/cache-loko-layout.rkt /tmp/loko-tiny.sexp.p /tmp/loko-tiny-new.cache loko
-racket tools/write-cached-elf.rkt /tmp/loko-tiny-new.cache /tmp/loko-tiny-new.elf
-cmp /tmp/loko-tiny-full.elf /tmp/loko-tiny-new.elf && echo identical
-/tmp/loko-tiny-new.elf
-# identical
-# Tests passed
-```
-
-**产物逐字节相同**：真实 Loko 程序的 section 尺寸恰好是页的整数倍，旧的
-"紧凑打包"本来就落在页边界上；新规则把这些边界变成结构性的（由 plan 的
-`(align 4096)` 兑现），而不是靠尺寸凑巧。
+布局改成"由 layout 求解地址"之后，ELF 也重跑过同一条链路：产物与旧路径
+**逐字节相同**（3,763,416 B）。原因：真实 Loko 程序的 section 尺寸恰好是页的
+整数倍，旧的"紧凑打包"本来就落在页边界上；新规则把这些边界变成结构性的
+（由 plan 的 `(align 4096)` 兑现），而不是靠尺寸凑巧。
 
 小程序的差别很大：没有 `%elf` 时后端会合成默认 plan，段很小、以前会挤在同一页，
 内核把 `.bss` 的匿名页盖在 `.text` 上 → 入口 SIGSEGV。这条路径由
 `tools/smoke-loko-elf.rkt` 守住（构建 + 真执行 + 每段独占一页）。
 
-## 4.1 我们已经不需要这个补丁了：`sexp` target
+## 5. 历史：dump 补丁 + portableize（不再需要）
 
-`loko-target/` 里是 Loko 的一个 **target 插件**（用 Loko 公开的
-`(loko arch asm) register-target` 接口）：它不发射 ELF 头/尾，也不产字节，
-而是把 assembler 输入直接写成 Racket 能读的 s-expression。于是下面这些全都不需要：
+`sexp` target 出现之前，这条路是"往 Loko 的 `compiler/main.sls` 里加 dump 钩子，
+再用 python 做文本清洗"：
 
-| 不需要 | 原因 |
+| 当时需要 | 为什么现在不需要了 |
 | --- | --- |
 | `tools/loko-dump.patch` | 不再往 `compiler/main.sls` 里加 dump 钩子 |
 | `tools/loko-portableize.py` | 我们自己的 printer 直接吐可读形式 |
-| `%call` / `%elf-header` / `%elf-tail` | target 根本不发射 ELF writer 的内容 |
+| `%call` / `%elf-header` / `%elf-tail` 标记 | target 根本不发射汇编期 ELF writer 的内容 |
 
-target 的源码在 **Loko 仓库里**（`arch/amd64/sexp-asm.sls`），本仓库不保留副本，
-避免两处漂移。安装面共 4 处（一次性，都在 Loko 树里）：
+两个文件保留着是为了读旧的 dump（和旧日志对账），**新流程不要用**。它们解决的
+问题各有意思，记在这里免得再踩：
 
-```text
-arch/amd64/sexp-asm.sls                    新文件（target 插件）
-compile-loko.sps                           +2 行（import + sexp-asm:visit）
-compiler/static.sls                        +1 行（静态库列表）
-compiler/static.sls                        +1 行 get-scheme-libraries: [(sexp) '(linux)]
-```
+- `%call` 是汇编期闭包（`(%call proc arg …)`，`proc` 拿到
+  `assemble!/ip/symbols/bss` 直接发 item 并返回位置增量），不可序列化。Loko 里
+  它的三处用途**全部是 ELF writer**（头回卷、strtab、symtab），所以补丁把这两段
+  换成 `(%elf-header)` / `(%elf-tail)` 两个声明式标记，`loko-compat` 直接丢掉了
+  （`strip-elf-wrapper`）。裸的 `%call` 仍然报 `directive-needs-image-layer`。
+- label 是 vector、gensym 是 uninterned symbol，必须按**对象身份**编号，不能按
+  打印文本（同名不同对象会撞）。portableize 时代靠 python 正则改文本，现在由
+  target 自己编号（`loko-obj-vector-N` / `loko-gensym-N`）。
+- Loko 的字符串转义用 `\xHEX;`（`;` 是终止符），Racket 的 `\x` 只吃两个十六
+  进制位，直接搬会多出一个 `;`。
 
-最后一行的作用：`get-scheme-libraries` 按 `target-kernel` 决定要静态链接哪些运行库。
-`-ftarget=sexp` 如果不映射成 `linux`，`kernels` 就是空表，`loko/arch/amd64/linux-start`、
-`linux-init`、`linux-syscalls`、`elf-start` 都不会进程序 —— 编出来的镜像能链接、能运行，
-但初始化缺一大堆，启动就对着一堆小整数当指针解引用（实测 SIGBUS，`rax=0x2f`）。
+`.akku/lib/loko` 是 akku 的构建产物，`build-loko-target.sh` 会用"工作树副本 +
+系统安装里的生成文件"重建它；**不要**手工 `rm -rf` 它之后跑 `make -B`（那会把
+工作树里的库文件换成悬空符号链接）。
 
-**已验证**：`tests/test-bugs.sps` 用这条路编出来的镜像跑出 `Tests passed`
-（3,763,416 B，与旧路径同尺寸）。
-
-用 `tools/build-loko-target.sh` 装好并重建；之后：
-
-```sh
-LOKO_PROGRAM_SEXP=/tmp/prog.sexp ./loko-prebuilt -ftarget=sexp \
-    --compile tests/test-bugs.sps --output /tmp/prog.bin
-racket tools/cache-loko-layout.rkt /tmp/prog.sexp /tmp/prog.cache loko-near
-```
-
-注意：`.akku/lib/loko` 是 akku 的构建产物，脚本会用"工作树副本 + 系统安装里的
-生成文件"重建它；**不要**手工 `rm -rf` 它之后跑 `make -B`（那会把工作树里的库
-文件换成悬空符号链接，见下一节）。
-
-## 5. 在 QEMU 里跑产物（整机，不是用户态）
+## 6. 在 QEMU 里跑产物（整机，不是用户态）
 
 ```sh
 ./tools/qemu-run.sh /tmp/prog.elf [程序参数…]
@@ -235,7 +246,7 @@ QEMU 只是额外补一道“真内核开机”的检查，没 KVM 时不要指�
 QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 ```
 
-## 5.1 裸机（pc / multiboot）镜像
+## 6.1 裸机（pc / multiboot）镜像
 
 同一个后端也能产 Loko 的**裸机**镜像。一条命令：
 
@@ -245,8 +256,9 @@ QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 ./tools/build-pc-image.sh -b         # 构建 + 启动 QEMU/KVM，检查 REPL 画出来了
 ```
 
-脚本从零跑一遍约 6 分钟（第二次起流水线全命中缓存，约 1 分钟）。下面是分步
-说明，每一步都能单独跑。
+脚本从零跑一遍约 6 分钟（大头是 Loko 侧 dump）；dump 没变时流水线命中产物
+缓存只要 **1.7 s**，直接 `write-flat-image` 落盘。下面是分步说明，每一步都能
+单独跑。
 
 链路和 Linux 那条平行：
 
@@ -256,7 +268,7 @@ cd ~/work/tmp/loko/bin/pc-repl
 LOKO_PROGRAM_SEXP=/tmp/pc.sexp .akku/env ../../loko-prebuilt \
     -feval -ftarget=sexp-pc --compile pc-repl.sps --output /tmp/pc.bin
 
-# 2. 我们的流水线（逐层缓存；这个镜像 1.6M 个 item，不缓存要重跑很久）
+# 2. 我们的流水线（产物缓存；这个镜像 1.6M 个 item，冷跑 24 s，命中 1.7 s）
 cd ~/work/racket-s-compiler/amd64
 racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
 
@@ -285,11 +297,12 @@ qemu-system-x86_64 -enable-kvm -m 2048 -M q35 -vga std -display none \
 
 ### 耗时（1.6M item 的 pc-repl 镜像，`loko-near`）
 
-早期这条流水线要 **~50 分钟**，现在 **~21 秒**。都是同一类 bug：把"对所有
-元素扫一遍"的操作放进逐 item 循环里。
+早期这条流水线要 **~50 分钟**，现在**冷跑 ~24 秒、命中缓存 1.7 秒**。都是同一
+类 bug：把"对所有元素扫一遍"的操作放进逐 item 循环里。
 
 | 层 | 之前 | 现在 | 原因 |
 | --- | --- | --- | --- |
+| dump 解析（`read`） | 12.4 s | 2.4 s | 每个 token 造 string 再 `string->symbol`；改成扫字节 + intern 表 |
 | `loko-lower` | 10 分钟（含机器争用） | 4 s | — |
 | `dce` | 4–5 分钟 | 0.9 s | `(list-ref entries i)` / `(list-ref blocks (add1 i))` / `(length blocks)` 在逐块循环里 |
 | `layout` | 5.5 分钟（更早 18 分钟） | 4.3 s | 逐 unit 的 `(list-ref flows bi)`、`(list-ref units (add1 i))`；更早还有规则表和 unit 累积 |
@@ -317,13 +330,15 @@ Loko 的 `syscall-hlt` 是 `(sti) (hlt) (cli) (xor eax eax) (swapgs) (sysretq)`�
 能初始化图形，然后死在这个 #DF 上。现象和根因隔得很远，教训是：
 **"某条指令不会返回"这种事实必须和硬件语义一致**。
 
-## 6. 注意
+## 7. 注意
 
 - `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
-- dump/portableize 是 Loko 前端的外部工具，不属于 `compiler` 层。
+- dump 由 Loko 的 `sexp` / `sexp-pc` target 产出（源码在 Loko 仓库
+  `arch/amd64/sexp-asm.sls`）；`sexp-read.rkt` 只有 `loko-compatibility` 用，
+  `compiler/` 不认识 dump 文本。
 - **不要用 `make -B loko` / `akku install` 之后再手工改 `.akku/lib/loko`**：`-B` 会重跑 `akku install`，而 akku 会把
   `.akku/lib/loko`（`LOKO_SOURCE` 指向的自有库目录）换成它自己的副本，
   打补丁的 `compiler/main.sls` 就丢了。正确做法是 `touch loko-prebuilt &&
   make loko`，并且保证 `.akku/lib/loko` 是**工作树的副本**（不是系统安装）。
 - 验证顺序（每步都可单独失败）：dump 里的标记 → `translate-loko-source` 的
-  `program-items`/`sections` 与旧 dump 一致 → `cache-loko-layout` → ELF → 执行。
+  `program-items`/`sections` 与旧 dump 一致 → `loko-flow.rkt` → ELF → 执行。

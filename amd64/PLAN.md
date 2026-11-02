@@ -63,7 +63,8 @@
 - [x] lower 的调用点 save/restore 注记展开
 - [x] 8 位内存 mov 使用 8A/88；REX.B 只由 base、REX.X 只由 index 决定
 - [x] Loko Linux 真实输出验证：tiny 运行通过；t2 的 near/full 结果与 Loko 一致
-- [x] `loko-near` 验证流 + `tools/cache-loko-layout.rkt` / `write-cached-elf.rkt`
+- [x] dump 读取器 `loko-compatibility/sexp-read.rkt`（44 MB：12 s -> 2.4 s，与 `read` 逐 item 相等）
+- [x] `loko-near` 验证流 + 产物缓存 `tools/loko-flow.rkt` / `flow-cache.rkt` / `write-cached-elf.rkt`
 - [ ] lower 的跨调用值 spill / frame allocation（Loko 实际输入已由 Loko optimizer 分配）
 - [x] `adc/sbb`、更多双精度/packed SSE（NASM 生成表）
 - [x] NASM `insns.dat` -> generated instruction table，替换手写扩展模式

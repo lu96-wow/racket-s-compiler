@@ -1,129 +1,136 @@
 #lang racket
 ;;; amd64/tools/loko-flow.rkt
 ;;;
-;;; 跑 Loko dump 的流水线，但把每一层的输出缓存到磁盘：已经算过（且比 dump
-;;; 新）的层直接读回来，只跑缺的层。
-;;;
-;;; 为什么需要：pc-repl 这种裸机镜像的 dump 有 160 万个 item，
-;;; `loko-lower`（寄存器分配）要 10 分钟，`analyze` 也要几分钟。改 encoder /
-;;; ELF writer 的时候没必要每次重跑前面那些纯函数层。
+;;; 跑 Loko dump 的流水线，并把**这次流水的产物**缓存下来：dump 和流水线都没变
+;;; 时，连 dump 都不解析，直接把产物读回来。
 ;;;
 ;;; 用法：
-;;;   racket tools/loko-flow.rkt <dump.sexp> <cache-dir> [层或层组 ...]
+;;;   racket tools/loko-flow.rkt [--refresh] [--verify] <dump.sexp> <cache-dir> [层/层组 ...]
 ;;;
-;;; 默认层组是 loko-near（short 起步不 relax，只 layout 一次）。
-;;; 缓存文件是 <cache-dir>/<层名>.sexp，内容是这一层产出的 (名字 种类 值) 表。
-;;; 大部分层的输出本来就是 s-expression；analyze/dce 输出的是 struct
-;;; (program)，它自带 program->sexp / sexp->program 转换，所以也能缓存。
-;;; layout 输出的 measured-layout 只有 struct 形式，暂时不缓存（它也是唯一
-;;; 没被缓存的层，见下面的 STAGES-NOT-CACHED）。
+;;; 选项要写在位置参数前面（racket/cmdline 的 `. rest` 之后不再解析选项）。
 ;;;
-;;; 环境变量 AMD64_FLOW_TIMING=1 时每层打印耗时（和 run-flow 一致）。
+;;; 默认层组是 loko-near（全 near 分支，只 layout 一次）。产物是最后一层的输出：
+;;;   encode   -> build（各个段的字节）      缓存文件 <cache-dir>/encode.rktd
+;;;   loko-elf -> image（ELF 字节 + 入口）   缓存文件 <cache-dir>/loko-elf.rktd
+;;; 其它层组（停在中途的调试用）不缓存。
+;;;
+;;; 缓存命中时打印一段摘要；没命中则（AMD64_FLOW_TIMING=1 时）打印每层耗时并覆盖缓存。
+;;; 失效条件见 tools/flow-cache.rkt 开头。
+;;;
+;;; 为什么只缓存产物、不缓存中间层：pc-repl 的 dump 有 1.6M 个 item，
+;;; 逐层缓存要写 443 MB，命中时 deserialize 要 189 s，而整条流水线从头算
+;;; 只要 21 s（dump 解析另算 2.4 s）。缓存中间层是纯负优化。
 
 (require racket/cmdline
-         racket/serialize
+         racket/file
+         racket/path
          (file "../loko-compatibility/flow.rkt")
-         (only-in (file "../compiler/analyze/analyze.rkt")
-                  program? program->sexp sexp->program)
-         (file "../amd64-asm/target.rkt"))
+         (file "../loko-compatibility/sexp-read.rkt")
+         (file "../amd64-asm/target.rkt")
+         (file "flow-cache.rkt"))
 
-(define (read-items path)
-  (call-with-input-file path
-    (lambda (in)
-      (let loop ([items '()])
-        (define x (read in))
-        (if (eof-object? x) (reverse items) (loop (cons x items)))))))
+;; 脚本自己在 amd64/tools 里；流水线源码在 amd64/ 下面（指纹覆盖那几个目录）。
+(define here
+  (let ([rf (find-system-path 'run-file)])
+    (if (file-exists? rf) (path-only (simplify-path rf)) (current-directory))))
+(define amd64-root (simplify-path (build-path here "..")))
 
-(define (cache-path dir stage)
-  (build-path dir (string-append (symbol->string stage) ".rktd")))
+;; 只有这几个层的输出是"镜像产物"，值得缓存。
+(define artifact-stages '(encode loko-elf))
 
-;; 输出是 struct 且没有 s-expression 形式转换的层：不缓存。
-(define not-cacheable '(layout))
+(define (field s k)
+  (define p (assq k (cdr s)))
+  (and p (cadr p)))
 
-(define (encode-value v)
-  (cond [(program? v) (list 'program (program->sexp v))]
-        [else (list 'sexp v)]))
+;; 缓存只留"产物"需要的东西：image 里的 symbols/sections 是给校验用的，
+;; 22 万个符号没必要每次序列化一遍。
+(define (compact name value)
+  (case name
+    [(image) (list 'image
+                   (assq 'entry (cdr value))
+                   (assq 'bytes (cdr value)))]
+    [else value]))
 
-(define (decode-value t)
-  (case (car t)
-    [(program) (sexp->program (cadr t))]
-    [else (cadr t)]))
+(define (summarize name value)
+  (case name
+    [(build)
+     (for ([s (in-list (cdr value))])
+       (printf "  ~a kind=~a start=#x~x size=~a bytes=~a\n"
+               (field s 'name) (field s 'kind) (field s 'start) (field s 'size)
+               (bytes-length (field s 'bytes))))]
+    [(image)
+     (printf "  image: ~a bytes, entry #x~x\n"
+             (bytes-length (field value 'bytes)) (field value 'entry))]
+    [else (printf "  ~a: ok\n" name)]))
 
-;; 缓存失效: dump 变了, 或者流水线代码比缓存新。后者很重要 —— 改一行
-;; analyze/cfg 之后复用旧缓存会得到"看起来没变化"的假结果。
-(define (newest-source-time)
-  (define roots (list "compiler" "loko-compatibility" "amd64-asm" "amd64-help"))
-  (define here (current-directory))
-  (for/fold ([t 0]) ([root (in-list roots)])
-    (define dir (build-path here ".." root))
-    (if (directory-exists? dir)
-        (for/fold ([t t]) ([f (in-directory dir)])
-          (if (and (file-exists? f) (regexp-match? #rx"[.]rkt$" (path->string f)))
-              (max t (file-or-directory-modify-seconds f))
-              t))
-        t)))
-
-(define (fresh? cache dump)
-  (and (file-exists? cache)
-       (>= (file-or-directory-modify-seconds cache)
-           (max (file-or-directory-modify-seconds dump) (newest-source-time)))))
-
-(define (save! path produced)
-  (define tmp (string->path (format "~a.tmp" path)))
-  (call-with-output-file tmp #:exists 'replace
-    (lambda (out)
-      ;; 注: 这个 Racket 的 serialize 返回的是"可写的 serialized 值"而不是
-      ;; bytes, 所以用 write/read 包一层; 它比直接打印原始 s-expression 快得多。
-      (write (serialize (for/list ([(k v) (in-hash produced)])
-                          (list k (car (encode-value v)) (cadr (encode-value v)))))
-             out)))
-  (rename-file-or-directory tmp path #t))
-
-(define (load-into! ctx path)
-  (call-with-input-file path
-    (lambda (in)
-      (for ([p (in-list (deserialize (read in)))])
-        (hash-set! ctx (car p) (decode-value (cdr p)))))))
+(define refresh? #f)
+(define verify? #f)
 
 (command-line
  #:program "loko-flow"
- #:args (dump-path cache-dir . stages)
- (define dump (string->path dump-path))
+ #:once-each
+ [("--refresh") "忽略已有缓存，重跑流水线" (set! refresh? #t)]
+ [("--verify") "命中缓存后仍重跑一遍，核对产物与缓存相同" (set! verify? #t)]
+ #:args (dump-path cache-dir . selector-args)
+ (define dump (simplify-path (path->complete-path (string->path dump-path))))
  (define dir (string->path cache-dir))
- (unless (directory-exists? dir) (make-directory* dir))
- (define selector (if (null? stages)
+ (define selector (if (null? selector-args)
                       '(loko-near)
-                      (for/list ([s (in-list stages)]) (string->symbol s))))
+                      (for/list ([s (in-list selector-args)]) (string->symbol s))))
  (define names (select-stages selector))
- (printf "stages: ~a\n" names)
+ (define last-stage (last names))
+ (define artifact? (and (memq last-stage artifact-stages) #t))
+ (define cache-path (cache-file-path dir last-stage))
 
- (define ctx (make-hash))
- ;; 源: 先把 dump 变成 (loko-source …)，它是 loko-compat 的输入
- (hash-set! ctx 'loko-source (list 'loko-source (cons 'text (read-items dump)) '(data)))
+ (unless (file-exists? dump)
+   (error 'loko-flow "没有 dump: ~a（先用 Loko 的 sexp target 导出一份）" dump))
+ (unless (directory-exists? dir) (make-directory* dir))
+ (printf "flow: ~a\n" names)
 
- (for ([stage (in-list names)])
-   (define cache (cache-path dir stage))
+ ;; 命中判断只需要 dump 的 stat，不需要解析它
+ (define-values (cache why)
    (cond
-     [(and (not (eq? stage 'loko-compat))
-           (not (memq stage not-cacheable))
-           (fresh? cache dump))
-      (load-into! ctx cache)
-      (printf "  ~a: cached\n" stage)]
+     [refresh? (values #f "--refresh")]
+     [(not artifact?) (values #f (format "最后一层 ~a 不是产物层" last-stage))]
      [else
-      (define out (run-stage target-amd64 stage (for/list ([(k v) (in-hash ctx)]) (cons k v))))
-      (for ([(k v) (in-hash out)]) (hash-set! ctx k v))
-      (cond [(memq stage not-cacheable) (printf "  ~a: ran (not cached)\n" stage)]
-            [else (save! cache out) (printf "  ~a: ran + cached\n" stage)])]))
+      (define c (read-flow-cache cache-path))
+      (cond
+        [(not c) (values #f (format "没有缓存 ~a" (path->string cache-path)))]
+        [else
+         (define-values (fresh? why) (cache-fresh? c dump amd64-root names))
+         (if fresh? (values c "命中") (values #f why))])]))
 
- ;; encode 层产出 (build (segment …) …)；elf 流程还会多一个 image。
- (define (field s k) (define p (assq k (cdr s))) (and p (cadr p)))
- (define build (hash-ref ctx 'build (lambda () (hash-ref ctx 'image (lambda () #f)))))
  (cond
-   [build
-    (define segments (if (eq? (car build) 'build) (cdr build) (cdr (assq 'segments (cdr build)))))
-    (printf "image: ~a segment(s)\n" (length segments))
-    (for ([s (in-list segments)])
-      (printf "  ~a kind=~a start=#x~x size=~a bytes=~a\n"
-              (field s 'name) (field s 'kind) (field s 'start) (field s 'size)
-              (bytes-length (field s 'bytes))))]
-   [else (printf "no image (selector stops before encode)\n")]))
+   [cache
+    (printf "cache: ~a（~a）\n" (path->string cache-path) (cache-stamp-string cache))
+    (for ([p (in-list (cdr (assq 'values (cdr cache))))])
+      (summarize (car p) (cdr p)))
+    (when verify?
+      (printf "verify: 用同一份 dump 重跑，产物必须相同\n")
+      (define fresh
+        (run-flow target-amd64 names
+                  (hash 'loko-source
+                        (list 'loko-source (cons 'text (read-dump dump)) '(data)))))
+      (for ([p (in-list (cdr (assq 'values (cdr cache))))])
+        (unless (equal? (cdr p) (compact (car p) (hash-ref fresh (car p))))
+          (error 'loko-flow
+                 "缓存里的 ~a 与重跑结果不同 —— 缓存键漏了什么" (car p)))
+      (printf "verify: ok\n")))]
+   [else
+    (printf "cache: miss（~a）\n" why)
+    (define started (current-inexact-milliseconds))
+    (define ctx
+      (run-flow target-amd64 names
+                (hash 'loko-source
+                      (list 'loko-source (cons 'text (read-dump dump)) '(data)))))
+    (define out-names (core:stage-provides (hash-ref stage-table last-stage)))
+    (define produced
+      (for/hash ([n (in-list out-names)]) (values n (compact n (hash-ref ctx n)))))
+    (for ([(k v) (in-hash produced)]) (summarize k v))
+    (define elapsed (round (- (current-inexact-milliseconds) started)))
+    (cond
+      [(not artifact?)
+       (printf "（~a 不是产物层，不写缓存；耗时 ~a ms）\n" last-stage elapsed)]
+      [else
+       (write-flow-cache! cache-path (make-cache dump amd64-root names produced))
+       (printf "cache: 写入 ~a（流水线 ~a ms）\n" (path->string cache-path) elapsed)])]))

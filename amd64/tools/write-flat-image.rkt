@@ -6,7 +6,8 @@
 ;;; 用法：
 ;;;   racket tools/write-flat-image.rkt <encode 缓存> <输出镜像>
 ;;;
-;;; 缓存由 tools/loko-flow.rkt 产出（<cache-dir>/encode.rktd）。
+;;; 缓存由 tools/loko-flow.rkt 产出（<cache-dir>/encode.rktd），格式见
+;;; tools/flow-cache.rkt。
 ;;;
 ;;; 布局规则：段自带地址；按地址顺序把有字节的段摊平，段之间的空隙填 0
 ;;; （multiboot 加载器加载的是文件里的连续字节，空隙必须真的存在）。
@@ -17,7 +18,7 @@
 ;;;   / bss_end_addr=hole 段末尾 / entry_addr 落在 text 段内
 ;;; 这几条是"布局和头部对得上"的不变式，比启动一次 QEMU 便宜得多。
 (require racket/cmdline
-         racket/serialize)
+         (file "flow-cache.rkt"))
 
 (define (field s k)
   (define p (assq k (cdr s)))
@@ -52,16 +53,19 @@
         (list 'entry_addr (u32 img (+ at 36)))))
 
 (define (load-build cache-path)
-  (define entries
-    (call-with-input-file cache-path (lambda (in) (deserialize (read in)))))
-  (define p (assq 'build (for/list ([e (in-list entries)]) (cons (car e) (cadr (cdr e))))))
-  (unless p (error 'write-flat-image "cache has no encode output: ~a" cache-path))
-  (cdr p))
+  (define cache (read-flow-cache cache-path))
+  (unless cache
+    (error 'write-flat-image
+           "~a 不是 flow-cache 文件（用 tools/loko-flow.rkt … loko-near 生成）"
+           cache-path))
+  (cache-value cache 'build (lambda () #f)))
 
 (command-line
  #:program "write-flat-image"
  #:args (cache-path out-path)
  (define build (load-build cache-path))
+ (unless build
+   (error 'write-flat-image "~a 里没有 encode 的产物（build）" cache-path))
  (define segments (cdr build))
  (for ([s (in-list segments)])
    (printf "  ~a kind=~a start=#x~x size=~a bytes=~a\n"
