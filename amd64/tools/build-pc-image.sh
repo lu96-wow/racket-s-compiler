@@ -3,7 +3,7 @@
 #
 # 用法: tools/build-pc-image.sh [-b] [-o out.img] [loko 树]
 #
-#   默认 Loko 树是 $HOME/work/tmp/loko
+#   默认 Loko 树是 ~/work/loko（见 amd64/loko-compatibility/LOKO-TREE.md）
 #   -b   构建完顺便用 QEMU/KVM 启动一次，检查 REPL 画出来了（screendump 非黑）
 #   -o   把装好镜像的磁盘副本放到这个路径（默认 /tmp/loko-hdd-ours.img）
 #
@@ -17,6 +17,8 @@
 # 并且 bin/pc-repl/loko-hdd.img 已经构建过（`cd bin/pc-repl && make loko-hdd.img`）。
 set -eu
 
+HERE=$(cd "$(dirname "$0")" && pwd)
+
 BOOT=0
 OUT=/tmp/loko-hdd-ours.img
 while [ $# -gt 0 ]; do
@@ -28,8 +30,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-HERE=$(cd "$(dirname "$0")" && pwd)
-LOKO=${1:-${LOKO:-$HOME/work/tmp/loko}}
+# Loko 树在仓库外面: ~/work/loko（见 amd64/loko-compatibility/LOKO-TREE.md）
+LOKO=${1:-${LOKO:-$HOME/work/loko}}
+[ -d "$LOKO" ] || {
+    echo "$0: 找不到 Loko 树: $LOKO" >&2
+    echo "  位置记录在 amd64/loko-compatibility/LOKO-TREE.md；用 LOKO= 或第一个参数指定" >&2
+    exit 1
+}
 DUMP=${DUMP:-/tmp/pc.sexp}
 CACHE=${CACHE:-/tmp/pcflow}
 

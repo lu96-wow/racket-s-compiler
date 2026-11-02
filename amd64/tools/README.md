@@ -15,8 +15,9 @@ Loko (-ftarget=sexp)  ->  dump.sexp
 
 ## 1. 导出 Loko 程序：`sexp` target
 
-Loko 树里装一次 target 插件（源码在 Loko 仓库 `arch/amd64/sexp-asm.sls`，
-本仓库不保留副本）：
+Loko 树里装一次 target 插件（源码在 Loko 树的 `arch/amd64/sexp-asm.sls`；
+Loko 源码放在仓库外的 `~/work/loko`，位置和改动清单见
+[`../loko-compatibility/LOKO-TREE.md`](../loko-compatibility/LOKO-TREE.md)）：
 
 ```sh
 tools/build-loko-target.sh          # 装 target + 自举重建 loko-prebuilt
@@ -253,7 +254,7 @@ QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 同一个后端也能产 Loko 的**裸机**镜像。一条命令：
 
 ```sh
-# 默认读 ~/work/tmp/loko，产出 /tmp/pc-flat.bin 和装好的磁盘副本
+# 默认读 ~/work/loko，产出 /tmp/pc-flat.bin 和装好的磁盘副本
 ./tools/build-pc-image.sh            # 只构建
 ./tools/build-pc-image.sh -b         # 构建 + 启动 QEMU/KVM，检查 REPL 画出来了
 ```
@@ -266,7 +267,7 @@ QEMU_SMOKE_ELF=/tmp/prog.elf ./run-tests.sh
 
 ```sh
 # 1. Loko 侧 dump（sexp-pc target 在 Loko 仓库 arch/amd64/sexp-asm.sls）
-cd ~/work/tmp/loko/bin/pc-repl
+cd ~/work/loko/bin/pc-repl
 LOKO_PROGRAM_SEXP=/tmp/pc.sexp .akku/env ../../loko-prebuilt \
     -feval -ftarget=sexp-pc --compile pc-repl.sps --output /tmp/pc.bin
 
@@ -278,7 +279,7 @@ racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
 racket tools/write-flat-image.rkt /tmp/pcflow/encode.rktd /tmp/pc-flat.bin
 
 # 4. 塞进磁盘镜像的副本并启动（mtools 改 FAT 分区里的 boot/loko）
-cp ~/work/tmp/loko/bin/pc-repl/loko-hdd.img /tmp/test-hdd.img
+cp ~/work/loko/bin/pc-repl/loko-hdd.img /tmp/test-hdd.img
 mcopy -o -i "/tmp/test-hdd.img@@$((32*512))" /tmp/pc-flat.bin ::boot/loko
 qemu-system-x86_64 -enable-kvm -m 2048 -M q35 -vga std -display none \
     -serial file:/tmp/boot.ser -drive file=/tmp/test-hdd.img,format=raw,if=ide
