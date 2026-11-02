@@ -1,5 +1,9 @@
 # riscv-compiler-test
 
+> **注意：本目录的用例仍按重构前的 GAS-canonical 契约编写。**
+> 当前 `riscv-compiler` 已改为 native base + 可选 `gas-syntax`，这些用例尚未迁移；
+> 新实现的契约测试在 [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
+
 黑盒契约测试：只通过 `riscv-compiler` 的公开 API 验证每一层的 s-exp
 输入/输出、边界、问题交接，以及整条 `flow` 到字节的产物。
 

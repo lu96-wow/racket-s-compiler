@@ -7,7 +7,7 @@
 
 | 项 | 形状 |
 | --- | --- |
-| item | 真列表，例如 `(lwu t0 sp 8)` |
+| item | 真列表，例如 `(lbu t0 sp 8)`；操作数顺序是 native |
 | 名字 | symbol / string / number |
 | 链 | 非空名字列表，例如 `(prog1 main)` |
 | 地址表达式 | 整数 \| `(链)` \| `(+ a b …)` \| `(- a b …)` |
@@ -28,7 +28,8 @@
 | --- | --- | --- |
 | `expand-data` | rich 数据 | 核心数据 item |
 | `flatten` | `program-items` + `data-items` | 完整链的 `program-items` + `data-items` + `names` |
-| `expand-pseudo` | `program-items` | `program-items` |
+| `gas-syntax` | `program-items` | `program-items`（可选：GAS → native） |
+| `expand-pseudo` | `program-items` | `program-items`（可选：别名 → native） |
 | `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
 | `dce` | `program` | `program` |
 | `layout` | `program` + `data-items` + `layout-spec` | `measured-layout` |
@@ -42,8 +43,8 @@
 | --- | --- |
 | rich 数据 | `(b8 v)` / `(b16 v)` / `(bN-array n v…)` / `(utf-string[s] "…")` |
 | 核心数据 item | `(value w v)` / `(bytes …)` / `(fill n b)` / `(pad n)` / `(align n)` / `(reserve n)` / `(label 链…)` |
-| 伪指令 | `(move …)` / `(load-32 …)` / `(ble …)` 等，由表替换 |
-| 控制转移 | `(bge a b L)` / `(jal rd L)` / `(branch-far …)` / `(branch-indirect …)` / `(jump-far …)` |
+| 伪指令 | native: `(mv …)` / `(ble L …)` / `(nop)` / `(ret)`；便利别名由可选表替换 |
+| 控制转移 | native: `(beq L a b)` / `(jal rd L)` / `(j L)`；远形式 `(branch-far …)` / `(branch-indirect …)` / `(jump-far …)` |
 | `(la rd [tmp] 表达式)` | 取地址；近形式 8 字节 |
 | `(li rd 常量)` | 常量装载；尺寸由常量精确决定 |
 | `(anchor 链 段名 偏移)` | measured 的 label 位置，无绝对地址 |

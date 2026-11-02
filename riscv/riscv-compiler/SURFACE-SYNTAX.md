@@ -3,8 +3,12 @@
 本文记录 **`riscv-compiler` 的输入语言**：人写什么形状，流水线就收什么形状。
 
 这里说的“表面语法”不是 `riscv-asm` 的 `riscv-opcodes` 源文件语法，也不是
-GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析器，输入就是
-Racket 的 s-expression：**真列表、symbol、number、string**。
+GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析器，
+输入就是 Racket 的 s-expression：**真列表、symbol、number、string**。
+
+核心约定：
+
+> **默认/base 是 `riscv-opcodes` native 顺序；GAS 是可选的前端重写层。**
 
 相关文档：
 
@@ -12,6 +16,7 @@ Racket 的 s-expression：**真列表、symbol、number、string**。
 | --- | --- |
 | [`SEXP.md`](SEXP.md) | 层间 s-exp 类型速查 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图 |
+| [`gas-syntax/DESIGN.md`](gas-syntax/DESIGN.md) | 可选 GAS 方言 |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 跨层硬边界 |
 | `*/DESIGN.md` | 每一层具体认识哪些 form |
 
@@ -84,7 +89,7 @@ expr := integer
 
 ---
 
-## 3. 代码 item
+## 3. 默认语法：native
 
 ### 3.1 label
 
@@ -104,12 +109,11 @@ expr := integer
 
 ```scheme
 (jal x0 (end))
-(beq a0 a1 (hot))
+(beq (hot) a0 a1)
 (la t0 (data table))
 ```
 
-> 根模块里裸写 `hot` 有时也能被 layout 规范化成 `(hot)`，但它不会经过模块
-> 名字解析。跨模块引用必须写链：`(jal x0 (prog1 f))`。
+跨模块引用必须写完整链：`(jal x0 (prog1 f))`。
 
 ### 3.2 普通指令
 
@@ -119,30 +123,38 @@ expr := integer
 (mnemonic operand ...)
 ```
 
-`mnemonic` 是 symbol；操作数按**汇编写法**排列，不是 `riscv-opcodes` 的声明顺序。
+默认操作数顺序 = `instruction-info-operands` 的顺序，去掉 `aq` / `rl`。
 几个典型形状：
 
 ```scheme
 (add   a0 a1 a2)
 (addi  a0 a0 1)
 
-(lw    t0 sp 8)       ; load:  (rd rs1 imm)
+(lw    t0 sp 8)       ; load:  (rd rs1 imm12)
 (ld    t0 sp 8)
 (lbu   t0 a0 0)
-(sb    t0 sp 0)       ; store: (rs2 rs1 imm) = (值 基址 偏移)
-(sd    t0 sp 8)
+(sb    8 sp t0)       ; store: (simm12 rs1 rs2)
+(sd    8 sp t0)
 
-(beq   a0 a1 (hot))   ; branch: (rs1 rs2 target)
-(bne   a0 a1 (cold))
-(blt   a0 a1 (hot))
+(beq   (hot) a0 a1)   ; branch: (bimm12 rs1 rs2)
+(bne   (cold) a0 a1)
+(blt   (hot) a0 a1)
 
-(jal   x0 (end))      ; jal:  (rd target)
+(ble   (hot) a0 a1)   ; pseudo: (bimm12 rs2 rs1)
+(bgt   (hot) a1 a0)
+(beqz  (hot) a0)      ; pseudo: (bimm12 rs1)
+(bnez  (cold) a0)
+
+(jal   x0 (end))      ; jal:  (rd jimm20)
 (jal   ra (helper))
-(jalr  ra t0 0)       ; jalr: (rd rs1 imm)
+(j     (end))         ; pseudo: (jimm20)
+(jalr  ra t0 0)       ; jalr: (rd rs1 imm12)
+(jr    t0)            ; pseudo: (rs1)
+(ret)                 ; pseudo: 无操作数
 
-(csrrw  a0 mstatus a1)   ; (rd csr rs1)
-(csrrs  a0 mstatus a1)
-(csrrc  a0 mstatus a1)
+(csrrw  a0 a1 mstatus)   ; (rd rs1 csr)
+(csrrs  a0 a1 mstatus)
+(csrrc  a0 a1 mstatus)
 (csrr   a0 mstatus)      ; (rd csr)
 (csrw   mstatus a1)      ; (csr rs1)
 (csrrwi a0 mstatus 3)    ; (rd csr zimm5)
@@ -154,7 +166,7 @@ expr := integer
 (fence.tso)
 (pause)
 
-(amoadd.d.aqrl a0 a2 a1) ; (rd rs2 rs1)，aq/rl 只来自助记符后缀
+(amoadd.d.aqrl a0 a1 a2) ; (rd rs1 rs2)，aq/rl 只来自助记符后缀
 ```
 
 寄存器可写：
@@ -172,20 +184,34 @@ CSR 可以写名字（如 `mstatus`）或 `0..4095` 的整数。
 ```text
 GPR / 普通整数
 CSR 名或编号
-zimm5（5 位无符号立即数）
+zimm5（5 位无符号整数）
 ```
 
 FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/coverage.rkt`
 会列出缺项。
 
-### 3.3 伪指令
+### 3.3 控制转移的目标位置
 
-`expand-pseudo` 是表驱动替换；当前基础表包含：
+native 分支的目标**不固定在最后**：
 
 ```scheme
-(move  rd rs)             ; 别名 mv
-(nop)
-(c.nop)
+(beq (hot) a0 a1)     ; 目标在第一个操作数
+(ble (hot) a0 a1)     ; 目标在第一个操作数
+(c.beqz a0 (hot))     ; 压缩分支目标在第二个操作数
+(jal ra (helper))     ; 目标在第二个操作数
+(j (end))             ; 目标在第一个操作数
+```
+
+`analyze` / `layout` / `relax` / `encode` 使用
+`analyze/insn.rkt` 的 `jump-target` / `jump-target-position`，
+不再假设 `last`。
+
+### 3.4 可选便利别名
+
+默认流不包含 `expand-pseudo`。需要这些别名时再加：
+
+```scheme
+(move  rd rs)             ; 别名 mv -> add rd rs x0
 
 (load-8  rd rs1 [off])    ; 别名 l8  -> lbu
 (load-16 rd rs1 [off])    ; 别名 l16 -> lhu
@@ -195,20 +221,21 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 (load-s16 rd rs1 [off])   ; 别名 ls16 -> lh
 (load-s32 rd rs1 [off])   ; 别名 ls32 -> lw
 
-(store-8  rs2 rs1 [off])  ; 别名 st8  -> sb
-(store-16 rs2 rs1 [off])  ; 别名 st16 -> sh
-(store-32 rs2 rs1 [off])  ; 别名 st32 -> sw
-(store-64 rs2 rs1 [off])  ; 别名 st64 -> sd
+(store-8  off rs1 rs2)    ; 别名 st8  -> sb
+(store-16 off rs1 rs2)    ; 别名 st16 -> sh
+(store-32 off rs1 rs2)    ; 别名 st32 -> sw
+(store-64 off rs1 rs2)    ; 别名 st64 -> sd
 
-(ble  a b target)         ; 别名 branch-le  -> bge  b a target
-(bgt  a b target)         ; 别名 branch-gt  -> blt  b a target
-(bleu a b target)         ; 别名 branch-leu -> bgeu b a target
-(bgtu a b target)         ; 别名 branch-gtu -> bltu b a target
+(branch-le  L rs1 rs2)    ; 别名 ble  -> bge  L rs2 rs1
+(branch-gt  L rs1 rs2)    ; 别名 bgt  -> blt  L rs2 rs1
+(branch-leu L rs1 rs2)    ; 别名 bleu -> bgeu L rs2 rs1
+(branch-gtu L rs1 rs2)    ; 别名 bgtu -> bltu L rs2 rs1
+
+(nop)
+(c.nop)
 ```
 
-形状不匹配时原样透传，最后由编码层报错。伪指令表不判断结果是否是合法真指令。
-
-### 3.4 `li` / `la`
+### 3.5 `li` / `la`
 
 ```scheme
 (li rd integer)
@@ -226,12 +253,12 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 
 - `li` 的尺寸由常量精确决定，可能是 4 / 8 / 12 / 16 / … / 32 字节。
 - `la` 当前只有近形式 `auipc + addi`，固定 8 字节；够不够得着由 layout 报
-  `la-too-far` request，后续 pass 处理。
+  `la-too-far` request。
 - `la` 的显式 scratch 在当前近形式里用不上，但形状保留。
 
-### 3.5 远形式
+### 3.6 远形式
 
-以下形式通常由 `relax` 生成；也可以直接写，形状必须符合：
+以下形式通常由 `relax` 生成；远形式使用自己的内部顺序，目标仍在最后：
 
 ```scheme
 (branch-far cond rs1 rs2 target)                    ; 8 字节
@@ -246,9 +273,33 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 
 ---
 
-## 4. 数据 item
+## 4. 可选语法：GAS
 
-### 4.1 人写的 rich 形式
+GAS 顺序不是默认语法。选择它时，在流里加 `gas-syntax`：
+
+```racket
+'(expand-data flatten gas-syntax analyze dce relax bind-labels encode)
+```
+
+它会在 `analyze` 之前把 GAS 形状改写成 native：
+
+```scheme
+(sw t0 sp 8)             -> (sw 8 sp t0)
+(beq a0 a1 (L))          -> (beq (L) a0 a1)
+(csrrw a0 mstatus a1)    -> (csrrw a0 a1 mstatus)
+(amoadd.d.aqrl a0 a2 a1) -> (amoadd.d.aqrl a0 a1 a2)
+```
+
+GAS 只是表替换；它不编码、不布局、不绑地址。默认流不包含它。
+
+注意：**不能把 native 程序喂给 `gas-syntax`**。两者是显式选择的方言，
+不做静默探测。
+
+---
+
+## 5. 数据 item
+
+### 5.1 人写的 rich 形式
 
 ```scheme
 (label d table)
@@ -278,7 +329,7 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 
 数组的 `n` 是非负整数；`n > 0` 时至少要有一个初值，初值个数不能超过 `n`。
 
-### 4.2 核心数据 item
+### 5.2 核心数据 item
 
 `expand-data` 的输出（也可以直接作为 `data-items` 输入）：
 
@@ -305,7 +356,7 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 
 ---
 
-## 5. 模块、provide、require
+## 6. 模块、provide、require
 
 模块只影响名字，不影响指令、尺寸或地址：
 
@@ -340,19 +391,9 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 - `provide` 可以 re-export 通过 `require` 进来的名字。
 - 模块解析完成后，所有 label 和引用都是完整链，之后的层看不到模块。
 
-引用写链：
-
-```scheme
-(module prog
-  (require data)
-  (label main)
-  (la t0 (table))
-  (jal ra (helper)))
-```
-
 ---
 
-## 6. 段与 place：layout spec
+## 7. 段与 place：layout spec
 
 代码里**没有** `.text` / `.data` / `.section` 这种指令。段归属单独写在 layout spec：
 
@@ -397,7 +438,7 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 
 ---
 
-## 7. 尺寸与合法性速查
+## 8. 尺寸与合法性速查
 
 | form | 尺寸 | 备注 |
 | --- | --- | --- |
@@ -416,22 +457,22 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
 | `branch-indirect` | 12 | 反向分支 + `auipc + jalr` |
 | `jump-far` | 8 | `auipc + jalr` |
 
-控制转移的目标写在最后一个操作数；`encode` 把它换成相对当前 item 的偏移。
-地址表达式和 `value` 的最终宽度由 `bind-labels` / `encode` 检查。
+控制转移的目标位置由 `jump-target-position` 决定；`encode` 在原位置把目标
+换成相对偏移。地址表达式和 `value` 的最终宽度由 `bind-labels` / `encode` 检查。
 
 ---
 
-## 8. 完整例子
+## 9. 完整例子
 
-### 8.1 最小程序 + 数据 + 布局
+### 9.1 native 最小程序
 
 ```scheme
 ;; 代码
 (define program-items
   '((label main)
     (li t0 42)
-    (move a0 t0)
-    (ble a0 a1 (hot))
+    (mv a0 t0)
+    (ble (hot) a0 a1)
     (jal x0 (end))
     (label hot)
     (ld t0 sp 8)
@@ -453,33 +494,27 @@ FPR、向量寄存器、舍入模式等还没有表面语法；`encode/syntax/co
     (place d (d table))))
 ```
 
-### 8.2 模块
+### 9.2 GAS 写法
+
+同一份代码选择 GAS 方言时：
 
 ```scheme
-(define prog
-  '((module prog
-      (provide main helper)
-      (require data)
-      (label main)
-      (la t0 (table))
-      (jal ra (helper))
-      (jalr x0 ra 0)
-      (label helper)
-      (ret))))
-
-(define data
-  '((module data
-      (provide table)
-      (label table)
-      (utf-stringz "hi"))))
+'((label main)
+  (li t0 42)
+  (mv a0 t0)
+  (ble a0 a1 (hot))
+  (jal x0 (end))
+  (label hot)
+  (ld t0 sp 8)
+  (jalr x0 ra 0)
+  (label end))
 ```
 
-`flatten` 之后，`prog` 里的 `(table)` 会变成 `(data table)`，
-`prog` 里的 label 会变成 `(prog main)` / `(prog helper)`。
+流里加 `gas-syntax`，`ble` / `jal` 等会先改写成 native。
 
 ---
 
-## 9. 这不是 GAS 文本汇编
+## 10. 这不是 GAS 文本汇编
 
 不支持、也不打算在这一层支持：
 
@@ -498,7 +533,7 @@ main:
 ((label main)
  (addi a0 a0 1)
  (ld t0 sp 8)
- (beq a0 a1 (hot)))
+ (beq (hot) a0 a1))
 ```
 
 差别：
@@ -516,17 +551,20 @@ main:
 
 ---
 
-## 10. 维护点
+## 11. 维护点
 
 | 想改什么 | 改哪里 |
 | --- | --- |
 | form / name / chain / 地址表达式 | `sexp.rkt` |
 | label、数据宽度、字符串、数组 | `expand-data/expand.rkt` |
-| 伪指令拼写和展开规则 | `expand-pseudo/table*.rkt` |
+| GAS 顺序表 | `gas-syntax/order-table.rkt` |
+| GAS 重写入口 | `gas-syntax/rewrite.rkt` |
+| 便利别名 | `expand-pseudo/table*.rkt` |
 | module / provide / require / 链解析 | `flatten/flatten.rkt` |
-| 普通指令的操作数顺序 | `encode/syntax/order.rkt` |
+| native 操作数计划 | `encode/syntax/native.rkt` |
 | 特殊指令形式（`fence` 等） | `encode/syntax/direct.rkt` |
 | 操作数种类（GPR / CSR / …） | `encode/syntax/operand*.rkt` |
+| 控制转移目标位置 | `analyze/insn.rkt` |
 | 段、place、对齐、item 合法性 | `layout/layout.rkt`、`layout/forms.rkt` |
 | `li` / `la` / 远分支展开 | `../riscv-help/` |
 | 指令名、宽度、位域 | `../riscv-asm/generated/` |
@@ -535,7 +573,7 @@ main:
 新增一种表面写法时，至少检查：
 
 1. 形状是否在 `sexp.rkt` 里有统一的判定。
-2. 是否需要改 `expand-data` / `expand-pseudo` / `flatten` / `encode/syntax` 中的某一层。
+2. 它是 native 基础语法、可选 GAS 方言，还是便利别名？
 3. 尺寸契约在哪里（`layout/forms.rkt` 或对应层）。
 4. 是否需要新增 `problems` / `requests`，不要静默兜底。
 5. 补测试，并更新本文档和对应的 `DESIGN.md`。

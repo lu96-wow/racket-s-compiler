@@ -2,23 +2,31 @@
 
 ## 作用
 
-表驱动伪指令替换。一条 item 可以展开成一条或多条真指令。
+可选的便利别名层。把 `riscv-opcodes` 没有的别名展开成 native 指令。
+
+默认流不包含本层；需要别名时再把它加进 flow。
 
 ## 相关 s-exp
 
-| 输入 | 输出 |
+| 输入（native 顺序） | 输出 |
 | --- | --- |
-| `(move a0 a1)` | `(add a0 a1 x0)` 等 |
-| `(load-32 …)` / `(store-64 …)` | `lw` / `ld` / `sw` / `sd` 等 |
-| `(ble …)` / `(bgt …)` 等 | 对应的真分支 |
+| `(move rd rs)` | `(add rd rs x0)` |
+| `(load-8 rd rs1 off)` | `(lbu rd rs1 off)` |
+| `(store-8 off rs1 rs2)` | `(sb off rs1 rs2)` |
+| `(branch-le L rs1 rs2)` | `(bge L rs2 rs1)` |
 | 不认识的 form | 原样透传 |
+
+`riscv-opcodes` 已经定义的伪指令（`mv` / `ble` / `nop` / `ret` 等）不需要
+在这里再写一遍，native 编码器可以直接处理。
 
 ## 设计思路
 
-- 伪指令只是拼写和操作数顺序的糖，不改变控制流语义。
-- 逻辑与表分离：加一种写法只改表，遍历逻辑不动。
+- 只做拼写/形状替换，不改变控制流语义。
+- 模板已经是 `instruction-info-operands` 的 native 顺序。
+- GAS 顺序不在这里；它在 `gas-syntax/`。
 - 形状不匹配就透传；真正的合法性统一留给 encode（`riscv-asm`）。
 
 ## 边界
 
-不判断结果是否合法、不算尺寸、不处理 `li` / `la` 的最终地址。
+- 不判断结果是否合法、不算尺寸、不处理 `li` / `la` 的最终地址。
+- 不负责 GAS 方言。

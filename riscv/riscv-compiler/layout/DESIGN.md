@@ -64,6 +64,8 @@ data-items                               ; label / bytes / fill / pad / value / 
 ## 设计思路
 
 - 单位：代码用 analyze 的块；数据用“从一条 label 到下一条 label”的游程。
+- 控制转移的目标位置来自 `analyze/insn.rkt` 的 `jump-target` /
+  `jump-target-position`，不假设 native 分支的目标在最后。
 - `place` 按精确链匹配；命中的块是锚点，后续块跟随；数据游程不跟随。
 - `align` 在度量时换算成精确事实；产物写事实，不写请求。
   补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见上）。

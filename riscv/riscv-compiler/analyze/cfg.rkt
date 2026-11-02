@@ -136,7 +136,11 @@
     [(eq? (car it) 'la) (address-expr-chains (last it))]
     [(eq? (car it) 'value) (address-expr-chains (caddr it))]
     [(or (branch-instruction? it) (jump-instruction? it))
-     (filter path? (drop-right (cdr it) 1))]   ; 最后一个操作数是跳转目标, 不算取值
+     (define ops (cdr it))
+     (define p (jump-target-position it))
+     (filter path? (if p
+                       (append (take ops p) (drop ops (add1 p)))
+                       ops))]
     [else (filter path? (cdr it))]))
 
 (define (address-taken-paths items)

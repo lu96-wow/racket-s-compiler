@@ -20,6 +20,10 @@
 
 - 块边界只由控制流决定：程序开头、跳转目标 label、`ends-block?` 指令之后。
 - 非目标 label 只是块内位置标记，不切块。
+- 操作数是 riscv-opcodes native 顺序，目标不固定在最后：
+  `(beq L a b)` 的目标在 cdr 第 0 位，`(c.beqz a L)` 在 cdr 第 1 位，
+  `(jal rd L)` 在 cdr 第 1 位。统一用 `jump-target-position`。
+- `gas-syntax` 必须在 analyze 之前把 GAS 写法改写成 native。
 - `succ` 服务可达性，`fallthrough` 服务物理布局；两者分开。
 - 数据 item 不进 CFG，只贡献 root：数据里存地址 = 把入口交给外部。
 

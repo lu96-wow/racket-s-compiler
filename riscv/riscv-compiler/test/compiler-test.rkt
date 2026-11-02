@@ -1,7 +1,7 @@
 #lang racket
-;;; test/rebuild-test.rkt
+;;; test/compiler-test.rkt
 ;;;
-;;; rebuild 的契约测试:
+;;; 汇编器契约测试:
 ;;;   - native 是默认基础语法
 ;;;   - GAS 是可选重写层
 ;;;   - 便利别名是另一个可选层
@@ -221,4 +221,4 @@
 
 (check-equal? (hash-ref (syntax-coverage) 'native-missing) 0)
 
-(displayln "rebuild tests: ok")
+(displayln "compiler tests: ok")

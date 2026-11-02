@@ -11,7 +11,8 @@
 ;; 布局层需要它, 因为 jump-far 要不要 scratch 取决于它的 link。
 (require "../sexp.rkt"
          (only-in "../analyze/insn.rkt"
-                  zero-register? branch-instruction? jump-instruction?)
+                  zero-register? branch-instruction? jump-instruction?
+                  jump-target jump-target-position)
          (only-in "../target.rkt" target-xlen)
          ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
          ;; 不是上界。展开长度和 XLEN 有关, 所以用调用方传进来的 target。
@@ -25,7 +26,7 @@
          la-form? la-scratch
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size item-kind-allowed-in?
-         branch-form? jump-form? control-form? control-target
+         branch-form? jump-form? control-form? control-target control-target-position
          form-range scratch-hole?
          segment-form? segment-kind?)
 
@@ -110,9 +111,11 @@
 (define (branch-form? x) (branch-instruction? x))
 (define (jump-form? x)   (jump-instruction? x))
 
-;; 有控制流目标、目标在最后一个操作数
+;; 有控制流目标。目标位置由 analyze/insn.rkt 按形式决定，
+;; 不能假设它总在最后一个操作数。
 (define (control-form? x) (or (branch-form? x) (jump-form? x)))
-(define (control-target x) (and (control-form? x) (last x)))
+(define (control-target x) (and (control-form? x) (jump-target x)))
+(define (control-target-position x) (and (control-form? x) (jump-target-position x)))
 
 ;; ---------------------------------------------------------------------------
 ;; item 的类别: 决定它能落进哪种段 (P7)

@@ -1,50 +1,92 @@
 # riscv-compiler
 
-从 s-expression 汇编走到字节。每层都是纯函数，可单独跑。
+RISC-V s-expression 汇编器。
 
-```
+> **底层只认 `riscv-opcodes` native 顺序；GAS 顺序是可选的前端重写层，不是 canonical。**
+
+## 流水线
+
+```text
 rich-data ─→ expand-data ─┐
                           ↓
-program-items ─┬─→ flatten ─→ expand-pseudo ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
-data-items ────┘                                │         │       │          │            │
-                                                ↓         ↓       ↓          ↓            ↓
-                                             program   program  measured   bound        build
+program-items ─┬─→ flatten ─→ [gas-syntax] ─→ [expand-pseudo] ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
+data-items ────┘                                                                      │          │            │
+                                                                                      ↓          ↓            ↓
+                                                                                   measured     bound        build
 ```
 
-- `layout` 在 `relax` 内部反复跑。
-- `relax` 输出 measured-layout（只有 anchors，无绝对地址）。
-- `bind-labels` 把 anchors 落到 symbols，输出可编码的 bound-layout。
-- `encode` 只吃 bound-layout，并要求 requests / problems 为空。
+- `[gas-syntax]`：可选。GAS 操作数顺序 → native 顺序。
+- `[expand-pseudo]`：可选。便利别名（`load-8` / `store-*` / `branch-le`）→ native 指令。
+- 默认流只跑 native：
+
+```racket
+'(expand-data flatten analyze dce relax bind-labels encode)
+```
+
+- 需要 GAS 写法：
+
+```racket
+'(expand-data flatten gas-syntax analyze dce relax bind-labels encode)
+```
+
+- 需要便利别名：
+
+```racket
+'(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
+```
+
+`layout` 仍然在 `relax` 内部反复跑。
+
+## native 顺序
+
+canonical 操作数顺序来自 `riscv-asm` 的 `instruction-info-operands`，去掉 `aq` / `rl`：
+
+```scheme
+(sw 8 sp t0)            ; simm12 rs1 rs2
+(beq (L) a0 a1)         ; bimm12 rs1 rs2
+(csrrw a0 a1 mstatus)   ; rd rs1 csr
+(ble (L) a1 a0)         ; bimm12 rs2 rs1
+```
+
+`aq` / `rl` 仍然用助记符后缀：
+
+```scheme
+(amoadd.d.aqrl a0 a1 a2)
+```
+
+## GAS 层
+
+`gas-syntax` 是纯表替换，只做顺序变换：
+
+```scheme
+(sw t0 sp 8)             -> (sw 8 sp t0)
+(beq a0 a1 (L))          -> (beq (L) a0 a1)
+(csrrw a0 mstatus a1)    -> (csrrw a0 a1 mstatus)
+(amoadd.d.aqrl a0 a2 a1) -> (amoadd.d.aqrl a0 a1 a2)
+```
+
+它不编码、不布局、不绑地址。默认流不包含它。
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与索引 |
-| [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md) | **汇编器表面语法**：代码 / 数据 / 模块 / 段 |
-| [`SEXP.md`](SEXP.md) | s-exp 类型速查 |
-| [`flow/DESIGN.md`](flow/DESIGN.md) | 构建流 + **跨层硬边界** |
-| [`CONSTRAINTS.md`](CONSTRAINTS.md) | **尺寸/布局/寄存器策略约束** |
-| `*/DESIGN.md` | 每层：作用 / 相关 s-exp / 设计思路 |
+| [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md) | native 表面语法 + 可选 GAS 方言 |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与 stage |
+| [`SEXP.md`](SEXP.md) | 层间 s-exp 类型速查 |
+| [`gas-syntax/DESIGN.md`](gas-syntax/DESIGN.md) | GAS 可选重写层 |
+| [`encode/syntax/DESIGN.md`](encode/syntax/DESIGN.md) | native plan / direct form |
+| [`flow/DESIGN.md`](flow/DESIGN.md) | 构建流与硬边界 |
+| `*/DESIGN.md` | 每层细节 |
 
 ## 跑
 
 ```bash
-racket flow/test.rkt
-racket flow/demo.rkt
-
-racket expand-data/test.rkt
-racket flatten/test.rkt
-racket expand-pseudo/test.rkt
-racket analyze/test.rkt
-racket dce/test.rkt
-racket layout/test.rkt
-racket relax/test.rkt
-racket bind-labels/test.rkt
-racket encode/test.rkt
-
-racket encode/demo.rkt
-racket ../riscv-compiler-test/run.rkt
+cd riscv-compiler
+racket test/compiler-test.rkt
 ```
 
-外部依赖：`../riscv-asm`（指令编码表）、`../riscv-help`（`li` / `la` / 远形式展开）。
+外部依赖：
+
+- `../riscv-asm`：指令编码表
+- `../riscv-help`：`li` / `la` / 远形式展开

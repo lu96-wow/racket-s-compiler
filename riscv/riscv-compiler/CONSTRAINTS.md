@@ -81,7 +81,8 @@
 
 ```text
 frontend / lower
-  → expand-pseudo
+  → [gas-syntax]        ; 可选: GAS -> native
+  → [expand-pseudo]     ; 可选: 便利别名 -> native
   → analyze
   → dce
   → regalloc / spill        ; 尺寸可变，不依赖 offset

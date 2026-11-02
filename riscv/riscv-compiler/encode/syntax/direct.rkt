@@ -62,12 +62,18 @@
 (define (fence-i-args _operands)
   (list 0 0 0))                           ; imm12 rs1 rd 全部为 0
 
+(define (c-nop-args _operands)
+  (list 0))                               ; c_nzimm6 = 0
+
 (define direct-plans
   (hash
-   ;; fence 接受 2 个操作数(显式 pred/succ)或 0 个(GAS/LLVM 的完整 fence 别名)
+   ;; fence 接受 2 个操作数(显式 pred/succ)或 0 个(完整 fence 别名)
    'fence     (direct-plan '(2 0) fence-args)
    'fence.tso (direct-plan '(0) fence-tso-args)
-   'fence.i   (direct-plan '(0) fence-i-args)))
+   'fence.i   (direct-plan '(0) fence-i-args)
+   ;; riscv-opcodes 的 c.nop info 带一个固定为 0 的 c_nzimm6；
+   ;; 表面是零操作数写法 (c.nop)。
+   'c.nop     (direct-plan '(0) c-nop-args)))
 
 (define (direct-plan-of name)
   (and (symbol? name) (hash-ref direct-plans name #f)))

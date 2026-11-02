@@ -3,14 +3,14 @@
 ;;;
 ;;; 把两个局部来源组合成一个语法计划:
 ;;;
-;;;   direct.rkt  特殊形式 (fence / fence.tso)
-;;;   order.rkt   普通操作数位置表
+;;;   direct.rkt  特殊形式 (fence / fence.tso / fence.i)
+;;;   native.rkt  riscv-opcodes native 顺序
 ;;;
-;;; insn.rkt 只依赖这里的 syntax-plan, 不直接知道 order/direct 的区别。
-;;; 这样以后加 vector / CSR / FPR 语法时, 仍然只在对应局部模块里扩展。
+;;; 编码层只认 native。GAS 是可选的前端重写层（gas-syntax/），
+;;; 不在这里出现，也不形成第二个编码分支。
 
 (require "../../../riscv-asm/generated/lib/info/struct.rkt"
-         "order.rkt"
+         "native.rkt"
          "direct.rkt")
 
 (provide syntax-plan?
@@ -23,10 +23,10 @@
          syntax-plan-for)
 
 (struct syntax-plan
-  (source        ; 'order | 'direct, 方便诊断
+  (source        ; 'native | 'direct, 方便诊断
    arities       ; 接受的操作数个数, 第一个是 instruction-arity 的规范值
    has-flags?    ; 是否接受 .aq/.rl 后缀
-   build)        ; (operands aq rl -> riscv-asm 函数参数)
+   build)        ; (target operands aq rl -> riscv-asm 函数参数)
   #:transparent)
 
 (define (syntax-plan-arity plan)
@@ -35,14 +35,13 @@
 (define (syntax-plan-apply plan target operands aq rl)
   ((syntax-plan-build plan) target operands aq rl))
 
-(define (order->syntax-plan info)
-  (define order (order-plan-of info))
-  (and order
-       (syntax-plan 'order
-                    (list (order-plan-arity order))
-                    (order-plan-has-flags? order)
-                    (lambda (target operands aq rl)
-                      (order-plan->args order target operands aq rl)))))
+(define (native->syntax-plan info)
+  (define plan (native-plan-of info))
+  (syntax-plan 'native
+               (list (native-plan-arity plan))
+               (native-plan-has-flags? plan)
+               (lambda (target operands aq rl)
+                 (native-plan->args plan target operands aq rl))))
 
 (define (direct->syntax-plan direct)
   (and direct
@@ -54,4 +53,4 @@
 
 (define (syntax-plan-for info)
   (or (direct->syntax-plan (direct-plan-of (instruction-info-name info)))
-      (order->syntax-plan info)))
+      (native->syntax-plan info)))

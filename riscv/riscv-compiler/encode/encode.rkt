@@ -34,10 +34,11 @@
          (only-in "../bind-labels/bind.rkt"
                   bound-layout? layout-symbols symbol-row symbol-address eval-symbol-address)
          (only-in "../../riscv-help/main.rkt"
-                  branch-long jump-jal jump-auipc-jalr zero-register?
+                  jump-jal jump-auipc-jalr zero-register?
                   li load-pcrel)
          (only-in "../../riscv-asm/base/register.rkt" register->number register-abi-name)
          "../target.rkt"
+         "native-help.rkt"
          "insn.rkt")
 
 (provide encode-layout)
@@ -67,13 +68,16 @@
   (integer->bytes w (eval-symbol-address v symbols)))
 
 ;; 操作数: 寄存器名/立即数原样交给 insn.rkt;
-;; 控制转移的最后一项是链 -> 换成相对当前 item 的偏移。
+;; 控制转移的目标是链 -> 在原位置换成相对当前 item 的偏移。
 (define (operands-at it here symbols)
   (cond
     [(control-form? it)
      (define target (normalize-path (control-target it)))
-     (append (drop-right (cdr it) 1)
-             (list (- (resolve-symbol symbols target 0) here)))]
+     (define pos (control-target-position it))
+     (define ops (cdr it))
+     (append (take ops pos)
+             (list (- (resolve-symbol symbols target 0) here))
+             (drop ops (add1 pos)))]
     [else (cdr it)]))
 
 ;; ---------------------------------------------------------------------------
@@ -93,20 +97,20 @@
 (define (encode-far-branch it here symbols)
   (define cond (cadr it))
   (define d (branch-distance it here symbols 4))
-  (branch-long cond
-               (register->number (caddr it))
-               (register->number (cadddr it))
-               d
-               (lambda (offset) (jump-jal 'zero offset))))
+  (native-branch-long cond
+                      (register->number (caddr it))
+                      (register->number (cadddr it))
+                      d
+                      (lambda (offset) (jump-jal 'zero offset))))
 
 ;; (branch-indirect s cond rs1 rs2 L) = 反向条件分支 + auipc+jalr
 (define (encode-indirect-branch it here symbols)
   (define s (cadr it))
   (define cond (caddr it))
   (define d (branch-distance it here symbols 5))
-  (branch-long cond
-               (register->number (cadddr it))
-               (register->number (list-ref it 4))
+  (native-branch-long cond
+                      (register->number (cadddr it))
+                      (register->number (list-ref it 4))
                d
                (lambda (offset) (jump-auipc-jalr 'zero offset #:scratch (list s)))))
 

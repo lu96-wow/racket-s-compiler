@@ -46,13 +46,28 @@
   (and (form? it)
        (case (car it)
          ;; 压缩 -> 普通(2 -> 4); 还远就下一轮继续升
-         [(c.beqz) (list 'beq (cadr it) 'x0 (caddr it))]
-         [(c.bnez) (list 'bne (cadr it) 'x0 (caddr it))]
+         ;; native 分支的目标在最前: (beq target rs1 rs2)
+         [(c.beqz) (list 'beq (caddr it) (cadr it) 'x0)]
+         [(c.bnez) (list 'bne (caddr it) (cadr it) 'x0)]
          [(c.j)    (list 'jal 'x0 (cadr it))]
          [(c.jal)  (list 'jal 'ra (cadr it))]
          ;; b* -> 远分支(反向分支 + jal), 4 -> 8
+         ;; native: (beq target rs1 rs2) -> (branch-far beq rs1 rs2 target)
          [(beq bne blt bge bltu bgeu)
-          (list 'branch-far (car it) (cadr it) (caddr it) (cadddr it))]
+          (list 'branch-far (car it) (caddr it) (cadddr it) (cadr it))]
+         ;; riscv-opcodes pseudo 分支: 先换成对应的规范分支，再升远形式
+         ;;   (ble L b a) = (bge L a b)
+         ;;   (bgt L b a) = (blt L a b)
+         [(ble)  (list 'branch-far 'bge  (cadddr it) (caddr it) (cadr it))]
+         [(bleu) (list 'branch-far 'bgeu (cadddr it) (caddr it) (cadr it))]
+         [(bgt)  (list 'branch-far 'blt  (cadddr it) (caddr it) (cadr it))]
+         [(bgtu) (list 'branch-far 'bltu (cadddr it) (caddr it) (cadr it))]
+         ;;   (beqz L rs) = (beq L rs x0)
+         [(beqz) (list 'branch-far 'beq (caddr it) 'x0 (cadr it))]
+         [(bnez) (list 'branch-far 'bne (caddr it) 'x0 (cadr it))]
+         ;;   (blez L rs) = (bge L x0 rs)
+         [(blez) (list 'branch-far 'bge 'x0 (caddr it) (cadr it))]
+         [(bgtz) (list 'branch-far 'blt 'x0 (caddr it) (cadr it))]
          ;; 远分支 -> 间接远分支(反向分支 + auipc+jalr), 8 -> 12, 先留空槽
          [(branch-far)
           (list 'branch-indirect (cadr it) (caddr it) (cadddr it) (list-ref it 4))]
@@ -63,6 +78,8 @@
           (if (= 3 (length it))
               (list 'jump-far (cadr it) (caddr it))
               (list 'jump-far 'ra (cadr it)))]
+         ;; j L = jal x0, L
+         [(j) (list 'jump-far 'x0 (cadr it))]
          [else #f])))
 
 ;; ---------------------------------------------------------------------------

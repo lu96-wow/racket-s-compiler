@@ -3,14 +3,15 @@
 ;;;
 ;;; expand-pseudo 之后代码就是指令 + label。这里只做分类, 不改写。
 ;;;
-;;; 分类决定 CFG 的形状:
-;;;   - 分支        (beq a b L) / (c.beqz a L)   两条边: 目标 + 顺序
+;;; 分类决定 CFG 的形状。操作数顺序是 riscv-opcodes native 顺序:
+;;;   - 分支        (beq L a b) / (c.beqz a L)   两条边: 目标 + 顺序
 ;;;   - 直接跳转    (jal x0 L) / (c.j L)          一条边: 目标(无顺序边)
 ;;;   - 调用        (jal ra L) / (c.jal L)        两条边: 目标 + 顺序
 ;;;   - 间接跳转    (jalr ...) / (c.jr r) / (c.jalr r)
 ;;;                 目标不可知: c.jr 无顺序边, c.jalr/jalr 有; 图记为"有间接跳转"
 ;;;   - 陷阱        (ecall) 可能返回 -> 顺序边; (ebreak) / (c.ebreak) 停住 -> 无边
 ;;;
+;;; 目标位置不再写死为 last: 普通分支的 bimm12 在 native 顺序里通常在前面。
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
 (require "../sexp.rkt")
@@ -20,7 +21,7 @@
          label-form? label-path
          branch-instruction? jump-instruction? indirect-instruction?
          trap-instruction? ends-block? falls-through?
-         unconditional-jump? jump-target jump-register
+         unconditional-jump? jump-target jump-target-position jump-register
          zero-register?)
 
 ;; 真列表(代码形状)
@@ -39,10 +40,14 @@
 ;; 分类表(唯一的名单, 改这里)
 ;; ---------------------------------------------------------------------------
 
-(define branch-mnemonics   '(beq bne blt bge bltu bgeu c.beqz c.bnez
-                            branch-far branch-indirect))
-(define jump-mnemonics     '(jal c.j c.jal jump-far))
-(define indirect-mnemonics '(jalr c.jr c.jalr))
+(define branch-mnemonics
+  '(beq bne blt bge bltu bgeu
+    ble bleu bgt bgtu
+    beqz bnez blez bgtz
+    c.beqz c.bnez
+    branch-far branch-indirect))
+(define jump-mnemonics     '(jal j c.j c.jal jump-far))
+(define indirect-mnemonics '(jalr jr ret c.jr c.jalr))
 (define trap-mnemonics     '(ecall ebreak c.ebreak))
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -94,14 +99,38 @@
          [(jal)      (if (= 3 (length x)) (cadr x) 'ra)]
          [(jalr)     (cadr x)]
          [(jump-far) (cadr x)]
+         [(j)        'x0]
+         [(jr)       'x0]
+         [(ret)      'x0]
          [(c.j)      'x0]
          [(c.jal)    'ra]
          [(c.jr)     'x0]
          [(c.jalr)   'ra]
          [else #f])))
 
-;; (jal [rd] L) / (beq a b L) / (c.beqz a L) / (c.j L): 目标都在最后
-(define (jump-target x) (last x))
+;; 目标操作数在 cdr 里的位置(0 基)。
+;;
+;;   native 分支: (beq L a b) / (ble L b a) / (beqz L a) -> 目标在 cdr 的第一个
+;;   压缩分支:   (c.beqz a L)                              -> 目标在 cdr 的第二个
+;;   jal:        (jal rd L) / 兼容 (jal L)
+;;   远形式:     仍是各自的内部顺序，目标在最后
+(define (jump-target-position x)
+  (and (form? x)
+       (case (car x)
+         [(beq bne blt bge bltu bgeu
+               ble bleu bgt bgtu
+               beqz bnez blez bgtz)
+          0]
+         [(c.beqz c.bnez) 1]
+         [(c.j c.jal) 0]
+         [(j) 0]
+         [(jal) (if (= 3 (length x)) 1 0)]
+         [(branch-far branch-indirect jump-far) (sub1 (length (cdr x)))]
+         [else #f])))
+
+(define (jump-target x)
+  (define p (jump-target-position x))
+  (and p (list-ref x (add1 p))))
 
 (define (zero-register? r)
   (or (eq? r 'x0) (eq? r 'zero) (equal? r 0)))
