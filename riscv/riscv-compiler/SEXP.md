@@ -1,5 +1,6 @@
 # s-expression 速查
 
+> 本文只列层间类型。人写的汇编表面语法见 [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md)；
 > 每层的完整说明在各自的 `DESIGN.md`；跨层硬边界在 [`flow/DESIGN.md`](flow/DESIGN.md)。
 
 ## 通用约定

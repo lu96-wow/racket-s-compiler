@@ -1,6 +1,7 @@
 # 架构索引
 
 > 每层只关心自己的 s-exp 和设计。层作用、s-exp 类型、设计思路放在各自的 `DESIGN.md`。
+> 人写的输入语法见 [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md)。
 > **跨层硬边界集中在 [`flow/DESIGN.md`](flow/DESIGN.md)**；尺寸/寄存器策略约束见 [`CONSTRAINTS.md`](CONSTRAINTS.md)。本文只做地图。
 
 ## 流水线
@@ -35,6 +36,7 @@ data-items ────┘                                │         │       
 
 每层细节：
 
+- [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md)
 - [`expand-data/DESIGN.md`](expand-data/DESIGN.md)
 - [`flatten/DESIGN.md`](flatten/DESIGN.md)
 - [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md)
