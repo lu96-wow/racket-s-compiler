@@ -16,8 +16,12 @@
 ;;;   call-*        目标块 + 下一块(调用会返回)
 ;;;   jmp-indirect  无顺序边
 ;;;   call-indirect 下一块
-;;;   ret/ud2/hlt   无
+;;;   ret/ud2       无顺序边（硬件上真的不落下）
 ;;;   其他          下一块
+;;;
+;;; 注意：**没有顺序边 = 后面的代码不可达**，所以 `falls-through?` 判错的
+;;; 代价是 DCE 删掉还会执行的代码（`hlt` 曾经被误归进 ret/ud2 那一组，
+;;; 见 insn.rkt 的说明）。判据只在 insn.rkt 一处，别在这里加第二份。
 ;;;
 ;;; 目标 label 不存在时不加边(交给布局层报 undefined-target)。
 
