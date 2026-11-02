@@ -293,6 +293,27 @@ GAS 顺序不是默认语法。选择它时，在流里加 `gas-syntax`：
 (amoadd.d.aqrl a0 a2 a1) -> (amoadd.d.aqrl a0 a1 a2)
 ```
 
+不是所有指令都会变。是否不同取决于该指令的 `instruction-info-operands`
+是否恰好等于 GAS 的书写顺序，**不是由“真指令/伪指令”决定的**：
+
+| 指令 | native | GAS | 有区别？ |
+| --- | --- | --- | --- |
+| `mv` | `(mv rd rs1)` | `(mv rd rs1)` | 否（虽然是伪指令） |
+| `jal` | `(jal rd target)` | `(jal rd target)` | 否（真指令，顺序相同） |
+| `jalr` | `(jalr rd rs1 imm)` | `(jalr rd rs1 imm)` | 否 |
+| `add` | `(add rd rs1 rs2)` | `(add rd rs1 rs2)` | 否 |
+| `j` | `(j target)` | `(j target)` | 否 |
+| `beq` | `(beq target rs1 rs2)` | `(beq rs1 rs2 target)` | 是 |
+| `beqz` | `(beqz target rs1)` | `(beqz rs1 target)` | 是 |
+| `ble` | `(ble target a0 a1)` | `(ble a0 a1 target)` | 是（虽然是伪指令，目标位置不同） |
+| `sw` | `(sw imm rs1 rs2)` | `(sw rs2 rs1 imm)` | 是 |
+| `csrrw` | `(csrrw rd rs1 csr)` | `(csrrw rd csr rs1)` | 是 |
+| `csrw` | `(csrw rs1 csr)` | `(csrw csr rs1)` | 是 |
+| `amoadd.d.aqrl` | `(amoadd.d.aqrl rd rs1 rs2)` | `(amoadd.d.aqrl rd rs2 rs1)` | 是 |
+
+所以 `mv` / `jal` 看起来一样，是因为它们的 native 顺序恰好就是 GAS 顺序；
+`ble` 虽然也是伪指令，但 GAS 的寄存器顺序和 riscv-opcodes 的 native 顺序不同。
+
 GAS 只是表替换；它不编码、不布局、不绑地址。默认流不包含它。
 
 注意：**不能把 native 程序喂给 `gas-syntax`**。两者是显式选择的方言，
