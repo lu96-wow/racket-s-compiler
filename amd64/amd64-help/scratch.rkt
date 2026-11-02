@@ -6,15 +6,13 @@
 
 (require "../amd64-asm/registers.rkt")
 
-(provide default-scratch
-         scratch-list
+(provide scratch-list
          check-distinct!
          check-scratch-register!
          take-scratch!)
 
-;; A conservative caller-saved set.  Real allocation policy can pass its own
-;; list explicitly; this is only the default for helper expansions.
-(define default-scratch '(rax rcx rdx r8 r9 r10 r11))
+;; No default scratch set here.  Caller-saved/preserved registers are an ABI
+;; policy; the caller (e.g. loko-compatibility) must pass an explicit list.
 
 (define (scratch-list scratch)
   (cond

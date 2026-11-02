@@ -30,7 +30,6 @@
  call-far-form
 
  ;; scratch rules
- default-scratch
  scratch-list
  check-distinct!
  check-scratch-register!

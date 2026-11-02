@@ -38,6 +38,7 @@
 (check-exn exn:fail? (lambda () (jump-far-form '(f))))
 (check-exn exn:fail? (lambda () (call-far-form '(f))))
 
+(check-equal? (scratch-list #f) '())
 (check-equal? (scratch-list 'rax) '(rax))
 (check-equal? (scratch-list '(rax rcx)) '(rax rcx))
 (check-equal? (take-scratch! 'test '(rax rcx) 1) '(rax))

@@ -135,7 +135,7 @@
         (unless (memq width '(16 64))
           (error 'plan-push "push memory must be b16 or b64: ~e" src))
         ;; 64-bit push/pop has a 64-bit default operand size; do not emit
-        ;; a redundant REX.W (GNU as and Loko's assembler both omit it).
+        ;; a redundant REX.W (GNU as and other reference assemblers omit it).
         (rm-plan (if (= width 64) 32 16) (regs-in-op m) (make-rm-encoding m 6) '(#xff))]
        [else (error 'plan-push "unsupported push operand: ~e" src)])]
     [_ (error 'plan-push "push takes one operand: ~e" operands)]))

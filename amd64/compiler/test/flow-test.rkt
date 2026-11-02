@@ -1,8 +1,8 @@
 #lang racket
 ;;; amd64/compiler/test/flow-test.rkt
 ;;;
-;;; Core pipeline only.  Loko/ELF stages are tested in
-;;; loko-compatibility/test-flow.rkt and amd64-elf/test.rkt.
+;;; Core pipeline only.  Optional frontend/image stages are tested in their
+;;; own test modules.
 
 (require rackunit
          "../flow/flow.rkt"

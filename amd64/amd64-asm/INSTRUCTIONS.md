@@ -134,7 +134,7 @@ size(prefix p inner) = 1 + size(inner)
 | `ins` | `6C` | `66 6D` | `6D` | 不支持 |
 | `outs` | `6E` | `66 6F` | `6F` | 不支持 |
 
-`ins` / `outs` 没有 64 位形式；Loko 的 `mem+` 在 64 位模式下按 32 位处理。
+`ins` / `outs` 没有 64 位形式；宽度必须由前端显式决定，编码器不推断。
 
 ## 6. 立即数选择
 
@@ -221,8 +221,8 @@ xgetbv clts rdpkru stac 等 fixed-opcode 系统指令
 
 尚未实现：x87 其余指令、MMX、AVX/VEX/EVEX/APX、16 位模式；32 位模式**没有**
 逐 item 的模式感知编码——只放行"64 位路径编出的字节与 32 位一致"的那部分，
-判据在 `loko-compatibility/mode32.rkt`，逐字节一致性靠和 Loko 自己的
-`bin/pc-repl` 对比。
+32 位兼容子集的逐 item 审计属于可选前端，放在
+`loko-compatibility/mode32.rkt`；核心编码器不按 item 切换模式。
 
 ## 9. 内存/REX 不变量
 

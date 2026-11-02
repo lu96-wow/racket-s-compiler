@@ -2,7 +2,7 @@
 ;;; amd64/compiler/flow/flow.rkt
 ;;;
 ;;; 核心流的公开入口: 把 `core-flow` 绑进引擎的那组函数。
-;;; 需要 Loko/ELF 层的前端用 loko-compatibility/flow.rkt（同一个形状）。
+;;; 需要额外阶段的前端用各自的 extend-flow 入口（形状相同）。
 ;;;
 ;;;   (compile target seeds)                    ; 默认流 -> build
 ;;;   (run-flow target 'backend seeds)          ; 层组

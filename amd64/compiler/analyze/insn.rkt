@@ -12,10 +12,9 @@
 ;;;   stop     ret/ud2                  硬件保证不继续
 ;;;
 ;;; 曾经这里自己维护一张助记符表，把 `hlt` 也写进"不返回"，于是 CFG 认为
-;;; Loko `syscall-hlt` 的队尾 (cli/swapgs/sysretq) 不可达，DCE 把它删了；
-;;; hlt 被中断唤醒后顺序落进下一条 syscall 实现 → 垃圾 MSR → #GP → #DF。
-;;; 现在"会不会落下"只有 amd64-asm 一处事实来源（默认 'sequential，例外
-;;; 必须在 special 表里逐条声明），本层只翻译成谓词。
+;;; hlt 之后的指令不可达，DCE 把它们删了；hlt 被中断唤醒后顺序落进下一条
+;;; 指令。现在"会不会落下"只有 amd64-asm 一处事实来源（默认 'sequential，
+;;; 例外必须在 special 表里逐条声明），本层只翻译成谓词。
 
 ;;; 只提供"一条 item 是哪类控制流指令"。形状（form?/path?）在
 ;;; amd64-asm/shape.rkt，label 访问器在 compiler/item.rkt —— 这里不转发它们，

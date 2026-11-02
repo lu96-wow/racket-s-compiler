@@ -1,16 +1,15 @@
 #lang racket
 ;;; amd64/compiler/flow/core.rkt
 ;;;
-;;; 核心汇编流水线。本模块**不 require** loko-compatibility、amd64-elf 或任何
-;;; 可选前端/镜像层。
+;;; 核心汇编流水线。本模块**不 require** 任何可选前端/镜像层。
 ;;;
 ;;; 一条流由三样东西组成, 装在一个 `flow` 值里:
 ;;;   stages   层名 -> stage
 ;;;   groups   组名 -> 层名列表
 ;;;   default  默认层列表（`compile` 不指定选择器时用它）
 ;;;
-;;; 核心这条流叫 `core-flow`。别的前端（Loko）在自己的模块里 (extend-flow
-;;; core-flow …) 加自己的层和层组, 然后把 flow 绑进同一组函数里导出。
+;;; 核心这条流叫 `core-flow`。其它前端在自己的模块里 (extend-flow core-flow …)
+;;; 加自己的层和层组, 然后把 flow 绑进同一组函数里导出。
 ;;; 于是: 每层只认自己的 s-expression, 引擎不知道也不关心是谁的流。
 ;;;
 ;;; 层契约只有 requires/provides 两个字段: 跑之前"在途值"里必须有什么,

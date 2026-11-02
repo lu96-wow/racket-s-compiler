@@ -5,7 +5,7 @@
 ;;;
 ;;;   规范码 + 编码顺序   (o no b ae e ne be a s ns p np l ge le g)  -> cc-index
 ;;;   同义拼写            z==e, nz==ne, c==b, nc/nae==b 的同族 …
-;;;   j 前缀助记符        jz -> e （Loko 的整条 `jnz`）
+;;;   j 前缀助记符        jz -> e （例如整条 `jnz`）
 ;;;
 ;;; 编码侧（special/control.rkt）要 cc-index，前端侧（expand-pseudo）要
 ;;; canonical-cc / jcc-alias?。两边都从这里取，不各写一张表。

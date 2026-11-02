@@ -1,20 +1,20 @@
-# amd64 flow
+# amd64 core flow
+
+> 本文只描述 `compiler/flow/core.rkt` 的核心汇编流。
+> Loko / ELF 等可选阶段见 [`../../loko-compatibility/FLOW.md`](../../loko-compatibility/FLOW.md)。
 
 ## 作用
 
-用 stage 表 + 选择器把 amd64 各层串起来。默认流包含 relax：
+用 stage 表 + 选择器把核心 amd64 各层串起来。默认流包含 relax：
 `expand-pseudo` 先产生 short branch，`relax` 再按需要升成 near。
 
 ## 相关 s-exp / 在途值
 
 | 名字 | 形状 | 谁产 |
 | --- | --- | --- |
-| `loko-source` | `(loko-source (text …) (data …))` | seed |
-| `loko-aliases` | `(alias 名字 值) …` | `loko-compat` |
-| `loko-ir` | sections / origin / modes / symbols / comms | `loko-compat` |
 | `rich-data` | rich 数据 | seed |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
-| `program-items` | 扁平程序 item | seed / `flatten` / `expand-pseudo` / `loko-compat` |
+| `program-items` | 扁平程序 item | seed / `flatten` / `expand-pseudo` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
 | `layout-spec` | `(segments …) (place …)` | seed |
@@ -26,9 +26,6 @@
 
 | stage | requires | provides |
 | --- | --- | --- |
-| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
-| `loko-lower` | `loko-ir` | `loko-ir` |
-| `loko-image` | `loko-ir` | `program-items` `data-items` `layout-spec` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
@@ -38,7 +35,6 @@
 | `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
-| `loko-elf` | `build` `bound-layout` `loko-ir` | `image` |
 
 ## 设计思路
 
@@ -48,30 +44,7 @@
   '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
   ```
 
-- Loko 自动流：
-
-  ```racket
-  '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode)
-  ```
-
-  对应阶段组是 `'loko`。
-
-- Loko 手动 layout-spec 流：
-
-  ```racket
-  '(loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode)
-  ```
-
-  对应阶段组是 `'loko-manual`。
-
-- Loko ELF 流：
-
-  ```racket
-  '(loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode loko-elf)
-  ```
-
-  对应阶段组是 `'elf`；手动 layout-spec 版本是 `'elf-manual`。
-
+- 核心层组：`frontend` / `ir` / `backend` / `all`。
 - `layout` 与 `relax` 平层：`relax` 自己反复驱动 `layout`。
 - `layout` 直接消费 `program` 的 blocks + flows 和 data runs。
 - `layout-flat-items` 只是扁平 item 的兼容入口，不消费 flows。
@@ -83,12 +56,7 @@
 
 ## 边界
 
+- 只注册核心汇编层；不 require Loko、ELF 或任何可选前端/镜像层。
 - 不实现任何层语义，只做组合。
 - 不替层隐藏依赖；缺 requires 直接报错并列出 providers。
-- `loko-compat` 采集 `%section` / `%origin` / `%mode` / `%comm` 到 `loko-ir`；
-  当前只有 `%call` 仍作为问题报错。
-- `loko-lower` 已把 `loko-ir` 的 code section 从 `(reg N)` 降到物理寄存器。
-- `loko-image` 已把 `loko-ir` 自动转成粗布局 `layout-spec`；
-  需要自己提供 layout-spec 时用 `'loko-manual`。
-- `compile-image` 默认跑 `'elf`，返回 `(elf ...)`。
-- `loko-elf` 调用 [`../../amd64-elf/writer.rkt`](../../amd64-elf/writer.rkt)。
+- 可选前端通过 `extend-flow` 注册自己的阶段和层组，不修改本文件。

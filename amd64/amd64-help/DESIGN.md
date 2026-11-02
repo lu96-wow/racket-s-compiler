@@ -133,8 +133,10 @@ jmp-far 预留
 call-far 预留
 ```
 
-far/trampoline 需要 scratch 时，`scratch.rkt` 负责：
+far/trampoline 需要 scratch 时，`scratch.rkt` 只负责校验，不提供默认集合：
 
+- **没有 `default-scratch`**：caller-saved / preserved 是 ABI 策略，必须由调用方
+  （例如 `loko-compatibility`）显式传入；
 - scratch 不能是目标/返回寄存器之外被隐式破坏的寄存器；
 - 多个 scratch 必须互不相同；
 - 没有 scratch 必须报错，不能生成半成品；
