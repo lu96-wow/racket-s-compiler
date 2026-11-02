@@ -71,7 +71,7 @@
   (define index (and index-name (lookup-register index-name)))
   (define scale (mem-scale m))
   (define disp (mem-disp m))
-  (define disp-width (mem-disp-mode m))
+  (define disp-mode (mem-disp-mode m))
   (define seg (mem-seg m))
   (unless (exact-integer? disp)
     (error 'make-mem-rm-encoding "memory displacement must be resolved to an integer: ~e" disp))
@@ -140,12 +140,10 @@
      (define rm-field (if need-sib? #b100 base-low))
      (define-values (mod disp-bytes)
        (cond
-         [(eq? disp-width 32)
+         ;; 只有 'auto 和 32 两种: 32 是"值还没解出来时也按 disp32 占位",
+         ;; 所以它压过按值选窄形式; 'auto 才按值挑 0/disp8/disp32。
+         [(eq? disp-mode 32)
           (values #b10 (disp32-bytes disp))]
-         [(eq? disp-width 8)
-          (unless (disp8? disp)
-            (error 'make-mem-rm-encoding "forced disp8 does not fit: ~e" disp))
-          (values #b01 (u8 disp))]
          [(and (zero? disp) (not (= base-low #b101))) (values #b00 '())]
          [(disp8? disp) (values #b01 (u8 disp))]
          [else (values #b10 (disp32-bytes disp))]))

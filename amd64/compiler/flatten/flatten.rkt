@@ -41,7 +41,8 @@
 
 (require (only-in "../../amd64-asm/sexp.rkt"
                   form? name? path? normalize-path program->items
-                  arith-head? address-op-head?))
+                  arith-head? address-op-head?)
+         (only-in "../item.rkt" label-form? label-chain))
 
 (provide name?
          path?
@@ -73,11 +74,12 @@
 ;; ---------------------------------------------------------------------------
 
 (define (module-form? x) (and (form? x) (eq? (car x) 'module)))
-(define (label-form? x)  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
-(define (label-ish? x)   (and (form? x) (eq? (car x) 'label)))
 (define (clause-form? x key) (and (form? x) (eq? (car x) key)))
 
-(define (relative-path x) (cdr x))
+;; 是 (label …) 但名字部分不合法: 单独判出来只为报"label 至少要一个名字"的错。
+;; 合法的 label 形状归 compiler/item.rkt(label-form? / label-chain)。
+(define (malformed-label? x)
+  (and (form? x) (eq? (car x) 'label) (not (label-form? x))))
 
 (define (chain-of who x)
   (or (normalize-path x)
@@ -153,10 +155,8 @@
         (set-mod-requires! m (append (mod-requires m) (parse-require-clause it)))
         '()]
 
-       [(label-ish? it)
-        (unless (label-form? it)
-          (error 'flatten "label needs at least one name, and only names: ~e" it))
-        (list (cons scope it))]
+       [(malformed-label? it)
+        (error 'flatten "label needs at least one name, and only names: ~e" it)]
 
        [else (list (cons scope it))]))))
 
@@ -178,7 +178,7 @@
         [(label-form? it)
          (unless previous-was-label? (set! slot (add1 slot)))
          (set! previous-was-label? #t)
-         (define full (append scope (relative-path it)))
+         (define full (append scope (label-chain it)))
          (define known (hash-ref (state-label-index st) full #f))
          (cond
            [(not known)
@@ -226,7 +226,7 @@
 ;;   (provide *)   -> 自有 label
 ;;   具名的        -> 先看本模块/子模块里有没有这个 label, 再看自己的 require 绑定(re-export)
 ;; 解不出来的条目先跳过 —— 迭代到不动点后再统一报错(见 resolve-modules!)。
-(define (module-provides st name provides-map)
+(define (module-provides st name)
   (define m (must-module st name))
   (append*
    (for/list ([p (in-list (mod-provides m))])
@@ -279,7 +279,7 @@
         (set! changed? #t)))
     ;; provides: 由 imports + 自有 label 重算
     (for ([n (in-list mods)])
-      (define new (module-provides st n provides))
+      (define new (module-provides st n))
       (unless (equal? new (hash-ref provides n '()))
         (hash-set! provides n new)
         (set! changed? #t)))
@@ -358,7 +358,7 @@
         (for/list ([x (in-list (cdr item))]) (rewrite-operand st scope x))))
 
 (define (resolve-items annotated st)
-  (define-values (rev-out _prev _here)
+  (define-values (rev-out _previous-was-label? _emitted-here)
     (for/fold ([rev-out '()] [previous-was-label? #f] [emitted-here '()])
               ([entry (in-list annotated)])
       (define scope (car entry))
@@ -366,7 +366,7 @@
       (cond
         [(label-form? it)
          (define here (if previous-was-label? emitted-here '()))
-         (define full (append scope (relative-path it)))
+         (define full (append scope (label-chain it)))
          (if (member full here)
              (values rev-out #t here)                  ; 同位置重复名字只写一次
              (values (cons (cons 'label full) rev-out) #t (cons full here)))]

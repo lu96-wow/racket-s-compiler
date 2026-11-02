@@ -22,6 +22,7 @@
 ;;; 不会被静默丢掉。
 
 (require "../../compiler/expand-pseudo/rewrite.rkt"
+         (only-in "../../compiler/problem.rkt" make-problem)
          "pseudo.rkt"
          "liveness.rkt"
          "allocate.rkt")
@@ -30,9 +31,6 @@
          lower-program-items)
 
 (struct lower-result (items allocation problems) #:transparent)
-
-(define (lower-problem kind . detail)
-  (cons 'problem (cons kind detail)))
 
 (define (allocation->hash allocation)
   (cond
@@ -77,8 +75,8 @@
     (append
      (for/list ([n (in-list (sort (hash-keys missing-all) <))]
                 #:unless (memv n uncolored))
-       (lower-problem 'unallocated-pseudo n))
+       (make-problem 'unallocated-pseudo n))
      (for/list ([n (in-list uncolored)])
-       (lower-problem 'uncolored-pseudo n))))
+       (make-problem 'uncolored-pseudo n))))
 
   (lower-result lowered (allocation-hash->alist alloc) problems))

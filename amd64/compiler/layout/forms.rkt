@@ -5,6 +5,7 @@
 ;;; 真实指令尺寸来自 amd64/insn.rkt。layout 不依赖 encode。
 
 (require "../item.rkt"
+         "../problem.rkt"
          "../../amd64-asm/insn.rkt"
          (only-in "../../amd64-help/branch.rkt"
                   control-transfer-form? short-control-transfer-form?
@@ -169,14 +170,9 @@
 (define (request-item r) (cadddr (request-payload r)))
 (define (request-distance r) (car (cddddr (request-payload r))))
 
-(define (make-problem kind . detail)
-  (unless (symbol? kind)
-    (error 'make-problem "problem kind must be a symbol: ~e" kind))
-  (cons kind detail))
-(define (problem? x)
-  (and (form? x) (symbol? (car x)) #t))
-(define (problem-kind x) (car x))
-(define (problem-detail x) (cdr x))
+;; problem 的形状和构造器在 compiler/problem.rkt; 这里只转发,
+;; 让 layout 的消费者(以及 image/lower)用同一个入口。
+
 
 
 ;; ---------------------------------------------------------------------------

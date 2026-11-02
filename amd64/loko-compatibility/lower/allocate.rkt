@@ -106,9 +106,7 @@
 ;;   (allocate-pseudo-registers lv program #:available ...)
 (define (allocate-pseudo-registers lv program-or-items
                                    #:available [available default-available-registers])
-  (define prog (if (program? program-or-items)
-                   program-or-items
-                   (analyze program-or-items)))
+  (define prog (program-of program-or-items))
   (define blocks (list->vector (program-blocks prog)))
   (define g (make-graph))
 
@@ -118,9 +116,10 @@
 
   ;; 每条指令：defs vs live-out，defs 内部互相干涉。
   (for ([i (in-range (vector-length blocks))])
-    (define items (block-items (vector-ref blocks i)))
-    (for ([j (in-range (length items))])
-      (define item (list-ref items j))
+    ;; 转 vector: (list-ref items j) 在逐 item 循环里是 O(块长²)
+    (define items (list->vector (block-items (vector-ref blocks i))))
+    (for ([j (in-range (vector-length items))])
+      (define item (vector-ref items j))
       (define live-out (live-out-after lv i j))
       (define-values (_uses defs) (instruction-uses/sets item))
       (for ([d (in-list defs)])

@@ -172,6 +172,36 @@ symbols: (symbol chain segment offset address)
 | `comm-without-bss-section` | loko-compat | 有 `%comm` 但没有 bss section |
 | `reserve-outside-hole` | layout | `reserve` 出现在 code/data 段 |
 | `hole-materialized-item` | layout | hole 段里出现了要写字节的 item（bytes / fill / value / pad / 指令） |
+| `unplaced-block` / `unplaced-data` / `unplaced` | layout | unit 的 label 没有任何 place 规则命中 |
+| `unlabeled-run` | layout | data/flat unit 没有 label，没法定位 |
+| `ambiguous-placement` | layout | 一个 unit 的 label 命中多个段 |
+| `mode32-unsupported-form` | loko-image | `%mode 32` 段里的 item 不在审计子集里（见 `loko-compatibility/mode32.rkt`） |
+| `value-out-of-range` | bind-labels | 解析后的 `(value 宽度 …)` 值放不进宽度 |
+
+所有 kind 都只是符号，细节跟在后面：形状统一是 `(种类 细节 ...)`
+（`compiler/problem.rkt`），所以打印/断言不需要认识某一层。
+
+## 7.1 数据形状约定（各层共用的事实，不要各写一份）
+
+| 形状 | 唯一来源 | 说明 |
+| --- | --- | --- |
+| `program`（blocks + flows） | `compiler/analyze/analyze.rkt` | `program?` / `program-of`（收 program 或 item 列表）/ `program->items`（反过来） |
+| `problem` = `(种类 细节 ...)` | `compiler/problem.rkt` | layout / image / lower / loko-compat 都吐这一种；入口层决定报错还是继续 |
+| `request` = `(种类 origin 段 偏移 item 距离)` | `compiler/layout/forms.rkt` | 访问器 `request-origin-block` / `request-item` …；消费方不要数 `list-ref` |
+| 条件码拼写 | `amd64-asm/cc.rkt` | 规范码 + 编码顺序 + 别名 + j 前缀都在那一张表；`amd64-help/cc.rkt` 只是转发 |
+| 符号表项 `(symbol 链 段 偏移 地址)` | `compiler/bind-labels/forms.rkt` | `amd64-elf/writer.rkt` 也用它，不另定义访问器 |
+| 段填充 | `amd64-asm/target.rkt` 的 `padding-bytes` | code=`0x90`，data=`0`；与目标位数无关 |
+| 整数 -> 字节 | `integer->bytes`（bytes）vs `u8/u16/u32/u64`（list） | 编码器内部用 list 拼接、最后 `list->bytes` 一次；`(value 宽度 …)` 直接写进缓冲 |
+
+`program->items` 收的是"program 或 item 列表"（也认旧壳 `quote`/`begin`），
+需要 program 的层用 `program-of`，别自己写 `(if (program? x) x (analyze x))`。
+
+### 本环境的一个坑：`for/first`
+
+这个 Racket 的 `for/first` 只返回**第一次迭代**的值，不是文档说的"第一个非 `#f`"
+（实测 `(for/first ([x '(1 2 3)]) (and (= x 3) 'hit))` 给 `#f`）。要"找第一个
+满足条件的"就用 `for/or`，或者给 `for/first` 配 `#:when`。见
+`compiler/flatten/flatten.rkt` 的 `resolve-ref`。
 
 ## 8. 纯函数与状态
 

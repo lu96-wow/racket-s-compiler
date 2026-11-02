@@ -40,6 +40,7 @@
 
 (provide (struct-out program)
          analyze
+         program-of
          program->items
          block-head block-items make-block
          flow-succ flow-fallthrough flow-root? make-flow
@@ -67,6 +68,13 @@
 ;; ---------------------------------------------------------------------------
 ;; 分析
 ;; ---------------------------------------------------------------------------
+
+;; 收 program 或扁平 item 列表, 统一成 program。
+;; 需要 program 的层(lower 的活性/分配)用它, 不要各自写一遍 if。
+(define (program-of program-or-items)
+  (cond
+    [(program? program-or-items) program-or-items]
+    [else (analyze program-or-items)]))
 
 (define (analyze program-or-items [data-items '()])
   (define items (program->items program-or-items))

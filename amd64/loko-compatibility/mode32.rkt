@@ -58,12 +58,6 @@
     cdq                                 ; 32 位的 99；cqo 是 REX.W 版本, 不在表内
     prefix))
 
-;; 规范条件码（`jcc-near e …` 里的 e）。别名（je/jz/…）由 expand-pseudo 的
-;; rewrite-item 先规范化，所以这里只需要认规范写法。
-(define cc-codes '(o no b ae e ne be a s ns p np l ge le g))
-
-(define (cc-code? x) (and (memq x cc-codes) #t))
-
 (define (mode32-audited-instruction? name)
   (and (symbol? name) (memq name mode32-audited-instructions) #t))
 
@@ -114,7 +108,7 @@
     [(memq (car item) '(jcc-short jcc-near setcc))
      (match (cdr item)
        [(list cc rest ...)
-        (and (or (cc-code? cc) (canonical-cc cc))
+        (and (canonical-cc cc)
              (andmap operand32-compatible? rest))]
        [_ #f])]
     [(eq? (car item) 'prefix)

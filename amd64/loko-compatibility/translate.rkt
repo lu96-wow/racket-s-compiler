@@ -35,8 +35,9 @@
 ;;;     (sections (section ...) ...)
 ;;;     (problems problem ...))
 ;;;
-;;; 不支持的写法不会偷偷丢掉：它变成 (problem 种类 细节 ...) 并出现在
-;;; problems 里。流层（loko-compatibility/flow.rkt）把非空 problems 当错误。
+;;; 不支持的写法不会偷偷丢掉：它变成 (种类 细节 ...)（和 layout/lower 同一个
+;;; problem 形状, 见 compiler/problem.rkt）并出现在 problems 里。
+;;; 流层（loko-compatibility/flow.rkt）把非空 problems 当错误。
 ;;;
 ;;; 这里是**纯变换**：输入、输出都是 s-expression；内部 hash 只是本次
 ;;; 变换的局部索引（标签/别名），没有跨调用状态，也不改输入。
@@ -44,9 +45,11 @@
 (require racket/match
          "../amd64-asm/sexp.rkt"
          "../amd64-asm/registers.rkt"
+         (prefix-in cc: "../amd64-help/cc.rkt")
          (only-in "../compiler/item.rkt"
                   make-label make-comment make-align make-bytes-item
                   make-value make-reserve)
+         (only-in "../compiler/problem.rkt" make-problem)
          "../compiler/item.rkt"
          "ir.rkt")
 
@@ -99,8 +102,8 @@
 (define (problem? x)
   (loko-problem? x))
 
-(define (problem->sexp p)
-  (cons 'problem (cons (loko-problem-kind p) (loko-problem-detail p))))
+(define (problem->list p)
+  (apply make-problem (loko-problem-kind p) (loko-problem-detail p)))
 
 (define (record-problem! ctx p)
   (set-ctx-problems! ctx (cons p (ctx-problems ctx))))
@@ -110,7 +113,9 @@
   (list (problem->comment-form p)))
 
 (define (problem->comment-form p)
-  (make-comment (cons 'loko-compat-problem (cdr (problem->sexp p)))))
+  (make-comment
+   (apply make-problem 'loko-compat-problem
+          (loko-problem-kind p) (loko-problem-detail p))))
 
 (define (record-symbol! ctx start end misc)
   (set-ctx-symbols! ctx
@@ -243,9 +248,10 @@
 ;; 标签
 ;; ---------------------------------------------------------------------------
 
-;; 可读标签（symbol/string/number）保留原名；其它对象（Loko codegen 用
-;; #(const x) / #(foo n) 这类 vector）映射到一个稳定的匿名名字。
-(define (label-path ctx obj)
+;; Loko 的 label 对象 -> 我们的链。可读标签（symbol/string/number）保留原名；
+;; 其它对象（Loko codegen 用 #(const x) / #(foo n) 这类 vector）按身份映射到
+;; 稳定的匿名名字（同一个对象多次出现得到同一条链）。
+(define (label-object->path ctx obj)
   (cond
     [(or (symbol? obj) (string? obj) (number? obj)) (list obj)]
     [else
@@ -494,8 +500,8 @@
     [(symbol? expr)
      (cond
        [(register-name? expr) (problem 'register-in-expression expr)]
-       [else (label-path ctx expr)])]
-    [(or (string? expr) (vector? expr)) (label-path ctx expr)]
+       [else (label-object->path ctx expr)])]
+    [(or (string? expr) (vector? expr)) (label-object->path ctx expr)]
     [(form? expr)
      (case (car expr)
        [($) '$]
@@ -527,8 +533,8 @@
      (cond
        [(register-name? op) op]
        [(memq op '(fs gs rip $)) op]
-       [else (label-path ctx op)])]
-    [(or (string? op) (vector? op)) (label-path ctx op)]
+       [else (label-object->path ctx op)])]
+    [(or (string? op) (vector? op)) (label-object->path ctx op)]
     [(form? op) (translate-expr ctx op)]
     [else op]))
 
@@ -559,14 +565,14 @@
     [(list)
      (record-problem-as-comment! ctx (problem 'empty-label item))]
     [(list start)
-     (define start* (label-path ctx start))
+     (define start* (label-object->path ctx start))
      (record-symbol! ctx start* start* '())
      (list (make-label start*))]
     [(cons start (cons end misc))
      ;; Loko: (%label start end . misc).  END is the symbol's end label,
      ;; not an alias at this address.  It is defined by its own %label.
-     (define start* (label-path ctx start))
-     (define end* (label-path ctx end))
+     (define start* (label-object->path ctx start))
+     (define end* (label-object->path ctx end))
      (record-symbol! ctx start* end* misc)
      (list (make-label start*))]))
 
@@ -642,26 +648,10 @@
                         (list 0))))
          (record-problem-as-comment! ctx (problem 'bad-utf8z v))))))
 
-;; 条件码别名：setcc/cmovcc 的旧拼写都落到同一张表。
-(define cc-alias
-  (hash
-   'o 'o 'no 'no
-   'b 'b 'c 'b 'nae 'b
-   'ae 'ae 'nb 'ae 'nc 'ae
-   'e 'e 'z 'e
-   'ne 'ne 'nz 'ne
-   'be 'be 'na 'be
-   'a 'a 'nbe 'a
-   's 's 'ns 'ns
-   'p 'p 'pe 'p
-   'np 'np 'po 'np
-   'l 'l 'nge 'l
-   'ge 'ge 'nl 'ge
-   'le 'le 'ng 'le
-   'g 'g 'nle 'g))
-
+;; 条件码表在 amd64-help/cc.rkt（expand-pseudo / mode32 共用同一张）。
+;; 认不出来的拼写原样往下走: 编码层会报"未知指令", 不会静默编错。
 (define (canonical-cc cc)
-  (if (symbol? cc) (hash-ref cc-alias cc cc) cc))
+  (or (cc:canonical-cc cc) cc))
 
 (define (head-tail h prefix)
   (define s (symbol->string h))
@@ -675,14 +665,14 @@
 
 (define (setcc-head-cc h)
   (define tail (head-tail h "set"))
-  (and tail (hash-ref cc-alias tail #f)))
+  (and tail (cc:canonical-cc tail)))
 
 (define (cmovcc-head? h)
   (and (symbol? h) (head-tail h "cmov") #t))
 
 (define (cmovcc-head-cc h)
   (define tail (head-tail h "cmov"))
-  (and tail (hash-ref cc-alias tail #f)))
+  (and tail (cc:canonical-cc tail)))
 
 ;; Loko writes lock.xadd / rep.movs as one mnemonic.  Turn the prefix into
 ;; an explicit form so the encoder sees a normal instruction inside.
@@ -785,7 +775,7 @@
 (define (label-ref-path ctx x)
   (cond
     [(path? x) x]
-    [(or (name? x) (vector? x)) (label-path ctx x)]
+    [(or (name? x) (vector? x)) (label-object->path ctx x)]
     [else #f]))
 
 (define (translate-init-bss ctx item)
@@ -1087,4 +1077,4 @@
           (cons 'image-plan (reverse (ctx-image-plan ctx)))
           (list 'origin (ctx-origin ctx))
           (cons 'sections (map section-state->sexp sections))
-          (cons 'problems (map problem->sexp (reverse (ctx-problems ctx)))))))
+          (cons 'problems (map problem->list (reverse (ctx-problems ctx)))))))

@@ -141,7 +141,7 @@
                        #:allocation (hash 0 'rax)))
 (check-equal? (lower-result-items unallocated) '((mov rax (reg 1))))
 (check-equal? (lower-result-problems unallocated)
-              '((problem unallocated-pseudo 1)))
+              '((unallocated-pseudo 1)))
 
 ;; ---------------------------------------------------------------------------
 ;; call save / restore
@@ -181,6 +181,6 @@
  (for/or ([p (in-list
               (call-save-result-problems
                (expand-call-saves '((comment restore-live-registers)))))])
-   (equal? (cadr p) 'restore-without-save)))
+   (equal? (car p) 'restore-without-save)))
 
 (displayln "amd64 loko-lower tests: ok")

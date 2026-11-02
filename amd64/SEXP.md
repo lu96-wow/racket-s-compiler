@@ -132,7 +132,7 @@ debug:   dr0 ... dr7
 - `bitwise-and` / `bitwise-ior` / `ash` / `bitwise-bit-field` 可以带符号；
   它们和 `+` / `-` 一样在 layout / bind / encode 时求值。
 - 符号位移一律按 disp32 / RIP-relative disp32 处理，不在 layout 后缩成 disp8；
-  内部会用 `disp-width = 32` 固定这个选择。
+  内部会用 `disp-mode = 32` 固定这个选择。
 - 常量位移在 normalize 阶段按值选择 `disp8` / `disp32`；一旦选定，form 不再变化。
 - 任意 64 位绝对地址不直接写进内存操作数；用 `(li rd 地址)` 后通过寄存器访问。
 - normalize 后的规范形式总是写出 `(disp n)`；`(base ...)` / `(index ...)` / `(seg ...)` 按需出现。

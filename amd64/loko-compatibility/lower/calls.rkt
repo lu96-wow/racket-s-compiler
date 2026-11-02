@@ -25,6 +25,7 @@
 
 (require "../../amd64-asm/sexp.rkt"
          (only-in "../../compiler/item.rkt" make-label)
+         (only-in "../../compiler/problem.rkt" make-problem)
          "../../compiler/analyze/analyze.rkt"
          "liveness.rkt"
          "pseudo.rkt")
@@ -52,12 +53,9 @@
 (define (call-item? x)
   (and (form? x) (call-head? (car x))))
 
-(define (as-program x)
-  (if (program? x) x (analyze x)))
-
 ;; 所有跨调用仍 live 的伪寄存器。
 (define (call-crossing-pseudos lv program-or-items)
-  (define prog (as-program program-or-items))
+  (define prog (program-of program-or-items))
   (define blocks (list->vector (program-blocks prog)))
   (define out (make-hash))
   (for ([i (in-range (vector-length blocks))])
@@ -68,9 +66,6 @@
         (for ([p (in-list (live-out-after lv i j))])
           (hash-set! out p #t)))))
   (sort (hash-keys out) <))
-
-(define (problem kind . detail)
-  (cons 'problem (cons kind detail)))
 
 ;; items 是 program-items 列表。
 ;; 返回 call-save-result：展开后的 items、fresh 数量、problems。
@@ -133,7 +128,7 @@
           (cond
             [(null? stack)
              (set! problems
-                   (cons (problem 'restore-without-save item) problems))]
+                   (cons (make-problem 'restore-without-save item) problems))]
             [else
              (define saved (car stack))
              (set! stack (cdr stack))
@@ -146,7 +141,7 @@
 
   (when (pair? stack)
     (set! problems
-          (cons (problem 'save-without-restore (length stack)) problems)))
+          (cons (make-problem 'save-without-restore (length stack)) problems)))
 
   (call-save-result (reverse out)
                     (- next-fresh start-fresh)

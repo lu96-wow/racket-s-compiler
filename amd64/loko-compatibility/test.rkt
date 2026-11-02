@@ -84,7 +84,7 @@
    '(loko-source (text (movzx rax (mem+ rbx))) (data))))
 (check-true
  (for/or ([p (in-list (field 'problems ambiguous))])
-   (equal? (cadr p) 'ambiguous-memory-width)))
+   (equal? (car p) 'ambiguous-memory-width)))
 
 ;; directives that belong to the image/section layer are reported, not guessed
 (define unsupported
@@ -92,7 +92,7 @@
    '(loko-source (text (%call foo)) (data))))
 (check-true
  (for/or ([p (in-list (field 'problems unsupported))])
-   (equal? (cadr p) 'directive-needs-image-layer)))
+   (equal? (car p) 'directive-needs-image-layer)))
 
 ;; `$` is the current item address; it stays symbolic until layout/bind.
 (define current-ip
@@ -216,7 +216,7 @@
      (data))))
 (check-true
  (for/or ([p (in-list (field 'problems init-bss-32))])
-   (eq? (cadr p) 'init-bss-mode-unsupported)))
+   (eq? (car p) 'init-bss-mode-unsupported)))
 
 (define init-bss-data
   (translate-loko-source
@@ -225,7 +225,7 @@
      (data))))
 (check-true
  (for/or ([p (in-list (field 'problems init-bss-data))])
-   (eq? (cadr p) 'init-bss-not-in-code)))
+   (eq? (car p) 'init-bss-not-in-code)))
 
 ;; %comm is collected, sorted by size, and expanded at the bss section.
 (define comms
@@ -270,7 +270,7 @@
      (data))))
 (check-true
  (for/or ([p (in-list (field 'problems comm-without-bss))])
-   (eq? (cadr p) 'comm-without-bss-section)))
+   (eq? (car p) 'comm-without-bss-section)))
 
 ;; %comm names can be vector labels (pc-segments uses this).
 (define comm-vector (vector 'comm 'x))
@@ -489,7 +489,7 @@
      (data))))
 (check-true
  (for/or ([p (in-list (field 'problems raw-call))])
-   (eq? (cadr p) 'directive-needs-image-layer)))
+   (eq? (car p) 'directive-needs-image-layer)))
 
 ;; ---------------------------------------------------------------------------
 ;; 裸机 (pc) 写法: 远跳、段寄存器、符号 u128

@@ -48,14 +48,8 @@
          width-of)
 
 ;; ---------------------------------------------------------------------------
-;; 基本形状
+;; 形状
 ;; ---------------------------------------------------------------------------
-
-
-
-
-
-
 
 ;; (module 名 item...) 是**结构壳**: 名字前缀/可见性是 flatten 的事, 本层不解释它,
 ;; 只是递归进去把数据展开, 壳原样留着。它的子句 (provide …) / (require …) 同理。
@@ -69,6 +63,10 @@
 ;; 所以这里的谓词不导出: 一个名字只能有一个归属。
 ;; ---------------------------------------------------------------------------
 ;; 宽度表
+;;
+;; (pad n) 和 (fill 字节数 b) 的区别: pad 是"就插 n 字节", 与地址无关;
+;; align 是"位置要对齐"; fill 是"b 重复 n 次"。它们的谓词归 layout,
+;; 本层只透传, 所以不在这里导出。
 ;; ---------------------------------------------------------------------------
 
 (define width-forms '((b8 . 1) (b16 . 2) (b32 . 4) (b64 . 8)))
@@ -77,10 +75,13 @@
 (define (width-form? x)
   (and (form? x) (assq (car x) width-forms) (= 2 (length x))))
 
-(define (width-of x) (cdr (assq (car x) width-forms)))
+(define (width-of x) (form-width width-forms x))
 
 (define (array-form? x)
   (and (form? x) (assq (car x) array-forms)))
+
+;; 宽度只由表决定: b16 -> 2, b16-array -> 2。两处取法用同一个 helper。
+(define (form-width table x) (cdr (assq (car x) table)))
 
 ;; ---------------------------------------------------------------------------
 ;; 值: 整数, 或 label 地址表达式
@@ -200,17 +201,15 @@
     [(align-form? it) (list it)]
     [(width-form? it) (list (value-item (width-of it) (cadr it)))]
     [(array-form? it)
-     (define w (cdr (assq (car it) array-forms)))
+     (define w (form-width array-forms it))
      (expand-array w (check-array w it))]
     [(and (form? it) (memq (car it) '(utf-string utf-stringz)))
      (expand-string it)]
     [else (error 'expand-data "unknown data form: ~e" it)]))
 
 ;; ---------------------------------------------------------------------------
-;; 入口: 旧壳(quote/begin)也收, 出口是普通 item 列表
+;; 入口: 旧壳(quote/begin)也收(program->items), 出口是普通 item 列表
 ;; ---------------------------------------------------------------------------
-
-
 
 (define (expand-data input)
   (append* (for/list ([it (in-list (program->items input))]) (expand-item it))))
