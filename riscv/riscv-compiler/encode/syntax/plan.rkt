@@ -6,8 +6,7 @@
 ;;;   direct.rkt  特殊形式 (fence / fence.tso / fence.i)
 ;;;   native.rkt  riscv-opcodes native 顺序
 ;;;
-;;; 编码层只认 native。GAS 是可选的前端重写层（gas-syntax/），
-;;; 不在这里出现，也不形成第二个编码分支。
+;;; 编码层只认 native。没有其它方言层，也不形成第二个编码分支。
 
 (require "../../../riscv-asm/generated/lib/info/struct.rkt"
          "native.rkt"

@@ -23,10 +23,8 @@
 
 - 只做拼写/形状替换，不改变控制流语义。
 - 模板已经是 `instruction-info-operands` 的 native 顺序。
-- GAS 顺序不在这里；它在 `gas-syntax/`。
 - 形状不匹配就透传；真正的合法性统一留给 encode（`riscv-asm`）。
 
 ## 边界
 
 - 不判断结果是否合法、不算尺寸、不处理 `li` / `la` 的最终地址。
-- 不负责 GAS 方言。

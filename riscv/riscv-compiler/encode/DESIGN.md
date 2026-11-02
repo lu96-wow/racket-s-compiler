@@ -34,7 +34,6 @@
 - `(offset k item)` 是断言：实际写出的字节数必须正好到达 `k`。
 - 有 request/problem 或 `phase` 不是 `bound` 就拒绝出产物。
 - 编码层只认 native 顺序：`syntax/native.rkt` 直接用 `instruction-info-operands`。
-- GAS 顺序由可选的 `gas-syntax/` 在 analyze 之前改写成 native，不进入编码层。
 - `li` / `la` / 远形式先由 `riscv-help` 展开成真指令；分支序列在
   `encode/native-help.rkt` 转成 native 顺序后再编码。
 

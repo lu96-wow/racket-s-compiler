@@ -5,7 +5,7 @@
 ;;;
 ;;;   - 真指令/生成器伪指令的顺序来自 instruction-info-operands
 ;;;   - 这里只补 riscv-opcodes 没有的便利别名
-;;;   - GAS 顺序不在这里；它在 gas-syntax/ 里，是另一个可选层
+;;;   - 只使用 native 顺序；没有其它方言层
 ;;;
 ;;; 默认流不包含本层。需要 load-8 / store-* / branch-le 这些别名时再加。
 ;;;

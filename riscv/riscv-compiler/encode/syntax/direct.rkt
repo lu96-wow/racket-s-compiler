@@ -49,7 +49,7 @@
 
 (define (fence-args operands)
   (cond
-    ;; GAS/LLVM 的 `fence` 无操作数别名 = fence iorw, iorw
+    ;; 常见汇编器的 `fence` 无操作数别名 = fence iorw, iorw
     [(null? operands) (list 0 15 15 0 0)]
     [else
      (define pred (fence-mode-value (car operands)))

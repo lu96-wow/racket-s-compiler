@@ -12,7 +12,7 @@
 ;;;   syntax/direct.rkt   特殊形式: fence / fence.tso
 ;;;   syntax/plan.rkt     把 native/direct 组合成 syntax-plan
 ;;;
-;;; GAS 顺序不在这里：它由可选的 gas-syntax/ 前端层先改写成 native。
+;;; 编码层只接受 instruction-info-operands 的 native 顺序。
 ;;;
 ;;; 真正的编码事实仍然在 riscv-asm 的 instruction-info 和 generated 模块里。
 ;;; 这里只负责:

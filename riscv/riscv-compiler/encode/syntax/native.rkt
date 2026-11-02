@@ -7,7 +7,7 @@
 ;;; aq / rl 仍然用助记符后缀，不占表面操作数。
 ;;;
 ;;; 这里不做重排：native 就是生成函数的参数顺序。
-;;; GAS 顺序在 gas-syntax/ 里单独处理，不进入编码层。
+;;; 操作数顺序只来自 instruction-info-operands；没有第二种方言。
 
 (require "../../../riscv-asm/generated/lib/info/struct.rkt"
          "operand-kind.rkt")

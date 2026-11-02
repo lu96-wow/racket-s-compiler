@@ -1,10 +1,10 @@
 #lang racket
 ;;; encode/native-help.rkt
 ;;;
-;;; riscv-help 生成的分支序列目前是 GAS 顺序：
+;;; riscv-help 生成的分支序列顺序是：
 ;;;   (bne rs1 rs2 skip)
 ;;;
-;;; 编码层现在只认 native 顺序：
+;;; 编码层只认 native 顺序：
 ;;;   (bne skip rs1 rs2)
 ;;;
 ;;; 这里只做这一处转换。jump-jal / jump-auipc-jalr / li / load-pcrel
