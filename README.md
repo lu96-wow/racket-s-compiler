@@ -6,7 +6,7 @@
 | 目录 | 内容 |
 | --- | --- |
 | `amd64/` | x86-64 后端（编码器 + 布局 + ELF/平铺镜像 + Loko/ELF 前端层） |
-| `riscv/` | RISC-V 后端；`riscv-compiler` 以 native 为 base，GAS 为可选层 |
+| `riscv/` | RISC-V 后端；`riscv-compiler` 只使用 riscv-opcodes native 顺序 |
 
 Loko 的源码树**不在这个仓库里**，在 `~/work/loko`（和本仓库并列）——它是上游
 项目，有自己的构建系统和 ~2 GB 产物，我们只加了一个 dump target。位置、我们改
