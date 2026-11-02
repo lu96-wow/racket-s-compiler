@@ -4,6 +4,29 @@
 > 上层流水线见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)，
 > NASM 数据生成见 [`NASM.md`](NASM.md)。
 
+## 控制流事实（`control-flow.rkt`）
+
+"执行完这条 form，控制会不会落到物理下一条"是**编码层的事实**，所以它和编码
+行为放在同一张表里：`special/table.rkt` 的每个 `special-def` 带一个 `flow`：
+
+| flow | 含义 | 谁 |
+| --- | --- | --- |
+| `sequential` | 落到物理下一条（默认） | 所有 NASM 生成指令、`hlt`/`pause`/`mwait`/`syscall`/`sysretq`… |
+| `jump` | 直接无条件跳转，目标是最后一个操作数 | `jmp-short`/`jmp-near` |
+| `branch` | 条件跳转（目标 + 顺序） | `jcc-short`/`jcc-near` |
+| `call` | 直接调用（目标 + 顺序） | `call-near` |
+| `jump-indirect` | 间接跳转，目标本层看不见，不落下 | `jmp-indirect` |
+| `call-indirect` | 间接调用，会返回，落下 | `call-indirect` |
+| `stop` | 硬件保证不会继续到物理下一条 | `ret`/`ud2` |
+
+`jmp-far` 故意是 `sequential`：目标是绝对地址（可能是整数），本层拿不到可解的
+边，保守方向是保留顺序边。
+
+`control-flow.rkt` 只是这张表的"按名字查"接口，`falls-through?` / 各分类谓词
+（`compiler/analyze/insn.rkt`、`amd64-help/branch.rkt`）都从它派生，不再手抄
+助记符表。`stop` 的名单由 `amd64-asm/test.rkt` 的规格测试钉死（`(ret ud2)`）：
+加一条必须先回答"硬件凭什么保证它不继续"。
+
 ## 1. x86 指令的设计逻辑
 
 一条 x86 指令不是“助记符 + 固定字节”，而是下面这条编码流水线：

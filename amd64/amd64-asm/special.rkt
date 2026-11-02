@@ -11,4 +11,6 @@
 (provide special-known?
          special-arity
          special-plan
+         special-flow
+         special-names
          prefix-byte)

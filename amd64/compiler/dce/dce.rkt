@@ -72,8 +72,17 @@
 
 ;; 删一个块之前, 要能说出"它为什么不可达"。
 ;;
-;; dce 愿意接受的"不落下"依据。故意不写"所有 insn.rkt 认的种类"。
-(define accepted-deletion-reasons '(jump indirect ret ud2))
+;; 删代码时愿意接受的"不落下"依据。**这是和 amd64-asm 的 flow 事实独立的
+;; 一张表**: 那边说"这条 form 不落下"(事实), 这边说"我愿意据此删代码"(政策)。
+;;   'jump / 'jump-indirect  目标是我们自己摆的转移形式, 后面的代码只能靠
+;;                           label/其它边到达 —— 可以据删。
+;;   'stop                   只有硬件保证的那两条(ret/ud2); 表里新增一个
+;;                           'stop 的 form 不会自动获得删代码的许可。
+(define (accepted-deletion-evidence? reason last-item)
+  (case reason
+    [(jump jump-indirect) #t]
+    [(stop) (and (form? last-item) (memq (car last-item) '(ret ud2)))]
+    [else #f]))
 
 (define (last-block-item block)
   (define items (block-items block))
@@ -83,8 +92,8 @@
 ;; 顺序落下, 这块本来就在它的顺序边上, 不会被判死。于是每个被删的块都该能回答
 ;; "前一块为什么不落下"; 而"不落下"这件事只能有两个来源:
 ;;   1. 我们自己生成的转移形式(jump / jmp-indirect);
-;;   2. 硬件保证的列表(insn.rkt 的 audited-non-fallthrough-mnemonics, 只有
-;;      ret / ud2 —— 曾经把 hlt 写进去过一次, 后果是删掉了 syscall-hlt 的队尾)。
+;;   2. 硬件保证不继续的 form(special 表里标 'stop 的, 只有 ret / ud2 ——
+;;      曾经把 hlt 写进这一类, 后果是删掉了 syscall-hlt 的队尾)。
 ;; 这里用 (non-fallthrough-reason …) **重算**一遍, 而不是相信 flow 里的
 ;; fallthrough 字段; 而且只接受下面这四种依据 —— 这是**和 insn.rkt 名单
 ;; 独立的第二张表**: 那边回答"这条指令凭什么不落下", 这边回答"删代码时我
@@ -105,16 +114,16 @@
         (unless (flow-fallthrough prev-flow)
           ;; flow 说前一块不顺序落下, 那就必须有 dce 认得的依据
           (define reason (and last-item (non-fallthrough-reason last-item)))
-          (unless (memq reason accepted-deletion-reasons)
+          (unless (and reason (accepted-deletion-evidence? reason last-item))
             (error 'dce
                    (string-append
                     "块 ~a 因为没有顺序边被判死, 但前一块(块 ~a)的末条 item ~e "
                     "给出的\"不落下\"依据是 ~e。\n"
-                    "  dce 只接受 ~a(insn.rkt 的硬件名单另有 ~a)。\n"
-                    "  想加新的依据: 先证明它真的不会继续执行, 再两边一起改。\n"
+                    "  dce 只接受 jump/jump-indirect, 以及 stop 里的 (ret ud2)。\n"
+                    "  想加新的依据: 先证明它真的不会继续执行, 再改"
+                    " amd64-asm/special 表的 flow 和这里的 accepted-deletion-evidence?。\n"
                     "  拒绝删除 —— 否则会把还会执行的代码丢掉(参见 hlt 那次)。")
-                   (car e) prev (and last-item (list last-item)) reason
-                   accepted-deletion-reasons audited-non-fallthrough-mnemonics))))))
+                   (car e) prev (and last-item (list last-item)) reason))))))
   (void))
 
 ;; ---------------------------------------------------------------------------

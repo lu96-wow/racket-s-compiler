@@ -25,6 +25,7 @@
 | `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> generic plan -> 纯字节生成 |
 | `amd64-asm/insn-core.rkt` | 共享 ModR/M/SIB/REX/立即数范围事实 |
 | `amd64-asm/ranges.rkt` | 共享整数/立即数/disp/rel 范围谓词；help 层转发 |
+| `amd64-asm/control-flow.rkt` | 每个 form 的控制流事实（`sequential/jump/branch/call/*-indirect/stop`），由 `special/table.rkt` 逐 form 声明；`falls-through?` 的唯一来源 |
 | `amd64-asm/generated/` | 从 NASM `insns.dat` 生成的指令数据；详见 [`amd64-asm/NASM.md`](amd64-asm/NASM.md) |
 | `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |
 | `amd64-asm/target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md) |
@@ -225,6 +226,7 @@ symbols: (symbol chain segment offset address)
 | 条件码拼写 | `amd64-asm/cc.rkt` | 规范码 + 编码顺序 + 别名 + j 前缀都在那一张表；`amd64-help/cc.rkt` 只是转发 |
 | 符号表项 `(symbol 链 段 偏移 地址)` | `compiler/bind-labels/forms.rkt` | `amd64-elf/writer.rkt` 也用它，不另定义访问器 |
 | 段填充 | `amd64-asm/target.rkt` 的 `padding-bytes` | code=`0x90`，data=`0`；与目标位数无关 |
+| 控制流事实（会不会顺序落下） | `amd64-asm/control-flow.rkt` | 默认 `sequential`；例外必须在 `special/table.rkt` 里逐 form 声明（`stop` 只有 `ret`/`ud2`） |
 | 整数 -> 字节 | `integer->bytes`（bytes）vs `u8/u16/u32/u64`（list） | 编码器内部用 list 拼接、最后 `list->bytes` 一次；`(value 宽度 …)` 直接写进缓冲 |
 
 `program->items` 收的是"program 或 item 列表"（也认旧壳 `quote`/`begin`），

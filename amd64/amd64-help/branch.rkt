@@ -16,16 +16,27 @@
          control-transfer-fits?)
 
 (require "../amd64-asm/shape.rkt"
-         "../amd64-asm/ranges.rkt")
+         "../amd64-asm/ranges.rkt"
+         "../amd64-asm/control-flow.rkt")
 
-(define control-transfer-mnemonics
-  '(jmp-short jmp-near jcc-short jcc-near call-near))
-
-(define (control-transfer-form? x)
-  (and (form? x) (memq (car x) control-transfer-mnemonics) #t))
+;; 带 label 目标的转移 form: 直接跳转 / 条件跳转 / 直接调用。
+;; 这份集合从 amd64-asm 的 flow 事实派生, 不再单独手抄:
+;;   'jump/'branch/'call 就是"目标写在操作数里"的那三种;
+;;   'jump-indirect/'call-indirect 的目标是寄存器/内存, 没有 label 可解;
+;;   'stop(ret/ud2) 没有目标;
+;;   jmp-far 的目标是绝对地址(不是 label), 见 special/table.rkt 的说明。
+(define control-transfer-kinds '(jump branch call))
 
 (define (control-transfer-name? name)
-  (and (memq name control-transfer-mnemonics) #t))
+  (and (symbol? name) (memq (control-flow-of name) control-transfer-kinds) #t))
+
+(define (control-transfer-form? x)
+  (and (form? x) (control-transfer-name? (car x))))
+
+(define control-transfer-mnemonics
+  (sort (append* (for/list ([kind (in-list control-transfer-kinds)])
+                   (control-flow-names-of-kind kind)))
+        symbol<?))
 
 (define (short-control-transfer-form? x)
   (and (control-transfer-form? x)

@@ -15,9 +15,33 @@
 
 (provide special-known?
          special-arity
-         special-plan)
+         special-plan
+         special-flow
+         special-names)
 
-(struct special-def (arity plan) #:transparent)
+;; flow 是"执行完这条 form, 控制落到哪里"的事实, 默认 'sequential:
+;;   'sequential     落到物理下一条
+;;   'jump           直接无条件跳转(目标是最后一个操作数)
+;;   'branch         条件跳转(目标 + 顺序)
+;;   'call           直接调用(目标 + 顺序)
+;;   'jump-indirect  间接跳转(目标本层看不见, 不落下)
+;;   'call-indirect  间接调用(会返回, 落下)
+;;   'stop           硬件保证不会继续到物理下一条(ret / ud2)
+;; 事实和编码放在同一张表里: 这条 form 怎么编、编出来控制去哪儿, 是同一件事。
+;; 不在表里的(包括 NASM 生成表里的全部真实指令)一律 'sequential —— 判错
+;; "不落下"会让 DCE 删掉还在执行的代码, 判错"落下"只多留几字节。
+(struct special-form (arity plan flow) #:transparent)
+
+;; 三参/两参都能建: 不写 flow 就是 'sequential。
+(define (special-def arity plan [flow 'sequential])
+  (special-form arity plan flow))
+
+(define (special-flow name)
+  (define d (hash-ref special-table name #f))
+  (and d (special-form-flow d)))
+
+(define (special-names)
+  (sort (hash-keys special-table) symbol<?))
 
 (define special-table
   (hash
@@ -31,14 +55,17 @@
    'lea        (special-def 2 plan-lea)
    'push       (special-def 1 plan-push)
    'pop        (special-def 1 plan-pop)
-   'jmp-short  (special-def 1 plan-jmp-short)
-   'jmp-near   (special-def 1 plan-jmp-near)
+   'jmp-short  (special-def 1 plan-jmp-short 'jump)
+   'jmp-near   (special-def 1 plan-jmp-near 'jump)
+   ;; jmp-far 不声明 'jump: 它的目标是**绝对地址**(选择子 + 32 位偏移),
+   ;; 可能是整数, 本层的 CFG 拿不到可解的边。保守方向是保留顺序边(多留字节),
+   ;; 而不是声称"后面不可达"(会删代码)。
    'jmp-far    (special-def 2 plan-jmp-far)
-   'jcc-short  (special-def 2 plan-jcc-short)
-   'jcc-near   (special-def 2 plan-jcc-near)
-   'call-near  (special-def 1 plan-call-near)
-   'call-indirect (special-def 1 (lambda (ops) (plan-indirect-transfer 'call-indirect 2 ops)))
-   'jmp-indirect  (special-def 1 (lambda (ops) (plan-indirect-transfer 'jmp-indirect 4 ops)))
+   'jcc-short  (special-def 2 plan-jcc-short 'branch)
+   'jcc-near   (special-def 2 plan-jcc-near 'branch)
+   'call-near  (special-def 1 plan-call-near 'call)
+   'call-indirect (special-def 1 (lambda (ops) (plan-indirect-transfer 'call-indirect 2 ops)) 'call-indirect)
+   'jmp-indirect  (special-def 1 (lambda (ops) (plan-indirect-transfer 'jmp-indirect 4 ops)) 'jump-indirect)
    'test       (special-def 2 plan-test)
    'inc        (special-def 1 (lambda (ops) (plan-unary 'inc ops)))
    'dec        (special-def 1 (lambda (ops) (plan-unary 'dec ops)))
@@ -131,26 +158,26 @@
    'sfence     (special-def 0 (make-fixed-plan 'sfence '(#x0f #xae #xf8)))
    'cqo        (special-def 0 plan-cqo)
    'cdq        (special-def 0 plan-cdq)
-   'ret        (special-def 0 plan-ret)
+   'ret        (special-def 0 plan-ret 'stop)
    'nop        (special-def 0 plan-nop)
-   'ud2        (special-def 0 plan-ud2)))
+   'ud2        (special-def 0 plan-ud2 'stop)))
 
 (define (special-known? name)
   (and (hash-has-key? special-table name) #t))
 
 (define (special-arity name)
   (define d (hash-ref special-table name #f))
-  (and d (special-def-arity d)))
+  (and d (special-form-arity d)))
 
 (define (special-plan name operands)
   (define d (hash-ref special-table name #f))
   (unless d
     (error 'special-plan "unknown special amd64 instruction: ~e" name))
-  (define arity (special-def-arity d))
+  (define arity (special-form-arity d))
   (when (and arity (not (= (length operands) arity)))
     (error 'special-plan "~a expects ~a operand(s), got ~a: ~e"
            name arity (length operands) operands))
-  (define result ((special-def-plan d) operands))
+  (define result ((special-form-plan d) operands))
   (unless (encoding-plan? result)
     (error 'special-plan
            "special plan for ~a did not return an encoding plan: ~e"

@@ -6,7 +6,8 @@
 (require rackunit
          "insn.rkt"
          "sexp.rkt"
-         "target.rkt")
+         "target.rkt"
+         "control-flow.rkt")
 
 (define (enc name . operands)
   (encode-instruction target-amd64 name operands))
@@ -287,3 +288,35 @@
 (check-equal? (plan-size prefix-plan) 5)
 (check-equal? (encode-plan prefix-plan)
               (list #xf0 #x48 #x0f #xc1 #x18))
+
+;; ---------------------------------------------------------------------------
+;; 控制流事实(规格测试)
+;;
+;; 这张表回答"执行完这条 form, 控制会不会落到物理下一条"。判错方向的代价不
+;; 对称: 说成"不落下"会让 DCE 删掉还在执行的代码(hlt 那次把 Loko syscall-hlt
+;; 的队尾删了, 醒来落进下一条 syscall 实现 -> #GP -> #DF), 说成"落下"只多留
+;; 几字节。所以下面每一条都要么是我们自己的转移 form, 要么有硬件依据。
+;; ---------------------------------------------------------------------------
+
+;; 我们自己的转移 form: 语义由 special/control.rkt 的 plan 定义
+(for ([p (in-list '((jmp-short jump) (jmp-near jump) (jcc-short branch)
+                    (jcc-near branch) (call-near call)
+                    (jmp-indirect jump-indirect) (call-indirect call-indirect)
+                    (ret stop) (ud2 stop)))])
+  (check-eq? (control-flow-of (car p)) (cadr p) (format "~a 的 flow" (car p))))
+
+;; 会顺序落下的: 包括以后有人想加进"不返回"名单的那些
+(for ([mn (in-list '(hlt pause mwait syscall sysretq iretq rdmsr wrmsr cpuid
+                     nop mov add push pop jmp-far prefix))])
+  (check-eq? (control-flow-of mn) 'sequential (format "~a 必须顺序落下" mn))
+  (check-true (falls-through? mn) (format "~a 必须顺序落下" mn)))
+
+;; "硬件保证不继续"的名单故意只有两条。要加一条, 先在这里回答凭什么 ——
+;; 改这一行就是"停下来想清楚"的那一步。
+(check-equal? (control-flow-names-of-kind 'stop) '(ret ud2))
+(check-equal? (control-flow-names-of-kind 'jump) '(jmp-near jmp-short))
+(check-equal? (control-flow-names-of-kind 'branch) '(jcc-near jcc-short))
+(check-equal? (control-flow-names-of-kind 'call) '(call-near))
+
+;; 不认识的助记符(NASM 表里的真实指令)默认落下
+(check-equal? (control-flow-of 'not-an-instruction) 'sequential)
