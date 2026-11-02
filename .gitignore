@@ -1,6 +1,6 @@
 # Racket 编译产物
 **/compiled/
 
-# Loko 源码树在仓库外（~/work/loko），见 amd64/loko-compatibility/LOKO-TREE.md。
+# Loko 源码树在仓库外（~/work/loko），见 amd64/loko-compatibility/UPSTREAM.md。
 # 万一有 dump/中间产物被丢进仓库，别提交进去。
 *.sexp

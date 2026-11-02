@@ -1,7 +1,7 @@
 # amd64 指令模型
 
 > 本文记录 `insn.rkt` 的指令表示、编码分类、前缀/字符串指令和后续扩展方式。
-> 跨层边界见 [`ARCHITECTURE.md`](../ARCHITECTURE.md)，操作数写法见 [`../SEXP.md`](../SEXP.md)。
+> 跨层边界见 [`ARCHITECTURE.md`](../ARCHITECTURE.md)，操作数写法见 [`../SYNTAX.md`](../SYNTAX.md)。
 
 ## 1. 原则
 

@@ -1,7 +1,7 @@
 # amd64 core flow
 
 > 本文只描述 `compiler/flow/core.rkt` 的核心汇编流。
-> Loko / ELF 等可选阶段见 [`../../loko-compatibility/FLOW.md`](../../loko-compatibility/FLOW.md)。
+> Loko / ELF 等可选阶段见 [`../../loko-compatibility/DESIGN.md`](../../loko-compatibility/DESIGN.md)。
 
 ## 作用
 

@@ -17,7 +17,7 @@ Loko (-ftarget=sexp)  ->  dump.sexp
 
 Loko 树里装一次 target 插件（源码在 Loko 树的 `arch/amd64/sexp-asm.sls`；
 Loko 源码放在仓库外的 `~/work/loko`，位置和改动清单见
-[`../loko-compatibility/LOKO-TREE.md`](../loko-compatibility/LOKO-TREE.md)）：
+[`../loko-compatibility/UPSTREAM.md`](../loko-compatibility/UPSTREAM.md)）：
 
 ```sh
 tools/build-loko-target.sh          # 装 target + 自举重建 loko-prebuilt

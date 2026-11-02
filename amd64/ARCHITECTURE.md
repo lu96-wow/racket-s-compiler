@@ -1,11 +1,11 @@
-# amd64 后端架构
+# amd64 架构
 
 > 本文记录跨层规则和当前实现事实。每层细节见各自的 `DESIGN.md`。
 
 > 指令类别、前缀和字符串指令的模型见 [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。
 > 指令编码内部的分层见 [`amd64-asm/DESIGN.md`](amd64-asm/DESIGN.md)；
 > 伪指令/装载/分支策略见 [`amd64-help/DESIGN.md`](amd64-help/DESIGN.md)。
-> s-expression 分层、owner 和阶段契约见 [`SEXP-DESIGN.md`](SEXP-DESIGN.md)。
+> s-expression 分层、owner 和阶段契约见 [`IR.md`](IR.md)。
 
 ## 1. 共享事实层
 

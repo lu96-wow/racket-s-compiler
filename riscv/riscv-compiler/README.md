@@ -51,9 +51,9 @@ canonical 操作数顺序来自 `riscv-asm` 的 `instruction-info-operands`，�
 
 | 文档 | 内容 |
 | --- | --- |
-| [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md) | native 表面语法 |
+| [`SYNTAX.md`](SYNTAX.md) | native 表面语法 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与 stage |
-| [`SEXP.md`](SEXP.md) | 层间 s-exp 类型速查 |
+| [`IR.md`](IR.md) | 层间 IR 类型 |
 | [`encode/syntax/DESIGN.md`](encode/syntax/DESIGN.md) | native plan / direct form |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 构建流与硬边界 |
 | `*/DESIGN.md` | 每层细节 |

@@ -1,7 +1,7 @@
-# amd64 后端计划
+# amd64 路线图
 
 > 与 `riscv/riscv-compiler` 分离实现。
-> 当前架构见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，s-exp 形状见 [`SEXP.md`](SEXP.md)，
+> 当前架构见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，s-exp 形状见 [`SYNTAX.md`](SYNTAX.md)，
 > 总索引见 [`README.md`](README.md)。
 
 ## 1. 目标
@@ -24,7 +24,7 @@
 
 ## 当前进度
 
-- [x] `amd64/SEXP.md`：形式定稿（内存宽度 `b8/b16/b32/b64`，命名字段）
+- [x] `amd64/SYNTAX.md`：形式定稿（内存宽度 `b8/b16/b32/b64`，命名字段）
 - [x] `amd64/amd64-asm/sexp.rkt`：通用形状 + 内存操作数解析
 - [x] `amd64/compiler/expand-data`：rich 数据 -> 核心数据 item（复用 RISC-V 的 target-neutral 实现）
 - [x] `amd64/compiler/flatten`：module/provide/require 名字解析（复用 RISC-V 的 target-neutral 实现）
@@ -197,8 +197,8 @@ call-indirect
 amd64/
   README.md
   ARCHITECTURE.md
-  SEXP.md
-  PLAN.md
+  SYNTAX.md
+  ROADMAP.md
 
   amd64-asm/
     sexp.rkt
@@ -294,7 +294,7 @@ SSE/SSE2 legacy 形式已由 NASM 生成表覆盖；AVX/VEX/EVEX 先不做。
 
 ### Phase 0：文档和形状
 
-- 定稿 `SEXP.md`
+- 定稿 `SYNTAX.md`
 - 定稿 `target-amd64`
 - 写 `sexp.rkt` 的 amd64 形状判定
 - 写最小 encoding 表骨架

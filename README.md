@@ -11,7 +11,7 @@
 Loko 的源码树**不在这个仓库里**，在 `~/work/loko`（和本仓库并列）——它是上游
 项目，有自己的构建系统和 ~2 GB 产物，我们只加了一个 dump target。位置、我们改
 了什么、怎么重建，都记在
-[`amd64/loko-compatibility/LOKO-TREE.md`](amd64/loko-compatibility/LOKO-TREE.md)。
+[`amd64/loko-compatibility/UPSTREAM.md`](amd64/loko-compatibility/UPSTREAM.md)。
 
 跨层规则见 [`amd64/ARCHITECTURE.md`](amd64/ARCHITECTURE.md)；工具链
 （dump → 流水线 → 镜像）见 [`amd64/tools/README.md`](amd64/tools/README.md)。

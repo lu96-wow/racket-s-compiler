@@ -1,4 +1,4 @@
-# 当前缺口
+# amd64 已知缺口
 
 > 项目已经按 `amd64-asm` / `compiler` / `amd64-help` / `amd64-elf` /
 > `loko-compatibility` 拆开。本文记录拆分后仍然缺的结构和能力。

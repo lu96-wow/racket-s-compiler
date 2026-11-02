@@ -20,11 +20,11 @@
 # runtime/parameters.chezscheme.sls 抢先加载）。这里用自举两步，已验证可行。
 set -eu
 
-# Loko 树在仓库外面: ~/work/loko（见 amd64/loko-compatibility/LOKO-TREE.md）
+# Loko 树在仓库外面: ~/work/loko（见 amd64/loko-compatibility/UPSTREAM.md）
 LOKO=${1:-${LOKO:-$HOME/work/loko}}
 [ -d "$LOKO" ] || {
     echo "$0: 找不到 Loko 树: $LOKO" >&2
-    echo "  位置记录在 amd64/loko-compatibility/LOKO-TREE.md；用 LOKO= 或第一个参数指定" >&2
+    echo "  位置记录在 amd64/loko-compatibility/UPSTREAM.md；用 LOKO= 或第一个参数指定" >&2
     exit 1
 }
 SYS=${LOKO_SYSTEM_LIB:-/usr/local/lib/loko/loko}   # 生成文件（unicode 表/字体…）的来源

@@ -46,7 +46,7 @@ compiler/
 ```
 
 每层细节见对应 `DESIGN.md`；跨层规则见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)，
-s-expression 形式见 [`../SEXP.md`](../SEXP.md)。
+s-expression 形式见 [`../SYNTAX.md`](../SYNTAX.md)。
 
 ## 依赖
 

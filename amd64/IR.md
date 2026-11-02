@@ -1,7 +1,7 @@
-# amd64 S-expression 设计
+# amd64 IR 契约
 
 > 本文定义 amd64 后端的 **s-expression 契约**、每一步的显式输入/输出，
-> 以及处理逻辑的归属。用户写法见 [`SEXP.md`](SEXP.md)，
+> 以及处理逻辑的归属。用户写法见 [`SYNTAX.md`](SYNTAX.md)，
 > 指令编码内部见 [`amd64-asm/DESIGN.md`](amd64-asm/DESIGN.md)。
 
 ## 1. 目标

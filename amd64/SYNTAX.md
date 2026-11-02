@@ -1,8 +1,8 @@
-# amd64 s-expression 汇编形式
+# amd64 表面语法
 
 > 目标：形状固定、尺寸可精确计算、编码器不偷偷改 form。
-> 分层/所有权/阶段契约见 [`SEXP-DESIGN.md`](SEXP-DESIGN.md)。
-> 总体计划见 [`PLAN.md`](PLAN.md)。
+> 分层/所有权/阶段契约见 [`IR.md`](IR.md)。
+> 总体计划见 [`ROADMAP.md`](ROADMAP.md)。
 > 共享事实层另有 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md)、
 > [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md)、
 > [`amd64-asm/INSTRUCTIONS.md`](amd64-asm/INSTRUCTIONS.md)。

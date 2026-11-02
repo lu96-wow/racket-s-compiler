@@ -1,4 +1,4 @@
-# 汇编器表面语法
+# riscv-compiler 表面语法
 
 本文记录 **`riscv-compiler` 的输入语言**：人写什么形状，流水线就收什么形状。
 
@@ -14,7 +14,7 @@ GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析�
 
 | 文档 | 内容 |
 | --- | --- |
-| [`SEXP.md`](SEXP.md) | 层间 s-exp 类型速查 |
+| [`IR.md`](IR.md) | 层间 s-exp 类型速查 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图 |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 跨层硬边界 |
 | `*/DESIGN.md` | 每一层具体认识哪些 form |

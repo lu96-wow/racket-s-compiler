@@ -1,4 +1,4 @@
-# Loko 源码在哪
+# 上游 Loko 源码
 
 **`~/work/loko`** —— 仓库外面，和 `racket-s-compiler/` 并列。
 
