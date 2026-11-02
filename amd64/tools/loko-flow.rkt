@@ -32,7 +32,9 @@
 ;; 脚本自己在 amd64/tools 里；流水线源码在 amd64/ 下面（指纹覆盖那几个目录）。
 (define here
   (let ([rf (find-system-path 'run-file)])
-    (if (file-exists? rf) (path-only (simplify-path rf)) (current-directory))))
+    (if (file-exists? rf)
+        (path-only (simplify-path (path->complete-path rf)))
+        (current-directory))))
 (define amd64-root (simplify-path (build-path here "..")))
 
 ;; 只有这几个层的输出是"镜像产物"，值得缓存。
