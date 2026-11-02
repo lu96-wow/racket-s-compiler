@@ -53,7 +53,7 @@
     (ld t0 sp 8)
     (jalr x0 ra 0)
     (label end)
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define gas-src
   '((label main)
@@ -64,7 +64,7 @@
     (ld t0 sp 8)
     (jalr x0 ra 0)
     (label end)
-    (ret)))
+    (jalr x0 ra 0)))
 
 ;; 和旧实现（GAS canonical）逐字节对齐的结果。
 (define expected-code-bytes
@@ -105,7 +105,7 @@
                 (ld t0 sp 8)
                 (jalr x0 ra 0)
                 (label end)
-                (ret)))
+                (jalr x0 ra 0)))
 (check-equal? (layout-problems (flow-value gas-out 'bound-layout)) '())
 (check-equal? (seg-bytes (flow-value gas-out 'build) 'c) expected-code-bytes)
 
@@ -140,7 +140,7 @@
 
 (check-equal? (jump-register '(jal ra (L))) 'ra)
 (check-equal? (jump-register '(j (L))) 'x0)
-(check-equal? (jump-register '(ret)) 'x0)
+(check-equal? (jump-register '(jalr x0 ra 0)) 'x0)
 
 ;; ---------------------------------------------------------------------------
 ;; native pseudo 分支也能松弛
@@ -152,7 +152,7 @@
     (label hot)
     (jalr x0 ra 0)
     (label far)
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define far-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
@@ -173,7 +173,7 @@
     (store-8 8 sp t0)
     (load-8 t1 sp 8)
     (move a0 t1)
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define alias-flow
   '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
@@ -188,7 +188,7 @@
                 (sb 8 sp t0)
                 (lbu t1 sp 8)
                 (add a0 t1 x0)
-                (ret)))
+                (jalr x0 ra 0)))
 
 ;; ---------------------------------------------------------------------------
 ;; 数据 / li / la 不受顺序重构影响
@@ -198,7 +198,7 @@
   '((label main)
     (li t0 #x12345678)
     (la t1 (d t))
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define lit-rich
   '((label d t)

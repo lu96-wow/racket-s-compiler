@@ -38,15 +38,22 @@
 ;; 查表 (缓存)
 ;; ---------------------------------------------------------------------------
 
+;; ABI 相关的伪指令不进 core 表面语法。
+;;   ret = jalr x0, ra, 0 把 ra / 返回约定写死在助记符里。
+;; 需要返回就写显式 jalr，由调用者决定链接寄存器。
+(define (abi-only-pseudo? name)
+  (memq name '(ret)))
+
 (define info-cache (make-hash))
 
 (define (lookup-instruction target name)
   ;; 缓存必须带 target 的扩展集: 同一个名字在 rv64/rv32 下可能不同。
-  (define exts (target-extensions target))
-  (hash-ref! info-cache (cons exts name)
-             (lambda ()
-               (and (pair? (instruction-info-candidates exts name))
-                    (resolve-instruction-info exts name)))))
+  (and (not (abi-only-pseudo? name))
+       (let ([exts (target-extensions target)])
+         (hash-ref! info-cache (cons exts name)
+                    (lambda ()
+                      (and (pair? (instruction-info-candidates exts name))
+                           (resolve-instruction-info exts name)))))))
 
 (define (known-instruction? target name) (and (lookup-instruction target name) #t))
 
@@ -78,6 +85,10 @@
 
 (define (encode-instruction target name operands)
   (define-values (base aq rl) (split-aqrl name))
+  (when (abi-only-pseudo? base)
+    (error 'encode-instruction
+           "~a is an ABI-specific pseudo instruction; write the explicit instruction instead (e.g. (jalr x0 ra 0))"
+           base))
   (define info (or (lookup-instruction target base)
                    (error 'encode-instruction "unknown instruction: ~a" name)))
   (define plan (or (syntax-plan-for info)

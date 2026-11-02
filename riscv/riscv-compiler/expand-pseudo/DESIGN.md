@@ -16,7 +16,7 @@
 | `(branch-le L rs1 rs2)` | `(bge L rs2 rs1)` |
 | 不认识的 form | 原样透传 |
 
-`riscv-opcodes` 已经定义的伪指令（`mv` / `ble` / `nop` / `ret` 等）不需要
+`riscv-opcodes` 已经定义的伪指令（`mv` / `ble` / `nop` 等）不需要
 在这里再写一遍，native 编码器可以直接处理。
 
 ## 设计思路

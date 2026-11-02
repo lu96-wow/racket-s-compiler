@@ -29,7 +29,7 @@
 (define operand-plans
   (hash
    ;; --- 32 位 ---
-   ""                            '()          ; 无操作数 (nop ret ebreak/pause)
+   ""                            '()          ; 无操作数 (nop ebreak/pause)
    "rd"                          '(0)
    "rs1"                         '(0)          ; jr
    "jimm20"                      '(0)          ; j

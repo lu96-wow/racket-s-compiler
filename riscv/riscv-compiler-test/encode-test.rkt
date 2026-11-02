@@ -100,7 +100,6 @@
 (check-equal? (word 'jalr 'x0 'ra 0) (list #x00008067 4))
 (check-equal? (word 'lui 'a0 #x12345) (list #x12345537 4))
 (check-equal? (word 'nop) (list #x00000013 4))
-(check-equal? (word 'ret) (list #x00008067 4))
 
 (check-equal? (word 'c.addi 'a0 1) (list #x0505 2))
 (check-equal? (word 'c.beqz 'a0 8) (list #xc501 2))
@@ -119,6 +118,10 @@
 (check-true (known-instruction? 'add))
 (check-true (known-instruction? 'amoadd.d))
 (check-false (known-instruction? 'no-such-instruction))
+;; ret 这类 ABI 伪指令不进入 core 表面语法；显式写 jalr。
+(check-false (known-instruction? 'ret))
+(check-error "ABI 伪指令 ret"
+             (lambda () (encode-instruction 'ret '())))
 
 (call-with-values (lambda () (split-aqrl 'amoadd.d.aqrl))
   (lambda (base aq rl)
@@ -227,7 +230,7 @@
                               (offset 4 (pad 4))
                               (offset 8 (beq (t) a0 a1))
                               (offset 12 (pad 4))
-                              (offset 16 (ret))))
+                              (offset 16 (jalr x0 ra 0))))
                '(size 20))
          (list 'segment
                '(name d) '(kind data) '(start #x2000) '(end #x2100) '(align 8)
@@ -246,7 +249,7 @@
 (check-equal? (build-size build 'c) 20)
 (check-equal? (build-size build 'd) 12)
 
-;; addi; nop; beq +8; nop; ret
+;; addi; nop; beq +8; nop; jalr x0, ra, 0
 (check-equal? (build-bytes build 'c)
               '(#x13 #x05 #x15 #x00
                 #x13 #x00 #x00 #x00

@@ -161,7 +161,7 @@
              (lambda () (run-flow '(no-such-layer) '())))
 ;; 伪指令展开必须发生在 flatten 之后: expand-pseudo 不进入 module 壳
 (define module-src
-  '((module m (label main) (move a0 a1) (ret))))
+  '((module m (label main) (move a0 a1) (jalr x0 ra 0))))
 (define module-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16)))
     (place c (m main))))

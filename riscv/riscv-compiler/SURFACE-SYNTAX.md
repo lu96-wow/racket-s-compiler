@@ -44,10 +44,10 @@ GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析�
 单独跑某一层时，入口一律经过 `as-items`，所以下面这些壳都收：
 
 ```scheme
-'((label main) (ret))          ; item 列表
+'((label main) (jalr x0 ra 0))          ; item 列表
 '(label main)                  ; 单条 item
-'(begin (label main) (ret))    ; begin 壳
-'(quote ((label main) (ret)))  ; quote 壳
+'(begin (label main) (jalr x0 ra 0))    ; begin 壳
+'(quote ((label main) (jalr x0 ra 0)))  ; quote 壳
 ```
 
 出口一律是 plain list；不会把 `quote` / `begin` 继续往下一层传。
@@ -150,7 +150,10 @@ expr := integer
 (j     (end))         ; pseudo: (jimm20)
 (jalr  ra t0 0)       ; jalr: (rd rs1 imm12)
 (jr    t0)            ; pseudo: (rs1)
-(ret)                 ; pseudo: 无操作数
+(jalr x0 ra 0)                 ; 显式返回，不用 ABI 伪指令 ret
+
+> `ret` 是 ABI 伪指令（隐含 `ra` 和 C 返回约定），不属于 core 表面语法；
+> 需要返回时写显式的 `(jalr x0 ra 0)`。编码层会拒绝 `ret`。
 
 (csrrw  a0 a1 mstatus)   ; (rd rs1 csr)
 (csrrs  a0 a1 mstatus)

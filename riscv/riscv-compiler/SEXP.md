@@ -43,7 +43,7 @@
 | --- | --- |
 | rich 数据 | `(b8 v)` / `(b16 v)` / `(bN-array n v…)` / `(utf-string[s] "…")` |
 | 核心数据 item | `(value w v)` / `(bytes …)` / `(fill n b)` / `(pad n)` / `(align n)` / `(reserve n)` / `(label 链…)` |
-| 伪指令 | native: `(mv …)` / `(ble L …)` / `(nop)` / `(ret)`；便利别名由可选表替换 |
+| 伪指令 | native: `(mv …)` / `(ble L …)` / `(nop)`；`ret` 这类 ABI 伪指令不进入 core |
 | 控制转移 | native: `(beq L a b)` / `(jal rd L)` / `(j L)`；远形式 `(branch-far …)` / `(branch-indirect …)` / `(jump-far …)` |
 | `(la rd [tmp] 表达式)` | 取地址；近形式 8 字节 |
 | `(li rd 常量)` | 常量装载；尺寸由常量精确决定 |

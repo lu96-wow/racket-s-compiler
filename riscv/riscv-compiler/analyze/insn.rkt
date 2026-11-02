@@ -47,7 +47,7 @@
     c.beqz c.bnez
     branch-far branch-indirect))
 (define jump-mnemonics     '(jal j c.j c.jal jump-far))
-(define indirect-mnemonics '(jalr jr ret c.jr c.jalr))
+(define indirect-mnemonics '(jalr jr c.jr c.jalr))
 (define trap-mnemonics     '(ecall ebreak c.ebreak))
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -101,7 +101,6 @@
          [(jump-far) (cadr x)]
          [(j)        'x0]
          [(jr)       'x0]
-         [(ret)      'x0]
          [(c.j)      'x0]
          [(c.jal)    'ra]
          [(c.jr)     'x0]

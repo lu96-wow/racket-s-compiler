@@ -32,7 +32,7 @@
 
 (define measured
   (lay (analyze '((label main) (jalr x0 ra 0)
-                  (label f) (ret)))
+                  (label f) (jalr x0 ra 0)))
        '((label d t) (value 8 (main)))
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4))
                    (segment (name d) (kind data) (start #x8000) (end #x8FFF) (align 8)))
@@ -74,7 +74,7 @@
 
 ;; measured 不查 value 宽度；bind-labels 才查
 (define wide
-  (lay (analyze '((label main) (ret)))
+  (lay (analyze '((label main) (jalr x0 ra 0)))
        '((label d t) (value 4 (d t)))
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4))
                    (segment (name d) (kind data) (start #x100000000) (end #x100001000) (align 8)))
@@ -125,7 +125,7 @@
 (define with-request
   (lay (analyze '((label main) (branch-indirect beq a0 a1 (done))
                   (label keep) (jal x0 (keep))
-                  (label done) (ret)))
+                  (label done) (jalr x0 ra 0)))
        '()
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place c (main) (keep) (done)))))

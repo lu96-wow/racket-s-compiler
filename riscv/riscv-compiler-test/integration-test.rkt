@@ -83,7 +83,7 @@
       (jalr x0 ra 0)
       (label f)
       (addi a0 a0 1)
-      (ret))))
+      (jalr x0 ra 0))))
 
 (define mod-rich
   '((module d
@@ -123,7 +123,7 @@
                       (list #xE7 #x00 #x03 #x00)      ; jalr ra, t1, 0
                       (list #x67 #x80 #x00 #x00)      ; jalr x0, ra, 0
                       (list #x13 #x05 #x15 #x00)      ; addi a0, a0, 1
-                      (list #x67 #x80 #x00 #x00)))    ; ret
+                      (list #x67 #x80 #x00 #x00)))    ; jalr x0, ra, 0
 
 ;; 数据侧的 root: 有间接跳转时, 数据里存了 (p f) 的地址, 所以 f 是 root
 (check-true (flow-root? (last (program-flows (flow-value mod-out 'program)))))
@@ -139,7 +139,7 @@
     (utf-stringz "hi")
     (b8-array 3 0)))
 
-(define data-src '((label main) (ret)))
+(define data-src '((label main) (jalr x0 ra 0)))
 (define data-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
               (segment (name d) (kind data) (start #x2000) (end #x2100) (align 8)))
@@ -169,7 +169,7 @@
     (fence rw rw)
     (amoadd.d.aqrl a0 a1 a2)
     (fence.tso)
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define atomic-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4)))
@@ -185,7 +185,7 @@
               '(#x0f #x00 #x30 #x03       ; fence rw, rw
                 #x2f #xb5 #xc5 #x06       ; amoadd.d.aqrl a0, a2, (a1)
                 #x0f #x00 #x30 #x83       ; fence.tso
-                #x67 #x80 #x00 #x00))     ; ret
+                #x67 #x80 #x00 #x00))     ; jalr x0, ra, 0
 
 ;; ---------------------------------------------------------------------------
 ;; CSR + fence.i 走完整流
@@ -195,7 +195,7 @@
   '((label main)
     (csrrw a0 a1 mstatus)
     (fence.i)
-    (ret)))
+    (jalr x0 ra 0)))
 
 (define csr-out
   (run-flow default-flow
@@ -206,7 +206,7 @@
 (check-equal? (build-bytes (flow-value csr-out 'build) 'c)
               '(#x73 #x95 #x05 #x30    ; csrrw a0, mstatus, a1
                 #x0f #x10 #x00 #x00    ; fence.i
-                #x67 #x80 #x00 #x00))  ; ret
+                #x67 #x80 #x00 #x00))  ; jalr x0, ra, 0
 
 ;; ---------------------------------------------------------------------------
 ;; 完整流里的松弛: >4KB 的普通分支升成 branch-far
@@ -215,7 +215,7 @@
 (define relax-src
   '((label main) (beq (far) a0 a0)
     (label hot) (jalr x0 ra 0)
-    (label far) (ret)))
+    (label far) (jalr x0 ra 0)))
 (define relax-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
               (segment (name d) (kind code) (start #x2000) (end #x2100) (align 4)))
@@ -240,7 +240,7 @@
   '((label main)
     (li t0 #x12345678)
     (la t1 (d t))
-    (ret)))
+    (jalr x0 ra 0)))
 (define lit-rich
   '((label d t) (utf-stringz "x")))
 (define lit-spec
@@ -318,7 +318,7 @@
                                (cons 'program-items
                                      '((label main) (beq (far) a0 a0)
                                        (label hot) (jalr x0 ra 0)
-                                       (label far) (ret)))
+                                       (label far) (jalr x0 ra 0)))
                                (cons 'layout-spec
                                      '((segments
                                         (segment (name c) (kind code)
