@@ -1,11 +1,15 @@
 #lang racket
 ;;; loko-compatibility/flow.rkt
 ;;;
-;;; Optional Loko/ELF extension of the core assembly flow.  This is the only
-;;; flow module that knows about loko-compatibility and amd64-elf; compiler/
-;;; remains usable without either of them.
+;;; Loko/ELF 扩展的流。这是唯一知道 loko-compatibility 与 amd64-elf 的 flow
+;;; 模块; compiler/ 不依赖它们。
+;;;
+;;; 形态和 compiler/flow/flow.rkt 一样: 一条 flow 值 + 一组绑定它的函数。
+;;; 这里的 flow 是 (extend-flow core-flow …), 只多出自己的层和层组。
 
 (require (prefix-in core: "../compiler/flow/core.rkt")
+         (only-in "../compiler/expand-pseudo/rewrite.rkt"
+                  rewrite-program pseudo-leftover?)
          (only-in "translate.rkt" translate-loko-source)
          (only-in "ir.rkt" make-loko-ir ir-list)
          (only-in "lower/ir.rkt" lower-loko-ir)
@@ -15,23 +19,24 @@
 
 (provide (struct-out core:stage)
          stage-table
+         stage-groups
+         default-flow
          stage-names
          providers-of
-         stage-groups
          group-names
          select-stages
          run-flow
          run-stage
          compile
          compile-image
-         context-value
-         default-flow)
+         flow-value)
 
 (define loko-stage-table
   (hash
    'loko-compat
    (core:stage 'loko-compat '(loko-source)
-               '(program-items data-items loko-aliases loko-ir)
+               ;; aliases 已经内联进 items, 不再往流里传(它只是 translate 的中间表)
+               '(program-items data-items loko-ir)
                (lambda (_target in)
                  (define out (translate-loko-source (hash-ref in 'loko-source)))
                  (define fields (cdr out))
@@ -40,7 +45,6 @@
                    (error 'loko-compat "~e" problems))
                  (hash 'program-items (cdr (assq 'program-items fields))
                        'data-items (cdr (assq 'data-items fields))
-                       'loko-aliases (cdr (assq 'aliases fields))
                        'loko-ir (make-loko-ir
                                  (cadr (assq 'origin fields))
                                  (cdr (assq 'symbols fields))
@@ -92,74 +96,56 @@
                        (write-elf (hash-ref in 'build) symbols #:plan plan)))
                "build + symbols + image-plan -> ELF64 image")))
 
-(define stage-table
-  (make-immutable-hash
-   (append (hash->list core:core-stage-table)
-           (hash->list loko-stage-table))))
+;; 只属于 loko-near 的层: expand-pseudo 的 near 版本(所有分支直接取 near,
+;; 布局一次即可, 不跑 relax)。它是这条验证流的策略, 所以放在这里而不是 core。
+(define expand-pseudo-near-stage
+  (core:stage 'expand-pseudo-near '(program-items) '(program-items)
+              (lambda (_target in)
+                (define items
+                  (rewrite-program (hash-ref in 'program-items)
+                                   #:short-transfers? #f))
+                (when (pseudo-leftover? items)
+                  (error 'expand-pseudo-near
+                         "pseudo instruction survived expansion: ~e" items))
+                (hash 'program-items items))
+              "伪指令 -> 真指令（全部 near，用于快速验证；布局一次即可）"))
 
-(define stage-groups
-  (make-immutable-hash
-   (append (hash->list core:core-stage-groups)
-           (hash->list
-            (hash
-             'loko '(loko-compat loko-lower loko-image
-                                 expand-pseudo analyze dce relax
-                                 bind-labels encode)
-             'loko-manual '(loko-compat loko-lower
-                                       expand-pseudo analyze dce relax
-                                       bind-labels encode)
-             'loko-near '(loko-compat loko-lower loko-image
-                                     expand-pseudo-near analyze dce layout
-                                     bind-labels encode)
-             'elf '(loko-compat loko-lower loko-image
-                                expand-pseudo analyze dce relax
-                                bind-labels encode loko-elf)
-             'elf-manual '(loko-compat loko-lower
-                                      expand-pseudo analyze dce relax
-                                      bind-labels encode loko-elf))))))
+(define loko-flow
+  (core:extend-flow
+   core:core-flow 'loko
+   (hash-set loko-stage-table 'expand-pseudo-near expand-pseudo-near-stage)
+   (hash
+    'loko '(loko-compat loko-lower loko-image
+                        expand-pseudo analyze dce relax
+                        bind-labels encode)
+    'loko-manual '(loko-compat loko-lower
+                              expand-pseudo analyze dce relax
+                              bind-labels encode)
+    ;; near 验证流: 全 near + 只 layout 一次(不跑 relax)
+    'loko-near '(loko-compat loko-lower loko-image
+                             expand-pseudo-near analyze dce layout
+                             bind-labels encode)
+    'elf '(loko-compat loko-lower loko-image
+                       expand-pseudo analyze dce relax
+                       bind-labels encode loko-elf)
+    'elf-manual '(loko-compat loko-lower
+                             expand-pseudo analyze dce relax
+                             bind-labels encode loko-elf))))
 
-(define default-flow core:default-flow)
+(define stage-table (core:flow-stages loko-flow))
+(define stage-groups (core:flow-groups loko-flow))
+(define default-flow (core:flow-default loko-flow))
 
-(for ([(g stages) (in-hash stage-groups)])
-  (when (hash-has-key? stage-table g)
-    (error 'flow "stage group ~a conflicts with a stage name" g))
-  (unless (and (list? stages)
-               (andmap symbol? stages)
-               (andmap (lambda (s) (hash-has-key? stage-table s)) stages))
-    (error 'flow "bad stage group ~a: ~e" g stages)))
-
-(define (stage-names)
-  (core:stage-names #:stage-table stage-table))
-
-(define (providers-of value)
-  (core:providers-of value #:stage-table stage-table))
-
-(define (group-names)
-  (core:group-names #:stage-groups stage-groups))
-
-(define (select-stages selector)
-  (core:select-stages selector
-                      #:stage-table stage-table
-                      #:stage-groups stage-groups))
-
+(define (stage-names) (core:stage-names loko-flow))
+(define (providers-of value) (core:providers-of loko-flow value))
+(define (group-names) (core:group-names loko-flow))
+(define (select-stages selector) (core:select-stages loko-flow selector))
 (define (run-flow target selector [seeds '()])
-  (core:run-flow target selector seeds
-                 #:stage-table stage-table
-                 #:stage-groups stage-groups))
-
+  (core:run-flow loko-flow target selector seeds))
 (define (run-stage target name [seeds '()])
-  (core:run-stage target name seeds
-                  #:stage-table stage-table
-                  #:stage-groups stage-groups))
-
-(define (compile target seeds [flow default-flow])
-  (core:compile target seeds flow
-                #:stage-table stage-table
-                #:stage-groups stage-groups))
-
-(define (compile-image target seeds [flow 'elf])
-  (core:compile-image target seeds flow
-                      #:stage-table stage-table
-                      #:stage-groups stage-groups))
-
-(define context-value core:context-value)
+  (core:run-stage loko-flow target name seeds))
+(define (compile target seeds [selector #f])
+  (core:compile loko-flow target seeds selector))
+(define (compile-image target seeds [selector 'elf])
+  (core:compile-image loko-flow target seeds selector))
+(define flow-value core:flow-value)

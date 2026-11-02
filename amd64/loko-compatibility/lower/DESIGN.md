@@ -32,8 +32,13 @@ Loko 的 `compiler/main.sls` 在调用 `assembler-library` 之前已经跑了
   GC 标记，不是要求本层再插入栈保存。
 
 所以 Loko 验证路径上的 `lower` 实际上只做“替换掉任何残留伪寄存器”，不会
-改变已分配的指令。`calls.rkt` / 图着色 / 跨调用保存仍保留给原始 codegen
-输入和单元测试；它们不是当前 Loko 运行时的必需路径。
+改变已分配的指令。图着色仍保留给原始 codegen 输入和单元测试；它**不是**
+当前 Loko 运行时的必需路径。
+
+（曾经有一个 `calls.rkt` 把 `(comment save-live-registers)` 展开成显式
+`mov` 对；它从来没接进任何流，唯一消费者是它自己的测试，而且它要求核心
+item 语言里存在 `comment`。review 时连同 `comment` 一起删了：等真要处理
+未分配的 codegen 输入时，按 RISC-V 的分法把它做成一个尺寸不变的 step 更合适。）
 
 它同时提供这条链上需要的几个纯函数部分：
 
@@ -127,34 +132,12 @@ item 是 `loko-compat` / `expand-pseudo` 之后的普通程序 item。伪寄存�
 - 同时保存每条指令之后的 live-out，供分配器建干涉图。
 - 不模拟调用约定：`call` 本身不定义伪寄存器，所以跨调用的值仍然 live。
 
-### 3.4 `calls.rkt`
+### 3.4 调用点的 save/restore（未实现）
 
-Loko codegen 用注释表示调用点要保存哪些伪寄存器：
-
-```scheme
-(comment save-live-registers)
-... call ...
-(comment liveness-information)
-(comment restore-live-registers)
-```
-
-`calls.rkt` 把它展开成：
-
-```scheme
-(mov (reg fresh) (reg live)) ...
-... call ...
-(mov (reg live) (reg fresh)) ...
-```
-
-- `fresh` 从当前最大伪下标之后开始编号。
-- `save` 时保存的集合就是该位置的 live-out。
-- 嵌套 save/restore 用栈匹配。
-- 缺少 restore / 缺少 save 都变成 `problems`。
-- `call-crossing-pseudos` 单独给出“跨调用仍 live”的下标表，供后续
-  spill/分配层使用。
-
-展开后，原始值可以在调用中被打坏；真正需要跨调用存活的是 `fresh` 副本。
-但本层不决定 `fresh` 放在哪里，所以它仍然需要后续分配/溢出。
+Loko 的 codegen 在 `%comment save-live-registers` / `restore-live-registers`
+里标注调用点要保存哪些伪寄存器。本后端**不**消费这些注记：Loko 导出的是
+`pass-optimize` 之后的代码，保存/恢复的 `mov` 已经在指令流里了。要处理
+原始 codegen 输入时，这会是一个改变尺寸的 pass（在 relax 之前），见 `GAPS.md`。
 
 ### 3.5 `allocate.rkt`
 

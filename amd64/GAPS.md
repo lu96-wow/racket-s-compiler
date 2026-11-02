@@ -40,7 +40,9 @@
 
 - 跨调用值的 preserved 分配或 spill
 - frame allocation / `LOCALS`
-- `%comment liveness-information` -> GC 注记
+- 调用点 save/restore（`%comment save-live-registers` 现在直接丢弃；
+  需要时按尺寸不变/可变的 pass 重新设计）
+- 栈上 GC 注记
 - peephole
 - 固定值表达式求值
 

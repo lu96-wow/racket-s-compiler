@@ -38,7 +38,6 @@
          layout-spec-origin
 
          label-form? label-chain
-         comment-form?
          align-form? align-value
          pad-form? pad-size
          bytes-form? bytes-content
@@ -265,7 +264,6 @@
 (define (item-size target x)
   (cond
     [(label-form? x) 0]
-    [(comment-form? x) 0]
     [(align-form? x) #f]
     [(pad-form? x) (pad-size x)]
     [(bytes-form? x) (length (bytes-content x))]

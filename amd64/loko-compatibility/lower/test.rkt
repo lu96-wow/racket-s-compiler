@@ -7,7 +7,6 @@
          "liveness.rkt"
          "allocate.rkt"
          "lower.rkt"
-         "calls.rkt"
          "../../compiler/analyze/analyze.rkt")
 
 ;; ---------------------------------------------------------------------------
@@ -142,45 +141,5 @@
 (check-equal? (lower-result-items unallocated) '((mov rax (reg 1))))
 (check-equal? (lower-result-problems unallocated)
               '((unallocated-pseudo 1)))
-
-;; ---------------------------------------------------------------------------
-;; call save / restore
-;; ---------------------------------------------------------------------------
-
-(define call-items
-  '((label entry)
-    (mov (reg 0) 1)
-    (comment save-live-registers)
-    (call-near (f))
-    (comment liveness-information)
-    (comment restore-live-registers)
-    (add (reg 0) 1)
-    (ret)))
-
-(define call-lv (compute-liveness call-items))
-(check-equal? (call-crossing-pseudos call-lv call-items) '(0))
-
-(define expanded (expand-call-saves call-items))
-(check-equal? (call-save-result-problems expanded) '())
-(check-equal? (call-save-result-fresh-count expanded) 1)
-(check-equal? (call-save-result-items expanded)
-              '((label entry)
-                (mov (reg 0) 1)
-                (mov (reg 1) (reg 0))
-                (call-near (f))
-                (comment liveness-information)
-                (mov (reg 0) (reg 1))
-                (add (reg 0) 1)
-                (ret)))
-
-(define expanded-lv (compute-liveness (call-save-result-items expanded)))
-(check-equal? (call-crossing-pseudos expanded-lv (call-save-result-items expanded))
-              '(1))
-
-(check-true
- (for/or ([p (in-list
-              (call-save-result-problems
-               (expand-call-saves '((comment restore-live-registers)))))])
-   (equal? (car p) 'restore-without-save)))
 
 (displayln "amd64 loko-lower tests: ok")

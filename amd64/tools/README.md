@@ -87,7 +87,9 @@ vector（Racket 的 reader 把 `#[` 当 `#(`）、`(` 和 `[` 混着写是错误
 ## 3. 流水线 + 产物缓存：`tools/loko-flow.rkt`、`tools/flow-cache.rkt`
 
 ```sh
-# pc / 裸机（loko-near：全 near 分支，只 layout 一次）
+# pc / 裸机：loko-near = 全 near 分支 + 只 layout 一次（不跑 relax）。
+# 这个 near 变体层 expand-pseudo-near 注册在 loko-compatibility/flow.rkt 里：
+# 它是这条验证流的策略，核心流只有 expand-pseudo 一个。
 racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
 # -> /tmp/pcflow/encode.rktd    （encode 的 build：各段字节）
 

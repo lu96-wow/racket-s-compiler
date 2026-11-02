@@ -2,7 +2,7 @@
 ;;; amd64/compiler/item.rkt
 ;;;
 ;;; 程序/数据 item 的共享形状。这里只有形状，不含指令编码，也不含布局策略。
-;;; item: (label …) (comment …) (bytes …) (fill …) (pad …) (align …)
+;;; item: (label …) (bytes …) (fill …) (pad …) (align …)
 ;;;       (value …) (reserve n) 或指令。
 ;;;
 ;;; layout 和 encode 都依赖这一层，避免 layout -> encode / encode -> layout。
@@ -10,10 +10,9 @@
 (require "../amd64-asm/sexp.rkt")
 
 (provide form? name? path? normalize-path
-         make-label make-comment
+         make-label
          make-align make-pad make-bytes-item make-fill make-value make-reserve
          label-form? label-chain
-         comment-form?
          align-form? align-value
          pad-form? pad-size
          bytes-form? bytes-content
@@ -31,9 +30,6 @@
   (unless path
     (error 'make-label "label needs a non-empty name chain: ~e" chain))
   (cons 'label path))
-
-(define (make-comment . data)
-  (cons 'comment data))
 
 (define (make-align n)
   (unless (exact-positive-integer? n)
@@ -75,11 +71,6 @@
 
 (define (label-chain x) (cdr x))
 
-;; (comment datum ...) 是零尺寸注记：给后面的层留事实（Loko 用 %comment
-;; 记录 liveness），但不产生字节。
-(define (comment-form? x)
-  (and (form? x) (eq? (car x) 'comment)))
-
 (define (align-form? x)
   (and (form? x) (eq? (car x) 'align) (= 2 (length x))
        (exact-positive-integer? (cadr x))))
@@ -116,7 +107,7 @@
        (memq (value-width x) '(1 2 4 8)) #t))
 
 ;; item 的类别: 决定它能落进哪种段 (合法性表在 layout/forms.rkt)。
-;;   marker       = label / comment, 不占字节, 三种段都行
+;;   marker       = label, 不占字节, 三种段都行
 ;;   align        = align(请求), 补出来的是 pad 还是 reserve 由段 kind 定
 ;;   pad          = pad(事实) = 补 n 个字节, 要材料化
 ;;   space        = reserve, 只推进位置, 只有 hole 段收
@@ -125,7 +116,7 @@
 ;; 这里只回答"这条 item 是什么", 不回答"它能不能放进某段"。
 (define (item-kind x)
   (cond
-    [(or (label-form? x) (comment-form? x)) 'marker]
+    [(label-form? x) 'marker]
     [(align-form? x) 'align]
     [(pad-form? x) 'pad]
     [(reserve-form? x) 'space]

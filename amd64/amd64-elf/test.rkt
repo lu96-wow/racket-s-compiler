@@ -39,9 +39,9 @@
 
 (define ctx
   (run-flow target-amd64 'loko (list (cons 'loko-source source))))
-(define build (context-value ctx 'build))
+(define build (flow-value ctx 'build))
 (define symbols
-  (cdr (assq 'symbols (context-value ctx 'bound-layout))))
+  (cdr (assq 'symbols (flow-value ctx 'bound-layout))))
 (define image (write-elf build symbols))
 
 (check-equal? (cadr (assq 'entry (cdr image))) #x200000)

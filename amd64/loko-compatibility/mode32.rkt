@@ -26,7 +26,7 @@
 ;;; 的数据 item），加上同族的显然安全形式。逐字节一致性由 oracle 守住：
 ;;; 生成结果要和 Loko 自己的 `bin/pc-repl` 对比（见 tools/）。
 ;;;
-;;; 数据 item（label/comment/align/pad/bytes/fill/reserve/value）与模式无关。
+;;; 数据 item（label/align/pad/bytes/fill/reserve/value）与模式无关。
 
 (require "../amd64-help/cc.rkt"
          "../amd64-asm/shape.rkt"
@@ -100,7 +100,7 @@
 (define (mode32-compatible-item? item)
   (cond
     [(not (form? item)) #f]
-    [(or (label-form? item) (comment-form? item) (align-form? item)
+    [(or (label-form? item) (align-form? item)
          (pad-form? item) (bytes-form? item) (fill-form? item)
          (reserve-form? item) (value-form? item))
      #t]                                     ; 数据 item: 与模式无关

@@ -75,7 +75,8 @@ sections/origin/mode/symbols/comms 等 `loko-ir` 元数据。
 | `(%call proc …)` | 无 | 汇编期闭包，不可序列化；正常输入里已被上面两个标记取代，残留则报 `directive-needs-image-layer` |
 | `(%init-bss start end)` | 同上 | 自定义 BSS 起止 label |
 | `(%elf (entry ...) (region ...) (load ...) (symbol ...))` | `image-plan` | `region` 是 canonical 身份；`content`/`perm` 派生 ELF 元数据 |
-| `(%comment ...)` | `(comment ...)` | 零尺寸注记 |
+| `(%comment ...)` | 无 | Loko 自己的调试/活性注记；核心 item 语言里没有注记，
+|  |  | 流水线里也没有消费者，所以直接丢（不产生字节，也不产生 item） |
 | `(%align n)` / `(%align n 0)` | `(align n)` | 显式非零填充字节暂不支持 |
 | `(%u8 v)` / `(%u16 v)` / `(%u32 v)` / `(%u64 v)` | `(value 1/2/4/8 v)` | 一条可展开成多条 |
 | `(%u128 n)` | 两条 `(value 8 ...)` | 只支持整数；符号 128 位表达式显式报问题 |

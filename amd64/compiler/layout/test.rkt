@@ -11,7 +11,6 @@
 (check-equal? (item-size target-amd64 '(value 8 1)) 8)
 (check-equal? (item-size target-amd64 '(pad 5)) 5)
 (check-equal? (item-size target-amd64 '(reserve 32)) 32)
-(check-equal? (item-size target-amd64 '(comment liveness)) 0)
 (check-equal? (item-size target-amd64 '(align 16)) #f)
 (check-equal? (item-size target-amd64 '(mov rax rbx)) 3)
 (check-equal? (item-size target-amd64 '(jmp-near (done))) 5)
@@ -125,7 +124,6 @@
 
 ;; item 类别
 (check-equal? (item-kind '(label a)) 'marker)
-(check-equal? (item-kind '(comment liveness)) 'marker)
 (check-equal? (item-kind '(align 16)) 'align)
 (check-equal? (item-kind '(pad 4)) 'pad)
 (check-equal? (item-kind '(reserve 8)) 'space)

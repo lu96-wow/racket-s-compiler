@@ -58,7 +58,6 @@
 (check-equal? program-items '((label text) (ret)))
 (check-equal? data-items
               '((label bss)
-                (comment section-boundary bss)
                 (label loko-image-start-bss)
                 (reserve 32)
                 (label bss-end)))

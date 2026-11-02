@@ -39,7 +39,6 @@ source form
 
 ```scheme
 (label 链)
-(comment datum ...)
 (align n)
 (pad n)
 (bytes b ...)
@@ -63,7 +62,6 @@ source form
 
 ```scheme
 (label 链)
-(comment datum ...)
 (align n)
 (pad n)
 (bytes b ...)
@@ -80,7 +78,6 @@ owner：`compiler/item.rkt`。
 
 ```scheme
 (label 链)
-(comment datum ...)
 (data item)
 (jmp-short target)
 (jmp-near target)
@@ -271,7 +268,7 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 已具备：
 
 - `shape.rkt` / `memory.rkt` / `operand.rkt`；
-- `compiler/item.rkt` 的 `make-label` / `make-comment` / `make-align` /
+- `compiler/item.rkt` 的 `make-label` / `make-align` /
   `make-pad` / `make-bytes-item` / `make-fill` / `make-value` /
   `make-reserve` 构造函数；
 - `compiler/item.rkt` 已提供 align/pad/bytes/fill/value/reserve 的
@@ -281,7 +278,7 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
   `request` / `problem` / `measured-layout` / `bound-layout` 的构造与 accessor；
 - `layout` / `relax` / `bind-labels` / `encode` 已使用这些 accessor；
 - `bind-labels/forms.rkt` 提供 symbol 的显式构造与 accessor；
-- `loko-compatibility` 的 item/label/align/comment/segment/place 构造已改用
+- `loko-compatibility` 的 item/label/align/segment/place 构造已改用
   owner 构造函数；
 - `place` / layout-spec 的构造与 accessor 已加入 `layout/forms.rkt`。
 - `amd64-asm` 的 explicit plan / encoding-plan；

@@ -1,14 +1,21 @@
 #lang racket
-;;; compiler/flow/core.rkt
+;;; amd64/compiler/flow/core.rkt
 ;;;
-;;; Core assembly pipeline only.  This module must not require
-;;; loko-compatibility, amd64-elf, or any other optional frontend/image layer.
+;;; 核心汇编流水线。本模块**不 require** loko-compatibility、amd64-elf 或任何
+;;; 可选前端/镜像层。
 ;;;
-;;; Extensions provide a stage table to the generic engine:
-;;;   (run-flow target selector seeds
-;;;             #:stage-table table #:stage-groups groups)
+;;; 一条流由三样东西组成, 装在一个 `flow` 值里:
+;;;   stages   层名 -> stage
+;;;   groups   组名 -> 层名列表
+;;;   default  默认层列表（`compile` 不指定选择器时用它）
 ;;;
-;;; The lists below remain the public spelling for the default backend flow.
+;;; 核心这条流叫 `core-flow`。别的前端（Loko）在自己的模块里 (extend-flow
+;;; core-flow …) 加自己的层和层组, 然后把 flow 绑进同一组函数里导出。
+;;; 于是: 每层只认自己的 s-expression, 引擎不知道也不关心是谁的流。
+;;;
+;;; 层契约只有 requires/provides 两个字段: 跑之前"在途值"里必须有什么,
+;;; 跑完写入什么。可选 = 不写进列表, 顺序 = 列表顺序, 平层 = 两个层
+;;; requires/provides 相同（layout 和 relax 就是这样）。
 
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
@@ -21,8 +28,10 @@
          (only-in "../encode/encode.rkt" encode-layout))
 
 (provide (struct-out stage)
-         core-stage-table
-         core-stage-groups
+         (struct-out flow)
+         make-flow
+         extend-flow
+         core-flow
          stage-names
          providers-of
          select-stages
@@ -31,17 +40,19 @@
          run-stage
          compile
          compile-image
-         context-value
+         flow-value
          default-flow)
 
 (struct stage (name requires provides run doc) #:transparent)
+
+;; 一条流: 层表 + 层组表 + 默认层列表。
+(struct flow (name stages groups default) #:transparent)
 
 (define core-stage-table
   (hash
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
-          (lambda (_target in)
-            (hash 'data-items (expand-data (hash-ref in 'rich-data))))
+          (lambda (_target in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
@@ -65,17 +76,6 @@
               (error 'expand-pseudo "pseudo instruction survived expansion: ~e" items))
             (hash 'program-items items))
           "伪指令 -> 真指令（短分支起步，交 relax 升级）")
-
-   'expand-pseudo-near
-   (stage 'expand-pseudo-near '(program-items) '(program-items)
-          (lambda (_target in)
-            (define items
-              (rewrite-program (hash-ref in 'program-items)
-                               #:short-transfers? #f))
-            (when (pseudo-leftover? items)
-              (error 'expand-pseudo-near "pseudo instruction survived expansion: ~e" items))
-            (hash 'program-items items))
-          "伪指令 -> 真指令（全部 near，用于快速验证；布局一次即可）")
 
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
@@ -132,50 +132,70 @@
 
 (define default-flow '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
 
-;; A group name must not shadow a stage name, and every member must exist.
-(for ([(g stages) (in-hash core-stage-groups)])
-  (when (hash-has-key? core-stage-table g)
-    (error 'flow "stage group ~a conflicts with a stage name" g))
-  (unless (and (list? stages)
-               (andmap symbol? stages)
-               (andmap (lambda (s) (hash-has-key? core-stage-table s)) stages))
-    (error 'flow "bad stage group ~a: ~e" g stages)))
+(define (make-flow name stages groups [default default-flow])
+  ;; 组名不能盖住层名; 组里每一项都必须是已有的层; 默认流也一样。
+  (for ([(g members) (in-hash groups)])
+    (when (hash-has-key? stages g)
+      (error 'flow "stage group ~a conflicts with a stage name" g))
+    (unless (and (list? members)
+                 (andmap symbol? members)
+                 (andmap (lambda (s) (hash-has-key? stages s)) members))
+      (error 'flow "bad stage group ~a: ~e" g members)))
+  (unless (and (list? default)
+               (andmap (lambda (s) (hash-has-key? stages s)) default))
+    (error 'flow "bad default flow ~a: ~e" name default))
+  (flow name stages groups default))
+
+;; 在自己的流上再挂一层/一个组。名字冲突就报错, 不静默覆盖。
+(define (extend-flow base name more-stages [more-groups '()])
+  (for ([(k _) (in-hash more-stages)])
+    (when (hash-has-key? (flow-stages base) k)
+      (error 'flow "stage ~a 已经存在（流 ~a）" k (flow-name base))))
+  (make-flow name
+             (for/fold ([h (flow-stages base)]) ([(k v) (in-hash more-stages)])
+               (hash-set h k v))
+             (for/fold ([h (flow-groups base)]) ([(k v) (in-hash more-groups)])
+               (hash-set h k v))
+             (flow-default base)))
+
+(define core-flow (make-flow 'core core-stage-table core-stage-groups))
 
 ;; ---------------------------------------------------------------------------
-;; generic engine over an explicit stage table
+;; 查询
 ;; ---------------------------------------------------------------------------
 
-(define (stage-names #:stage-table [table core-stage-table])
-  (sort (hash-keys table) symbol<?))
+(define (stage-names f)
+  (sort (hash-keys (flow-stages f)) symbol<?))
 
-(define (providers-of value #:stage-table [table core-stage-table])
-  (sort (for/list ([st (in-list (hash-values table))]
+(define (providers-of f value)
+  (sort (for/list ([st (in-list (hash-values (flow-stages f)))]
                    #:when (memq value (stage-provides st)))
           (stage-name st))
         symbol<?))
 
-(define (group-names #:stage-groups [groups core-stage-groups])
-  (sort (hash-keys groups) symbol<?))
+(define (group-names f)
+  (sort (hash-keys (flow-groups f)) symbol<?))
 
-(define (select-stages selector
-                       #:stage-table [table core-stage-table]
-                       #:stage-groups [groups core-stage-groups])
+(define (select-stages f selector)
   (define (walk x)
     (cond
       [(symbol? x)
        (cond
-         [(hash-has-key? table x) (list x)]
-         [(hash-has-key? groups x) (hash-ref groups x)]
+         [(hash-has-key? (flow-stages f) x) (list x)]
+         [(hash-has-key? (flow-groups f) x) (hash-ref (flow-groups f) x)]
          [else
           (error 'select-stages
                  "未知的层或层组 `~a`；已知层: ~a；已知组: ~a"
-                 x (stage-names #:stage-table table)
-                 (group-names #:stage-groups groups))])]
+                 x (stage-names f) (group-names f))])]
       [(list? x) (append* (for/list ([y (in-list x)]) (walk y)))]
       [else
        (error 'select-stages
               "选择器只能是层名/组名或它们的列表: ~e" x)]))
   (walk selector))
+
+;; ---------------------------------------------------------------------------
+;; 跑
+;; ---------------------------------------------------------------------------
 
 (define (seed-context seeds)
   (define ctx (make-hash))
@@ -189,22 +209,18 @@
             "seeds 必须是 (名字 . 值) 列表或 context hash: ~e" seeds)])
   ctx)
 
-(define (run-flow target selector [seeds '()]
-                  #:stage-table [table core-stage-table]
-                  #:stage-groups [groups core-stage-groups])
-  (define names (select-stages selector
-                               #:stage-table table
-                               #:stage-groups groups))
+(define (run-flow f target selector [seeds '()])
+  (define names (select-stages f selector))
   (define ctx (seed-context seeds))
   (define timing? (and (getenv "AMD64_FLOW_TIMING") #t))
   (for ([n (in-list names)] [step (in-naturals)])
-    (define st (hash-ref table n))
+    (define st (hash-ref (flow-stages f) n))
     (for ([r (in-list (stage-requires st))])
       (unless (hash-has-key? ctx r)
         (error 'run-flow
                "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
                step n r
-               (let ([ps (providers-of r #:stage-table table)])
+               (let ([ps (providers-of f r)])
                  (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
     (define in (for/hash ([r (in-list (stage-requires st))])
                  (values r (hash-ref ctx r))))
@@ -216,39 +232,23 @@
     (for ([(k v) (in-hash produced)]) (hash-set! ctx k v)))
   ctx)
 
-(define (run-stage target name [seeds '()]
-                   #:stage-table [table core-stage-table]
-                   #:stage-groups [groups core-stage-groups])
-  (unless (and (symbol? name) (hash-has-key? table name))
+(define (run-stage f target name [seeds '()])
+  (unless (and (symbol? name) (hash-has-key? (flow-stages f) name))
     (error 'run-stage
            "~a 不是层名；已知层: ~a；已知组: ~a（层组/片段用 run-flow）"
-           name (stage-names #:stage-table table)
-           (group-names #:stage-groups groups)))
-  (define st (hash-ref table name))
-  (define ctx (run-flow target (list name) seeds
-                        #:stage-table table
-                        #:stage-groups groups))
+           name (stage-names f) (group-names f)))
+  (define st (hash-ref (flow-stages f) name))
+  (define ctx (run-flow f target (list name) seeds))
   (for/hash ([v (in-list (stage-provides st))])
     (values v (hash-ref ctx v))))
 
-(define (context-value ctx name)
+(define (flow-value ctx name)
   (hash-ref ctx name
             (lambda ()
-              (error 'context-value "流里没有 `~a`（有的: ~a）"
-                     name (hash-keys ctx)))))
+              (error 'flow-value "流里没有 `~a`（有的: ~a）" name (hash-keys ctx)))))
 
-(define (compile target seeds [flow default-flow]
-                 #:stage-table [table core-stage-table]
-                 #:stage-groups [groups core-stage-groups])
-  (context-value (run-flow target flow seeds
-                           #:stage-table table
-                           #:stage-groups groups)
-                 'build))
+(define (compile f target seeds [selector #f])
+  (flow-value (run-flow f target (or selector (flow-default f)) seeds) 'build))
 
-(define (compile-image target seeds [flow default-flow]
-                       #:stage-table [table core-stage-table]
-                       #:stage-groups [groups core-stage-groups])
-  (context-value (run-flow target flow seeds
-                           #:stage-table table
-                           #:stage-groups groups)
-                 'image))
+(define (compile-image f target seeds [selector #f])
+  (flow-value (run-flow f target (or selector (flow-default f)) seeds) 'image))

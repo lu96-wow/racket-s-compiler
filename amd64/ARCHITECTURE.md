@@ -16,7 +16,7 @@
 | `amd64-asm/sexp.rkt` | 兼容 facade：shape.rkt + memory.rkt |
 | `amd64-asm/shape.rkt` | form / name / path / 地址表达式 |
 | `amd64-asm/memory.rkt` | amd64 内存操作数形状与解析 |
-| `compiler/item.rkt` | `label` / `comment` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
+| `compiler/item.rkt` | `label` / `bytes` / `fill` / `pad` / `align` / `value` / `reserve` / item-kind |
 | `amd64-asm/insn.rkt` | 稳定 facade：`instruction-plan` / `plan-size` / `encode-plan` / `encode-instruction` |
 | `amd64-asm/plan.rkt` | 统一 `resolved-plan`；special 与 generated plan 的 size/encode 入口 |
 | `amd64-asm/encoding-plan.rkt` | 手写 special 的底层 plan：literal / rm-plan / size / bytes |
@@ -53,16 +53,25 @@ loko      -> compiler + amd64-elf + loko-compatibility
 ## 2. 流水线
 
 ```text
+rich data -> expand-data -> flatten -> program-items / data-items
+  -> expand-pseudo -> analyze -> dce
+  -> relax (内部反复 layout) -> bind-labels -> encode -> build
+
 loko-source -> loko-compat -> loko-ir
   -> loko-lower (可选)
   -> loko-image -> program-items / data-items / layout-spec
-  -> expand-pseudo -> analyze -> dce
-  -> relax (内部反复 layout) -> bind-labels -> encode
-  -> loko-elf (可选) -> image
-
-rich data -> expand-data -> flatten -> program-items / data-items
   -> 同一后半段
+  -> loko-elf (可选) -> image
 ```
+
+两条流水线在后半段**完全一样**：`compiler/` 的层只认核心 item 语言，
+不知道 Loko。前端（`loko-compatibility/`）负责把旧写法翻成核心 item；
+镜像格式（`amd64-elf/`）只在 `loko-elf` 这一步被用到。
+
+每一层都是"自己的 s-expression 进、自己的 s-expression 出"，只有三处载荷
+不是普通 item 列表，而且都是shape 固定的 s-expression：
+`program`（blocks + flows，struct 包一下）、`measured/bound-layout`（
+`((phase …) (segments …) …)`）、`build`（`(build (segment …) …)`）。
 
 `layout` 是可单独选择的 stage；默认流不直接写 `layout`。
 `loko-compat`（目录 `loko-compatibility/`）把旧写法变换成核心 item，并采集
@@ -76,19 +85,40 @@ rich data -> expand-data -> flatten -> program-items / data-items
 
 | stage | requires | provides |
 | --- | --- | --- |
-| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-aliases` `loko-ir` |
+| `loko-compat` | `loko-source` | `program-items` `data-items` `loko-ir` |
 | `loko-image`（可选） | `loko-ir` | `program-items` `data-items` `layout-spec` |
 | `loko-elf`（可选） | `build` `bound-layout` `loko-ir` | `image` |
 | `loko-lower`（可选） | `loko-ir` | `loko-ir` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
+| `expand-pseudo-near`（仅 `loko-near`） | `program-items` | `program-items` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
 | `layout` | `program` `data-items` `layout-spec` | `measured-layout`（含地址求解） |
 | `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
+
+层的归属：`compiler/flow/core.rkt` 只注册上面 9 个核心层；`expand-pseudo-near`
+是一个**只为 `loko-near` 验证流存在**的变体（全 near，不跑 relax），它注册在
+`loko-compatibility/flow.rkt` 里 —— 谁需要变体，谁定义变体。
+
+### 3.1 流本身也是一个值
+
+`compiler/flow/core.rkt` 定义 `(struct flow (name stages groups default))` 和
+`core-flow`。前端加层的方式是 `(extend-flow core-flow 'loko 层表 层组表)`，
+拿到自己的 `flow`，再把它绑进同一组函数名前导出（`compiler/flow/flow.rkt` 和
+`loko-compatibility/flow.rkt` 形状相同）。引擎函数都以 `flow` 为第一个参数：
+
+```racket
+(run-flow flow target selector seeds)   ; 跑一个选择器
+(run-stage flow target name seeds)      ; 只跑一层
+(compile flow target seeds [selector])  ; 默认流 -> build
+(compile-image flow target seeds [selector])
+```
+
+没有 `#:stage-table` 这类关键字参数：流是数据，不是全局配置。
 
 允许的跨层依赖：
 
@@ -225,7 +255,11 @@ symbols: (symbol chain segment offset address)
 ;; 可选 Loko/ELF 流：只有这里加载 loko-compatibility 和 amd64-elf
 (require "amd64/loko-compatibility/flow.rkt")
 
-(compile target-amd64
-         (list (cons 'loko-source ...))
-         'loko-manual)
+(compile target-amd64 (list (cons 'loko-source ...)) 'loko-manual)
+(compile-image target-amd64 (list (cons 'loko-source ...)))   ; 默认 'elf
 ```
+
+两个模块导出同一组名字（`run-flow` / `run-stage` / `compile` / `compile-image` /
+`select-stages` / `stage-names` / `providers-of` / `group-names` / `flow-value` /
+`stage-table` / `default-flow`），区别只是绑在哪条 `flow` 上。要检查层表就
+`(hash-ref stage-table 'encode)`，要跑任意片段就 `(run-flow target '(dce layout) seeds)`。

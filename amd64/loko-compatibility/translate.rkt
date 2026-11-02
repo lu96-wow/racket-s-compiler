@@ -7,7 +7,7 @@
 ;;;
 ;;;   mem64+ / mem+ / mem128+       -> b64 / bN / b128 命名字段
 ;;;   %label                         -> label + symbol metadata
-;;;   %comment                       -> comment
+;;;   %comment                       -> 丢掉（Loko 自己的调试/活性注记, 不产生字节）
 ;;;   %align                         -> align（不处理显式非零填充字节）
 ;;;   %u8/%u16/%u32/%u64/%u128       -> value
 ;;;   %vu8                           -> bytes
@@ -47,7 +47,7 @@
          "../amd64-asm/registers.rkt"
          (prefix-in cc: "../amd64-help/cc.rkt")
          (only-in "../compiler/item.rkt"
-                  make-label make-comment make-align make-bytes-item
+                  make-label make-align make-bytes-item
                   make-value make-reserve)
          (only-in "../compiler/problem.rkt" make-problem)
          "../compiler/item.rkt"
@@ -108,14 +108,11 @@
 (define (record-problem! ctx p)
   (set-ctx-problems! ctx (cons p (ctx-problems ctx))))
 
-(define (record-problem-as-comment! ctx p)
+;; 报一个问题, 并且**不产出 item**。流层把非空的 problems 当错误, 所以
+;; 这里不需要再往 item 流里塞注释; translation 的产物仍然是纯 item 列表。
+(define (report-problem! ctx p)
   (record-problem! ctx p)
-  (list (problem->comment-form p)))
-
-(define (problem->comment-form p)
-  (make-comment
-   (apply make-problem 'loko-compat-problem
-          (loko-problem-kind p) (loko-problem-detail p))))
+  '())
 
 (define (record-symbol! ctx start end misc)
   (set-ctx-symbols! ctx
@@ -563,7 +560,7 @@
 (define (translate-label ctx item)
   (match (cdr item)
     [(list)
-     (record-problem-as-comment! ctx (problem 'empty-label item))]
+     (report-problem! ctx (problem 'empty-label item))]
     [(list start)
      (define start* (label-object->path ctx start))
      (record-symbol! ctx start* start* '())
@@ -581,15 +578,15 @@
     [(list n)
      (if (exact-positive-integer? n)
          (list (make-align n))
-         (record-problem-as-comment! ctx (problem 'bad-align item)))]
+         (report-problem! ctx (problem 'bad-align item)))]
     [(list n byte)
      (cond
        [(not (exact-positive-integer? n))
-        (record-problem-as-comment! ctx (problem 'bad-align item))]
+        (report-problem! ctx (problem 'bad-align item))]
        [(not (eqv? byte 0))
-        (record-problem-as-comment! ctx (problem 'align-fill-not-supported item))]
+        (report-problem! ctx (problem 'align-fill-not-supported item))]
        [else (list (make-align n))])]
-    [_ (record-problem-as-comment! ctx (problem 'bad-align item))]))
+    [_ (report-problem! ctx (problem 'bad-align item))]))
 
 (define (integer-directive-width h)
   (case h
@@ -623,7 +620,7 @@
     [else
      (define e (translate-expr ctx value))
      (cond
-       [(problem? e) (record-problem-as-comment! ctx e)]
+       [(problem? e) (report-problem! ctx e)]
        [(= width 16) (translate-u128 ctx e)]
        [else (list (make-value width e))])]))
 
@@ -637,7 +634,7 @@
    (for/list ([v (in-list (cdr item))])
      (if (bytes? v)
          (bytes->item v)
-         (record-problem-as-comment! ctx (problem 'bad-vu8 v))))))
+         (report-problem! ctx (problem 'bad-vu8 v))))))
 
 (define (translate-utf8z ctx item)
   (append*
@@ -646,7 +643,7 @@
          (list (make-bytes-item
                 (append (for/list ([b (in-bytes (string->bytes/utf-8 v))]) b)
                         (list 0))))
-         (record-problem-as-comment! ctx (problem 'bad-utf8z v))))))
+         (report-problem! ctx (problem 'bad-utf8z v))))))
 
 ;; 条件码表在 amd64-help/cc.rkt（expand-pseudo / mode32 共用同一张）。
 ;; 认不出来的拼写原样往下走: 编码层会报"未知指令", 不会静默编错。
@@ -690,15 +687,11 @@
      (lambda (p)
        (define inner-out
          (translate-instruction ctx (cons (cdr p) (cdr item))))
+       ;; 内层没产出 item 就说明它已经报过问题了(problems 里有), 前缀也不产出。
        (cond
-         [(and (= 1 (length inner-out))
-               (form? (car inner-out))
-               (eq? (caar inner-out) 'comment)
-               (form? (cadar inner-out))
-               (eq? (caadar inner-out) 'loko-compat-problem))
-          inner-out]
-         [else
-          (list (list 'prefix (car p) (car inner-out)))]))]
+         [(and (= 1 (length inner-out)) (form? (car inner-out)))
+          (list (list 'prefix (car p) (car inner-out)))]
+         [else '()]))]
 
     ;; 远跳 (jmpf (far 选择子 目标)) -> (jmp-far 选择子 目标)。目标是**绝对**
     ;; 地址表达式, encode 时解析; 尺寸固定 7 字节, 不参与 relax。
@@ -707,17 +700,17 @@
        [(list (list 'far sel target))
         (if (exact-integer? sel)
             (list (list 'jmp-far sel (translate-operand ctx target 4)))
-            (record-problem-as-comment! ctx (problem 'bad-far-jump item)))]
-       [_ (record-problem-as-comment! ctx (problem 'bad-far-jump item))])]
+            (report-problem! ctx (problem 'bad-far-jump item)))]
+       [_ (report-problem! ctx (problem 'bad-far-jump item))])]
 
     [(eq? h 'setcc)
      (match (cdr item)
        [(list cc rm)
         (define op (translate-operand ctx rm 8))
         (if (problem? op)
-            (record-problem-as-comment! ctx op)
+            (report-problem! ctx op)
             (list (list 'setcc (canonical-cc cc) op)))]
-       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
+       [_ (report-problem! ctx (problem 'bad-conditional item))])]
 
     [(eq? h 'cmovcc)
      (match (cdr item)
@@ -725,24 +718,24 @@
         (define d (translate-operand ctx dst default-width))
         (define s* (translate-operand ctx src default-width))
         (cond
-          [(problem? d) (record-problem-as-comment! ctx d)]
-          [(problem? s*) (record-problem-as-comment! ctx s*)]
+          [(problem? d) (report-problem! ctx d)]
+          [(problem? s*) (report-problem! ctx s*)]
           [else (list (list 'cmovcc (canonical-cc cc) d s*))])]
-       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
+       [_ (report-problem! ctx (problem 'bad-conditional item))])]
 
     [(memq h '(jcc jcc-short jcc-near))
      (match (cdr item)
        [(list cc target)
         (define t (translate-operand ctx target 64))
         (if (problem? t)
-            (record-problem-as-comment! ctx t)
+            (report-problem! ctx t)
             (list (list h (canonical-cc cc) t)))]
-       [_ (record-problem-as-comment! ctx (problem 'bad-conditional item))])]
+       [_ (report-problem! ctx (problem 'bad-conditional item))])]
 
     [(and (setcc-head? h) (setcc-head-cc h))
      (define op (translate-operand ctx (cadr item) 8))
      (if (problem? op)
-         (record-problem-as-comment! ctx op)
+         (report-problem! ctx op)
          (list (list 'setcc (setcc-head-cc h) op)))]
 
     [(and (cmovcc-head? h) (cmovcc-head-cc h))
@@ -751,7 +744,7 @@
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (if p
-         (record-problem-as-comment! ctx p)
+         (report-problem! ctx p)
          (list (cons 'cmovcc (cons (cmovcc-head-cc h) ops))))]
 
     [else
@@ -760,7 +753,7 @@
          (translate-operand ctx op default-width)))
      (define p (for/first ([op (in-list ops)] #:when (problem? op)) op))
      (cond
-       [p (record-problem-as-comment! ctx p)]
+       [p (report-problem! ctx p)]
        [(and (memq h '(jmp call))
              (= 2 (length item))
              (or (loko-memory? (cadr item))
@@ -786,12 +779,12 @@
     (define section-kind* (section-state-kind (current-section-state! ctx)))
     (cond
       [(not (eq? section-kind* 'code))
-       (record-problem-as-comment! ctx (problem 'init-bss-not-in-code item))]
-      [(not start*) (record-problem-as-comment! ctx (problem 'bad-init-bss-label start))]
-      [(not end*) (record-problem-as-comment! ctx (problem 'bad-init-bss-label end))]
-      [(not mode) (record-problem-as-comment! ctx (problem 'init-bss-mode-not-set item))]
+       (report-problem! ctx (problem 'init-bss-not-in-code item))]
+      [(not start*) (report-problem! ctx (problem 'bad-init-bss-label start))]
+      [(not end*) (report-problem! ctx (problem 'bad-init-bss-label end))]
+      [(not mode) (report-problem! ctx (problem 'init-bss-mode-not-set item))]
       [(not (= mode 64))
-       (record-problem-as-comment! ctx (problem 'init-bss-mode-unsupported item mode))]
+       (report-problem! ctx (problem 'init-bss-mode-unsupported item mode))]
       [else
        (list '(cld)
              (list 'li 'rdi start*)
@@ -805,7 +798,7 @@
   (match (cdr item)
     [(list) (expand 'bss 'bss-end)]
     [(list start end) (expand start end)]
-    [_ (record-problem-as-comment! ctx (problem 'bad-init-bss item))]))
+    [_ (report-problem! ctx (problem 'bad-init-bss item))]))
 
 (define (plan-field fields key)
   (cond ((assq key fields) => cadr)
@@ -819,11 +812,11 @@
   (define align (plan-field fields 'align))
   (cond
     [(not (symbol? id))
-     (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
+     (report-problem! ctx (problem 'bad-elf-load fields))]
     [(not (known-plan-fields? fields '(id align)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-load fields))]
+     (report-problem! ctx (problem 'bad-elf-load fields))]
     [(and align (not (exact-positive-integer? align)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-load-align align))]
+     (report-problem! ctx (problem 'bad-elf-load-align align))]
     [else
      (list (append (list 'load (list 'id id))
                    (if align (list (list 'align align)) '())))]))
@@ -837,19 +830,19 @@
   (define load (plan-field fields 'load))
   (cond
     [(not (symbol? id))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region fields))]
+     (report-problem! ctx (problem 'bad-elf-region fields))]
     [(not (known-plan-fields? fields '(id content section perm align load)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region fields))]
+     (report-problem! ctx (problem 'bad-elf-region fields))]
     [(and content (not (memq content '(materialized reserved))))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region-content content))]
+     (report-problem! ctx (problem 'bad-elf-region-content content))]
     [(and section (not (or (symbol? section) (string? section))))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region-section section))]
+     (report-problem! ctx (problem 'bad-elf-region-section section))]
     [(and perm (not (or (symbol? perm) (string? perm))))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region-perm perm))]
+     (report-problem! ctx (problem 'bad-elf-region-perm perm))]
     [(and align (not (exact-positive-integer? align)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region-align align))]
+     (report-problem! ctx (problem 'bad-elf-region-align align))]
     [(and load (not (symbol? load)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-region-load load))]
+     (report-problem! ctx (problem 'bad-elf-region-load load))]
     [else
      (list (append (list 'region (list 'id id))
                    (if content (list (list 'content content)) '())
@@ -867,15 +860,15 @@
   (define name* (and name (label-ref-path ctx name)))
   (cond
     [(not name*)
-     (record-problem-as-comment! ctx (problem 'bad-elf-symbol-name name))]
+     (report-problem! ctx (problem 'bad-elf-symbol-name name))]
     [(not (symbol? region))
-     (record-problem-as-comment! ctx (problem 'bad-elf-symbol-region region))]
+     (report-problem! ctx (problem 'bad-elf-symbol-region region))]
     [(not (known-plan-fields? fields '(name region size type bind)))
-     (record-problem-as-comment! ctx (problem 'bad-elf-symbol fields))]
+     (report-problem! ctx (problem 'bad-elf-symbol fields))]
     [else
      (define size* (if size (translate-expr ctx size) #f))
      (cond
-       [(problem? size*) (record-problem-as-comment! ctx size*)]
+       [(problem? size*) (report-problem! ctx size*)]
        [else
         (list (append (list 'symbol (list 'name name*))
                       (list (list 'region region))
@@ -888,12 +881,12 @@
     [(list 'entry expr)
      (define e (translate-expr ctx expr))
      (if (problem? e)
-         (record-problem-as-comment! ctx e)
+         (report-problem! ctx e)
          (list (list 'entry e)))]
     [(cons 'load fields) (translate-elf-load ctx fields)]
     [(cons 'region fields) (translate-elf-region ctx fields)]
     [(cons 'symbol fields) (translate-elf-symbol ctx fields)]
-    [_ (record-problem-as-comment! ctx (problem 'bad-elf-clause clause))]))
+    [_ (report-problem! ctx (problem 'bad-elf-clause clause))]))
 
 (define (translate-elf ctx item)
   (define clauses (append* (for/list ([c (in-list (cdr item))])
@@ -908,7 +901,7 @@
      (define h (car item))
      (case h
        [(%label) (translate-label ctx item)]
-       [(%comment) (list (apply make-comment (cdr item)))]
+       [(%comment) '()]
        [(%align) (translate-align ctx item)]
        [(%u8 %u16 %u32 %u64 %u128) (translate-integer-data ctx item)]
        [(%vu8) (translate-vu8 ctx item)]
@@ -919,15 +912,15 @@
           [(list name)
            (if (name? name)
                (begin (select-section! ctx name) '())
-               (record-problem-as-comment! ctx (problem 'bad-section item)))]
-          [_ (record-problem-as-comment! ctx (problem 'bad-section item))])]
+               (report-problem! ctx (problem 'bad-section item)))]
+          [_ (report-problem! ctx (problem 'bad-section item))])]
        [(%origin)
         (match (cdr item)
           [(list n)
            (if (exact-integer? n)
                (begin (set-ctx-origin! ctx n) '())
-               (record-problem-as-comment! ctx (problem 'bad-origin item)))]
-          [_ (record-problem-as-comment! ctx (problem 'bad-origin item))])]
+               (report-problem! ctx (problem 'bad-origin item)))]
+          [_ (report-problem! ctx (problem 'bad-origin item))])]
        [(%mode)
         (match (cdr item)
           [(list n)
@@ -936,8 +929,8 @@
                  (set-ctx-current-mode! ctx n)
                  (add-mode-run! ctx n)
                  '())
-               (record-problem-as-comment! ctx (problem 'bad-mode item)))]
-          [_ (record-problem-as-comment! ctx (problem 'bad-mode item))])]
+               (report-problem! ctx (problem 'bad-mode item)))]
+          [_ (report-problem! ctx (problem 'bad-mode item))])]
        [(%init-bss) (translate-init-bss ctx item)]
        [(%comm) (translate-comm ctx item)]
        [(%elf) (translate-elf ctx item)]
@@ -945,7 +938,7 @@
         ;; 汇编期闭包: 拿 assemble!/ip/symbols/bss 直接发 item, 不可序列化。
         ;; 它的三处用途全是 ELF writer(头回卷 / strtab / symtab), 由 image 层重新生成;
         ;; 正常输入里它们已经被 (%elf-header) / (%elf-tail) 标记取代。
-        (record-problem-as-comment! ctx (problem 'directive-needs-image-layer item))]
+        (report-problem! ctx (problem 'directive-needs-image-layer item))]
        [(%elf-header %elf-tail)
         ;; 标记本身不产生 item; 正常路径在 strip-elf-wrapper 里就消费掉了。
         '()]
@@ -1003,19 +996,19 @@
      (define size* (translate-expr ctx size))
      (define align* (translate-expr ctx align))
      (cond
-       [(not name*) (record-problem-as-comment! ctx (problem 'bad-comm-name name))]
-       [(problem? size*) (record-problem-as-comment! ctx size*)]
-       [(problem? align*) (record-problem-as-comment! ctx align*)]
+       [(not name*) (report-problem! ctx (problem 'bad-comm-name name))]
+       [(problem? size*) (report-problem! ctx size*)]
+       [(problem? align*) (report-problem! ctx align*)]
        [(not (exact-nonnegative-integer? size*))
-        (record-problem-as-comment! ctx (problem 'bad-comm-size item size*))]
+        (report-problem! ctx (problem 'bad-comm-size item size*))]
        [(not (exact-positive-integer? align*))
-        (record-problem-as-comment! ctx (problem 'bad-comm-align item align*))]
+        (report-problem! ctx (problem 'bad-comm-align item align*))]
        [else
         (set-ctx-comms! ctx
                         (cons (list 'comm name* size* align*)
                               (ctx-comms ctx)))
         '()])]
-    [_ (record-problem-as-comment! ctx (problem 'bad-comm item))]))
+    [_ (report-problem! ctx (problem 'bad-comm item))]))
 
 ;; ELF writer 的两段产物由 image 层重新生成, 前端只负责丢:
 ;;   (%elf-header)  镜像头(ELF header + program headers)
@@ -1063,15 +1056,16 @@
     (define program-items (items-of-kind '(code)))
     (define data-items (items-of-kind '(data bss)))
 
+    ;; 解不出来的 alias 已经在 resolve-alias 里报成 problem, 这里只留值。
     (define aliases
       (for/list ([name (in-list alias-names)])
         (define v (resolve-alias ctx name '()))
-        (list 'alias name (if (problem? v) (problem->comment-form v) v))))
+        (and (not (problem? v)) (list 'alias name v))))
 
     (list 'loko-compat
           (cons 'program-items program-items)
           (cons 'data-items data-items)
-          (cons 'aliases aliases)
+          (cons 'aliases (filter values aliases))
           (cons 'symbols (reverse (ctx-symbols ctx)))
           (cons 'comms (reverse (ctx-comms ctx)))
           (cons 'image-plan (reverse (ctx-image-plan ctx)))

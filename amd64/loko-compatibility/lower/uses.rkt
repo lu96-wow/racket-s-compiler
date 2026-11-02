@@ -69,7 +69,7 @@
      (define h (car inst))
      (define ops (cdr inst))
      (case h
-       [(label comment align pad bytes fill value) (values '() '())]
+       [(label align pad bytes fill value) (values '() '())]
 
        [(prefix)
         (match ops

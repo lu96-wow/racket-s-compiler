@@ -8,9 +8,6 @@
 (check-equal? (make-label '(a b)) '(label a b))
 (check-equal? (label-chain (make-label '(a b))) '(a b))
 
-(check-equal? (make-comment 'liveness 'x) '(comment liveness x))
-(check-true (comment-form? (make-comment 'x)))
-
 (check-equal? (make-align 16) '(align 16))
 (check-true (align-form? (make-align 16)))
 (check-equal? (align-value (make-align 16)) 16)

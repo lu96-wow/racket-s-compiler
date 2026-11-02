@@ -47,7 +47,6 @@
                 (call-indirect (b64 (disp (*panic))))
                 (jmp (done))
                 (align 8)
-                (comment hello 1)
                 (label done)
                 (ret)))
 

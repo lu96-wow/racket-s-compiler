@@ -30,8 +30,8 @@
          "../../amd64-asm/target.rkt"
          "../ir.rkt"
          (only-in "../../compiler/item.rkt"
-                  label-form? label-chain comment-form? align-form?
-                  make-label make-comment)
+                  label-form? label-chain align-form?
+                  make-label)
          (only-in "../../compiler/layout/forms.rkt"
                   item-size align-pad make-segment-form make-place
                   make-layout-spec make-problem)
@@ -92,8 +92,7 @@
     (cond
       [(align-form? item)
        (+ cursor (align-pad (+ start cursor) (cadr item)))]
-      [(or (label-form? item) (comment-form? item))
-       cursor]
+      [(label-form? item) cursor]
       [else
        (+ cursor (item-size target-amd64 item))])))
 
@@ -183,14 +182,9 @@
 
        (case kind
          [(code) (set! program-items (append program-items items))]
-         [else
-          ;; Keep adjacent labels from different sections from turning
-          ;; into one data unit (and thus ambiguous place rules).
-          (when (pair? data-items)
-            (set! data-items
-                  (append data-items
-                          (list (make-comment 'section-boundary segment-name)))))
-          (set! data-items (append data-items items))])]))
+         ;; 直接拼接: 两段的交界没有 item, 但 layout 会在 data 侧按 label 切
+         ;; unit(不做别名合并), 所以不会把两段的 label 混进同一个 unit。
+         [else (set! data-items (append data-items items))])]))
 
   (values (make-layout-spec (reverse segments) (reverse places) origin)
           program-items

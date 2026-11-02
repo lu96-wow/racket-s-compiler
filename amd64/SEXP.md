@@ -32,7 +32,6 @@
 
 ```scheme
 (label main)
-(comment liveness-information)
 (value 8 (data))
 (bytes 1 2 3)
 (fill 16 0)
@@ -57,9 +56,9 @@ hole 段（有位置、没有文件字节）：
 
 | kind | 收的 item | `(align n)` 的产物 | 文件字节 |
 | --- | --- | --- | --- |
-| `code` | `label` / `comment` / `align` / `pad` / 指令 / 数据（header、跳转表） | `(pad n)` | 有 |
-| `data` | `label` / `comment` / `align` / `pad` / `bytes` / `fill` / `value` | `(pad n)` | 有 |
-| `hole` | `label` / `comment` / `align` / `reserve` | `(reserve n)` | **没有** |
+| `code` | `label` / `align` / `pad` / 指令 / 数据（header、跳转表） | `(pad n)` | 有 |
+| `data` | `label` / `align` / `pad` / `bytes` / `fill` / `value` | `(pad n)` | 有 |
+| `hole` | `label` / `align` / `reserve` | `(reserve n)` | **没有** |
 
 `hole` 段只回答“这些地址存在”；内容不由本产物定义（loader / 程序 / 硬件决定），
 所以 `build` 里它的 `bytes` 是 `#""`，`size` 照旧。谁把它清成 0、什么时候清，

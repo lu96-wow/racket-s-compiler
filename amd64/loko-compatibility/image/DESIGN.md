@@ -58,8 +58,8 @@ problems
   早于地址分配；`loko-elf` 用同一个纯函数再解析一次，结果一致。
 - 该 section 的所有 label 生成一条 `place`。
 - 空 section 允许 `start == end`。
-- data/bss section 之间插入零尺寸 `(comment section-boundary ...)`，避免相邻
-  section 的 label 被 `<data-items>` 误合并成一个 data unit。
+- data/bss section 直接按顺序拼接；`layout` 在 data 侧按 label 切 unit 且
+  **不做别名合并**，所以相邻 section 的 label 不会被误并成一个 unit。
 - code section 不是 64 位时产生 `mode-unsupported` problem。
 
 ### 边界

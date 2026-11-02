@@ -124,8 +124,12 @@
 ;; data: 每个 label 都切(数据段按 label 划分 run)。
 ;; flat: 只有 place 规则认得的 label 才切; 落在 body 后面的其它 label 留在
 ;;       body 里当位置标记。
-;; 紧挨着的 label(中间没有 item)位置相同, 归同一个 unit 当别名。
-(define (items->units items split-at-label? kind)
+;; 紧挨着的 label(中间没有 item)位置相同, 默认归同一个 unit 当别名;
+;; merge-aliases? = #f 时每个 label 自己一个 unit(位置照样相同, 只是不合并)。
+;; data 侧用 #f: 两个 section 的交界处本来没有 item, 合并会把两段的 label
+;; 塞进同一个 unit, 于是"这个 unit 属于哪一段"变成歧义。
+(define (items->units items split-at-label? kind
+                      #:merge-aliases? [merge-aliases? #t])
   (define out '())
   (define labels '())
   (define body '())
@@ -140,7 +144,7 @@
        (define chain (label-chain it))
        (cond
          [(split-at-label? chain)
-          (if (and (pair? labels) (null? body))
+          (if (and merge-aliases? (pair? labels) (null? body))
               (set! labels (cons chain labels))
               (begin (flush!) (set! labels (list chain))))]
          [(null? body) (set! labels (cons chain labels))]
@@ -237,7 +241,6 @@
   (define (emit-item! it origin)
     (cond
       [(label-form? it) (anchor! (label-chain it))]
-      [(comment-form? it) (void)]
       [(align-form? it)
        (define n (align-pad (+ start cursor) (align-value it)))
        ;; 补出来的空间算不算文件字节由段 kind 定:
@@ -447,7 +450,8 @@
     (place-units (program->units prog) rules wildcard problem!
                  #:sticky? #t #:unplaced 'unplaced-block))
   (define data-by-seg
-    (place-units (items->units (program->items data-items) (lambda (_chain) #t) 'data)
+    (place-units (items->units (program->items data-items) (lambda (_chain) #t) 'data
+                               #:merge-aliases? #f)
                  rules wildcard problem! #:unplaced 'unplaced-data))
   (define units-by-seg (units-by-segment segments code-by-seg data-by-seg))
   (define-values (measured anchors requests)
