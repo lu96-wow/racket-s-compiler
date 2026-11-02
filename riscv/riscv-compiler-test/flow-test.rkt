@@ -17,10 +17,10 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze bind-labels dce encode expand-data expand-pseudo flatten gas-syntax layout relax))
+              '(analyze bind-labels dce encode expand-data expand-pseudo flatten layout relax))
 
 (check-equal? (providers-of 'data-items) '(expand-data flatten))
-(check-equal? (providers-of 'program-items) '(expand-pseudo flatten gas-syntax))
+(check-equal? (providers-of 'program-items) '(expand-pseudo flatten))
 (check-equal? (providers-of 'names) '(flatten))
 (check-equal? (providers-of 'program) '(analyze dce))
 (check-equal? (providers-of 'measured-layout) '(layout relax))
@@ -93,7 +93,7 @@
 ;; 选择器 / 层组 / 单层
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (group-names) '(alias all backend frontend gas ir))
+(check-equal? (group-names) '(alias all backend frontend ir))
 (check-equal? (hash-ref stage-groups 'frontend)
               '(expand-data flatten))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))

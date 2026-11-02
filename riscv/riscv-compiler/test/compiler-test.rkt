@@ -3,7 +3,6 @@
 ;;;
 ;;; 汇编器契约测试:
 ;;;   - native 是默认基础语法
-;;;   - GAS 是可选重写层
 ;;;   - 便利别名是另一个可选层
 ;;;   - analyze / relax / encode 不再假设“目标在最后一个操作数”
 
@@ -14,7 +13,6 @@
          (only-in "../layout/layout.rkt" layout-problems)
          (only-in "../analyze/insn.rkt"
                   jump-target jump-target-position jump-register)
-         (only-in "../gas-syntax/rewrite.rkt" gas-rewrite)
          (only-in "../encode/syntax/coverage.rkt" syntax-coverage))
 
 (define target target-rv64-base)
@@ -55,18 +53,7 @@
     (label end)
     (jalr x0 ra 0)))
 
-(define gas-src
-  '((label main)
-    (sw t0 sp 8)
-    (beq a0 a1 (hot))
-    (jal x0 (end))
-    (label hot)
-    (ld t0 sp 8)
-    (jalr x0 ra 0)
-    (label end)
-    (jalr x0 ra 0)))
-
-;; 和旧实现（GAS canonical）逐字节对齐的结果。
+;; golden bytes：native 写法逐字节对照。
 (define expected-code-bytes
   '(35 36 81 0
     99 4 181 0
@@ -79,48 +66,12 @@
 ;; native 是默认流
 ;; ---------------------------------------------------------------------------
 
-(check-false (memq 'gas-syntax default-flow))
 (check-false (memq 'expand-pseudo default-flow))
 
 (define native-out (run-code default-flow native-src code-spec))
 (check-equal? (layout-problems (flow-value native-out 'bound-layout)) '())
 (check-equal? (seg-size (flow-value native-out 'build) 'c) 24)
 (check-equal? (seg-bytes (flow-value native-out 'build) 'c) expected-code-bytes)
-
-;; ---------------------------------------------------------------------------
-;; GAS 是可选重写层: 同一份程序应该得到同样字节
-;; ---------------------------------------------------------------------------
-
-(define gas-flow
-  '(expand-data flatten gas-syntax analyze dce relax bind-labels encode))
-
-(define gas-out (run-code gas-flow gas-src code-spec))
-
-(check-equal? (flow-value gas-out 'program-items)
-              '((label main)
-                (sw 8 sp t0)
-                (beq (hot) a0 a1)
-                (jal x0 (end))
-                (label hot)
-                (ld t0 sp 8)
-                (jalr x0 ra 0)
-                (label end)
-                (jalr x0 ra 0)))
-(check-equal? (layout-problems (flow-value gas-out 'bound-layout)) '())
-(check-equal? (seg-bytes (flow-value gas-out 'build) 'c) expected-code-bytes)
-
-;; GAS 的直接重写规则
-(check-equal? (gas-rewrite target
-                           '((sw t0 sp 8)
-                             (beq a0 a1 (L))
-                             (ble a0 a1 (L))
-                             (csrrw a0 mstatus a1)
-                             (amoadd.d.aqrl a0 a2 a1)))
-              '((sw 8 sp t0)
-                (beq (L) a0 a1)
-                (ble (L) a0 a1)
-                (csrrw a0 a1 mstatus)
-                (amoadd.d.aqrl a0 a1 a2)))
 
 ;; ---------------------------------------------------------------------------
 ;; native 分支操作数位置

@@ -7,7 +7,7 @@
 ;;;             (list 'expand-data 'flatten 'analyze 'dce 'relax 'bind-labels 'encode)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
-;;;   GAS 方言在 flatten 后插 'gas-syntax；便利别名插 'expand-pseudo。
+;;;   便利别名插 'expand-pseudo；默认流只跑 native。
 ;;;
 ;;; 每个 stage 声明两件事:
 ;;;   requires : 跑之前"在途值"里必须有哪些名字
@@ -25,7 +25,6 @@
 
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
-         (only-in "../gas-syntax/rewrite.rkt" gas-rewrite-program)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
@@ -81,12 +80,6 @@
                   'data-items (list-ref outs 1)
                   'names names))
           "模块展平 + 链式查表（程序和数据共享一张名字表）")
-
-   'gas-syntax
-   (stage 'gas-syntax '(program-items) '(program-items)
-          (lambda (target in)
-            (hash 'program-items (gas-rewrite-program target (hash-ref in 'program-items))))
-          "可选: GAS 顺序 -> riscv-opcodes native 顺序（按表替换）")
 
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
@@ -149,7 +142,7 @@
           (stage-name st))
         symbol<?))
 
-;; 默认流: native only。GAS 和便利别名都是可选 stage。
+;; 默认流: native only。便利别名是可选 stage。
 (define default-flow
   '(expand-data flatten analyze dce relax bind-labels encode))
 
@@ -162,7 +155,6 @@
 (define stage-groups
   (hash
    'frontend '(expand-data flatten)
-   'gas      '(expand-data flatten gas-syntax)
    'alias    '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
    'backend  '(relax bind-labels encode) ; layout 在 relax 内部跑
