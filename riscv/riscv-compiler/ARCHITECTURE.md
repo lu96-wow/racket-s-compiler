@@ -9,14 +9,13 @@
 ```
 rich-data ─→ expand-data ─┐
                           ↓
-program-items ─┬─→ flatten ─→ [gas-syntax] ─→ [expand-pseudo] ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
+program-items ─┬─→ flatten ─→ [expand-pseudo] ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
 data-items ────┘                                                        │         │       │          │            │
                                                                         ↓         ↓       ↓          ↓            ↓
                                                                      program   program  measured   bound        build
 ```
 
 - `[...]` 是可选的表面重写层；默认流只跑 native。
-- `gas-syntax`：GAS 操作数顺序 → `riscv-opcodes` native 顺序。
 - `expand-pseudo`：便利别名 → native 指令。
 - `layout` 在 `relax` 内部被反复驱动；默认流不单独写 `layout`。
 - `measured-layout` 只有 `anchors`，没有绝对地址。
@@ -28,7 +27,6 @@ data-items ────┘                                                      
 | --- | --- | --- |
 | `expand-data` | `expand-data/expand.rkt` | rich 数据 → 核心数据 item |
 | `flatten` | `flatten/flatten.rkt` | module / provide / require 的名字解析 |
-| `gas-syntax` | `gas-syntax/rewrite.rkt` | 可选：GAS 顺序 → native 顺序 |
 | `expand-pseudo` | `expand-pseudo/rewrite.rkt` | 可选：便利别名 → native 指令 |
 | `analyze` | `analyze/analyze.rkt` | 切块 + 流 + root；操作数位置按 native |
 | `dce` | `dce/dce.rkt` | 死代码消除 |
@@ -42,7 +40,6 @@ data-items ────┘                                                      
 
 - [`SURFACE-SYNTAX.md`](SURFACE-SYNTAX.md)
 - [`expand-data/DESIGN.md`](expand-data/DESIGN.md)
-- [`gas-syntax/DESIGN.md`](gas-syntax/DESIGN.md)
 - [`flatten/DESIGN.md`](flatten/DESIGN.md)
 - [`expand-pseudo/DESIGN.md`](expand-pseudo/DESIGN.md)
 - [`analyze/DESIGN.md`](analyze/DESIGN.md)
