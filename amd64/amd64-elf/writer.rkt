@@ -134,24 +134,33 @@
 ;; ---------------------------------------------------------------------------
 
 (define (build-string-table names)
-  ;; Offset 0 is the mandatory empty string.
-  (define out (bytes 0))
-  (define offsets '())
+  ;; 返回 (values 名字->偏移 字符串表字节)。
+  ;;
+  ;; 两处都必须是线性的: compile-loko 有 20 万级符号, 原来的逐项
+  ;; (bytes-append out b) 是 O(总长²)、每个符号一次 (assoc name offsets) 又是
+  ;; O(符号数²), 合起来把 loko-elf 从 1 s 拖到 9 分钟。
+  ;;   * 字节: 先算总长, 分配一次, 逐段 bytes-copy!;
+  ;;   * 查表: 返回哈希表(同名以第一次出现的偏移为准, 和原来的 assoc 一致)。
+  (define encoded
+    (for/list ([name (in-list names)]) (string->bytes/utf-8 name)))
+  (define total
+    (for/fold ([n 1]) ([b (in-list encoded)])     ; offset 0 是必须的空字符串
+      (if (zero? (bytes-length b)) n (+ n (bytes-length b) 1))))
+  (define out (make-bytes total 0))
+  (define offsets (make-hash))
   (define cursor 1)
-  (for ([name (in-list names)])
-    (define b (string->bytes/utf-8 name))
+  (for ([name (in-list names)] [b (in-list encoded)])
     (cond
-      [(string=? name "")
-       (set! offsets (cons (cons name 0) offsets))]
+      [(zero? (bytes-length b))
+       (unless (hash-has-key? offsets name) (hash-set! offsets name 0))]
       [else
-       (set! offsets (cons (cons name cursor) offsets))
-       (set! out (bytes-append out b (bytes 0)))
+       (unless (hash-has-key? offsets name) (hash-set! offsets name cursor))
+       (bytes-copy! out cursor b)
        (set! cursor (+ cursor (bytes-length b) 1))]))
-  (values (reverse offsets) out))
+  (values offsets out))
 
 (define (string-offset offsets name)
-  (define p (assoc name offsets))
-  (if p (cdr p) 0))
+  (hash-ref offsets name 0))
 
 ;; ---------------------------------------------------------------------------
 ;; sections / symbols
