@@ -1,7 +1,7 @@
 # riscv-compiler-test
 
-> 本目录已经迁移到新实现：默认契约是 **riscv-opcodes native 顺序**；
-> GAS 顺序是可选 `gas-syntax` 层，专项用例在
+> 本目录已经迁移到新实现：契约是 **riscv-opcodes native 顺序**。
+> 没有 GAS 方言层；专项用例见
 > [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
 
 黑盒契约测试：只通过 `riscv-compiler` 的公开 API 验证每一层的 s-exp
