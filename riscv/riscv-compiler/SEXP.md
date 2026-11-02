@@ -28,7 +28,6 @@
 | --- | --- | --- |
 | `expand-data` | rich 数据 | 核心数据 item |
 | `flatten` | `program-items` + `data-items` | 完整链的 `program-items` + `data-items` + `names` |
-| `gas-syntax` | `program-items` | `program-items`（可选：GAS → native） |
 | `expand-pseudo` | `program-items` | `program-items`（可选：别名 → native） |
 | `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
 | `dce` | `program` | `program` |

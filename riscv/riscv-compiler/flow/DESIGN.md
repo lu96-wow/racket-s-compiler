@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | `rich-data` | rich 数据 | seed |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
-| `program-items` | 扁平程序 item（native） | seed / `flatten` / `gas-syntax` / `expand-pseudo` |
+| `program-items` | 扁平程序 item（native） | seed / `flatten` / `expand-pseudo` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
 | `measured-layout` | segments + anchors + requests + problems | `layout` / `relax` |
@@ -24,7 +24,6 @@
 | --- | --- | --- |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
-| `gas-syntax` | `program-items` | `program-items`（GAS → native，可选） |
 | `expand-pseudo` | `program-items` | `program-items`（别名 → native，可选） |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
@@ -38,7 +37,6 @@
 | 组名 | 展开 |
 | --- | --- |
 | `frontend` | `expand-data flatten` |
-| `gas` | `expand-data flatten gas-syntax` |
 | `alias` | `expand-data flatten expand-pseudo` |
 | `ir` | `analyze dce` |
 | `backend` | `relax bind-labels encode` |
@@ -48,12 +46,6 @@
 
 ```racket
 '(expand-data flatten analyze dce relax bind-labels encode)
-```
-
-GAS 写法：
-
-```racket
-'(expand-data flatten gas-syntax analyze dce relax bind-labels encode)
 ```
 
 便利别名：
@@ -76,9 +68,7 @@ GAS 写法：
    reserved scratch，在 `relax` 之后，且尺寸不变。详见 [`../CONSTRAINTS.md`](../CONSTRAINTS.md)。
 7. **`layout` 和 `relax` 是平层**：`requires` / `provides` 相同，写 `relax` 就够了。
 8. **层间只传 plain list 或 `struct program`**；不认识的 item 原样透传。
-9. **target 是显式参数**：`gas-syntax` / `layout` / `relax` / `encode` 使用；`bind-labels` 不需要。
+9. **target 是显式参数**：`layout` / `relax` / `encode` 使用；`bind-labels` 不需要。
 10. **谁产生 item，谁负责尺寸**；中间层不替 encode 做指令合法性检查。
-11. **native 是唯一编码方言**：`encode` 只认 native；GAS 必须在 `analyze` 前由
-    `gas-syntax` 改写成 native。
-12. **方言是显式选择**：不根据 shape 自动猜 native/GAS；默认流不包含
-    `gas-syntax` 和 `expand-pseudo`。
+11. **native 是唯一编码方言**：`encode` 只认 `instruction-info-operands` 顺序。
+12. **便利别名是显式选择**：默认流不包含 `expand-pseudo`。

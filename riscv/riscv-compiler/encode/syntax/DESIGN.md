@@ -2,7 +2,7 @@
 
 > 编码层只回答一件事：**native s-exp 操作数怎么变成 riscv-asm 函数的参数**。
 >
-> GAS 顺序不在这里；它在可选的 `gas-syntax/` 前端层，先改写成 native。
+> 编码层只接受 native 顺序；没有第二种方言。
 
 ## 1. 局部模块
 
@@ -14,10 +14,10 @@
 | `csr-table.rkt` | CSR 名字 → 编号（从 csrs.csv 生成） | 语法、策略 |
 | `csr32-table.rkt` | rv32 高位 CSR（从 csrs32.csv 生成，暂未接入） | 语法、策略 |
 | `csr.rkt` | CSR 名字/编号 → 12 位值 | 其它操作数 |
-| `native.rkt` | `instruction-info-operands` 顺序 → 函数参数 | GAS、特殊形式 |
+| `native.rkt` | `instruction-info-operands` 顺序 → 函数参数 | 特殊形式 |
 | `direct.rkt` | 不能表达成位置表的特殊形式（`fence` / `fence.tso` / `c.nop`） | 普通指令、查表 |
 | `plan.rkt` | 把 `native` / `direct` 组合成统一的 `syntax-plan` | 实际编码、具体操作数值 |
-| `coverage.rkt` | native / GAS 的覆盖统计 | 修语法 |
+| `coverage.rkt` | native 覆盖统计 | 修语法 |
 
 ## 2. 组合方式
 
@@ -62,34 +62,30 @@ amoadd  ("rd" "rs1" "rs2" "aq" "rl") -> (amoadd.d.aqrl a0 a1 a2)
 
 ## 4. 规则
 
-1. **native 是唯一编码方言**：编码层不判断 GAS。
-2. **GAS 是可选前端层**：`gas-syntax/order-table.rkt` 只描述 GAS → native。
-3. **`direct.rkt` 只放位置表表达不了的**：`fence` 的固定/保留字段、
+1. **native 是唯一编码方言**：编码层不接受其它顺序。
+2. **`direct.rkt` 只放位置表表达不了的**：`fence` 的固定/保留字段、
    可变元数、特殊操作数解释。
 4. **信息只有一份**：riscv-asm info 是编码事实的唯一来源；这里不复制
    `width` / `fixed-fields` / `raw-bindings`。
-5. **coverage 分开统计**：native 缺项是 bug；GAS 缺项是扩展清单。
+5. **coverage 只统计 native**：缺项是 bug。
 
 ## 5. 当前覆盖
 
 ```text
-native: 全部 instruction-info 都有 native plan，missing = 0
-GAS:    可选方言，只覆盖 order-table.rkt 登记过的形状
+全部 instruction-info 都有 native plan，missing = 0
 ```
 
-GAS 的 655 条缺项不是“编码不会”，而是还没有 GAS 顺序表；主要缺口是
-FPR / VREG、CSR / rm / vm、Zcmp / Zcmt / Zimop，以及大量普通形状。
-需要支持时只加 `gas-syntax/order-table.rkt`，不要动编码层。
+FPR / VREG、CSR / rm / vm、Zcmp / Zcmt / Zimop 等缺的是 operand-kind / direct
+支持，不是顺序问题。
 
 ## 6. 测试
 
-- `test/compiler-test.rkt`：native 默认流、GAS 可选流、native 分支位置
-- `syntax/coverage.rkt`：native / GAS 覆盖报告
+- `test/compiler-test.rkt`：native 默认流、native 分支位置
+- `syntax/coverage.rkt`：native 覆盖报告
 
 ## 7. 不归本层管
 
 - `.aq` / `.rl` 的位域编码（riscv-asm 负责）
 - 立即数范围、压缩寄存器约束（riscv-asm 负责）
-- GAS 顺序（`gas-syntax/` 负责）
 - 目标扩展/XLEN 选择（`target.rkt`）
 - 寄存器使用、scratch（后续层）

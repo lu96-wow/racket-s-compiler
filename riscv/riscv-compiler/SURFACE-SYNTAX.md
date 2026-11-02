@@ -8,7 +8,7 @@ GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析�
 
 核心约定：
 
-> **默认/base 是 `riscv-opcodes` native 顺序；GAS 是可选的前端重写层。**
+> **操作数顺序是 `riscv-opcodes` native 顺序；本实现不提供 GAS 方言层。**
 
 相关文档：
 
@@ -16,7 +16,6 @@ GAS 的文本汇编语法。`riscv-compiler` 没有独立的词法/语法解析�
 | --- | --- |
 | [`SEXP.md`](SEXP.md) | 层间 s-exp 类型速查 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图 |
-| [`gas-syntax/DESIGN.md`](gas-syntax/DESIGN.md) | 可选 GAS 方言 |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 跨层硬边界 |
 | `*/DESIGN.md` | 每一层具体认识哪些 form |
 
@@ -276,50 +275,19 @@ native 分支的目标**不固定在最后**：
 
 ---
 
-## 4. 可选语法：GAS
+## 4. 方言
 
-GAS 顺序不是默认语法。选择它时，在流里加 `gas-syntax`：
-
-```racket
-'(expand-data flatten gas-syntax analyze dce relax bind-labels encode)
-```
-
-它会在 `analyze` 之前把 GAS 形状改写成 native：
+本实现只提供 native 写法，不提供 GAS 方言层。
 
 ```scheme
-(sw t0 sp 8)             -> (sw 8 sp t0)
-(beq a0 a1 (L))          -> (beq (L) a0 a1)
-(csrrw a0 mstatus a1)    -> (csrrw a0 a1 mstatus)
-(amoadd.d.aqrl a0 a2 a1) -> (amoadd.d.aqrl a0 a1 a2)
+(sw 8 sp t0)            ; native
+(beq (L) a0 a1)
+(csrrw a0 a1 mstatus)
+(amoadd.d.aqrl a0 a1 a2)
 ```
 
-不是所有指令都会变。是否不同取决于该指令的 `instruction-info-operands`
-是否恰好等于 GAS 的书写顺序，**不是由“真指令/伪指令”决定的**：
-
-| 指令 | native | GAS | 有区别？ |
-| --- | --- | --- | --- |
-| `mv` | `(mv rd rs1)` | `(mv rd rs1)` | 否（虽然是伪指令） |
-| `jal` | `(jal rd target)` | `(jal rd target)` | 否（真指令，顺序相同） |
-| `jalr` | `(jalr rd rs1 imm)` | `(jalr rd rs1 imm)` | 否 |
-| `add` | `(add rd rs1 rs2)` | `(add rd rs1 rs2)` | 否 |
-| `j` | `(j target)` | `(j target)` | 否 |
-| `beq` | `(beq target rs1 rs2)` | `(beq rs1 rs2 target)` | 是 |
-| `beqz` | `(beqz target rs1)` | `(beqz rs1 target)` | 是 |
-| `ble` | `(ble target a0 a1)` | `(ble a0 a1 target)` | 是（虽然是伪指令，目标位置不同） |
-| `sw` | `(sw imm rs1 rs2)` | `(sw rs2 rs1 imm)` | 是 |
-| `csrrw` | `(csrrw rd rs1 csr)` | `(csrrw rd csr rs1)` | 是 |
-| `csrw` | `(csrw rs1 csr)` | `(csrw csr rs1)` | 是 |
-| `amoadd.d.aqrl` | `(amoadd.d.aqrl rd rs1 rs2)` | `(amoadd.d.aqrl rd rs2 rs1)` | 是 |
-
-所以 `mv` / `jal` 看起来一样，是因为它们的 native 顺序恰好就是 GAS 顺序；
-`ble` 虽然也是伪指令，但 GAS 的寄存器顺序和 riscv-opcodes 的 native 顺序不同。
-
-GAS 只是表替换；它不编码、不布局、不绑地址。默认流不包含它。
-
-注意：**不能把 native 程序喂给 `gas-syntax`**。两者是显式选择的方言，
-不做静默探测。
-
----
+如果外部输入是 GAS 风格，应在进入本编译器之前自行改写成 native；
+编译器不根据 shape 猜方言。
 
 ## 5. 数据 item
 
@@ -518,26 +486,6 @@ GAS 只是表替换；它不编码、不布局、不绑地址。默认流不包�
     (place d (d table))))
 ```
 
-### 9.2 GAS 写法
-
-同一份代码选择 GAS 方言时：
-
-```scheme
-'((label main)
-  (li t0 42)
-  (mv a0 t0)
-  (ble a0 a1 (hot))
-  (jal x0 (end))
-  (label hot)
-  (ld t0 sp 8)
-  (jalr x0 ra 0)
-  (label end))
-```
-
-流里加 `gas-syntax`，`ble` / `jal` 等会先改写成 native。
-
----
-
 ## 10. 这不是 GAS 文本汇编
 
 不支持、也不打算在这一层支持：
@@ -581,8 +529,6 @@ main:
 | --- | --- |
 | form / name / chain / 地址表达式 | `sexp.rkt` |
 | label、数据宽度、字符串、数组 | `expand-data/expand.rkt` |
-| GAS 顺序表 | `gas-syntax/order-table.rkt` |
-| GAS 重写入口 | `gas-syntax/rewrite.rkt` |
 | 便利别名 | `expand-pseudo/table*.rkt` |
 | module / provide / require / 链解析 | `flatten/flatten.rkt` |
 | native 操作数计划 | `encode/syntax/native.rkt` |
@@ -597,7 +543,7 @@ main:
 新增一种表面写法时，至少检查：
 
 1. 形状是否在 `sexp.rkt` 里有统一的判定。
-2. 它是 native 基础语法、可选 GAS 方言，还是便利别名？
+2. 它是 native 基础语法，还是便利别名？
 3. 尺寸契约在哪里（`layout/forms.rkt` 或对应层）。
 4. 是否需要新增 `problems` / `requests`，不要静默兜底。
 5. 补测试，并更新本文档和对应的 `DESIGN.md`。
