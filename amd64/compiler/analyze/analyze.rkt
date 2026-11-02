@@ -82,18 +82,25 @@
   (define cfg-blocks (cfg:graph-blocks g))
   (define n (vector-length cfg-blocks))
 
-  ;; 根只有"外部入口": 入口块 + (有间接跳转时)地址被取过的块。
-  ;; 内部引用不是根 —— 它们在 CFG 里就是边。
-  ;; "地址被取过"包含数据侧: 数据里存了某块的地址, 就等于外部能进来。
+  ;; 根 = 外部入口: 入口块 + **所有地址被取过的块**。
+  ;;
+  ;; 地址被取过 = 某个链出现在"值"的位置(数据里的 (value …)、指令里的裸链、
+  ;; 内存 disp)。它可能来自数据(跳转表、IDT 门描述符、syscall MSR), 也就是
+  ;; 这段代码能被"从图外面"跳进来 —— 二进制层看不见那条边, 所以只能把被引用
+  ;; 的块都当入口。
+  ;;
+  ;; 这里**不看镜像里有没有间接跳转指令**: 曾经用一个全局布尔
+  ;; (cfg 里那个已删掉的 indirect? 字段) 做闸门, 等于"用一条指令的存在与否决定整张图的可达性
+  ;; 语义", 同一个 IDT 描述符在有/无间接跳转的两个镜像里命运相反, 而闸门
+  ;; 关闭的那一侧是**不保守**的。实测 pc-repl(15 万块)恒保守的代价是 0 块 0 字节,
+  ;; 没有理由再留这个开关。
+  ;;
   ;; 哈希表而不是 list: 下面是"每个块 × 每个 label"查询, 用 (member …) 在
-  ;; 大镜像(几十万符号)上是二次的 —— pc-repl 那种 1.6M item 的镜像会跑到
-  ;; 十几分钟。这里只换表示, 判据不变。
+  ;; 大镜像(几十万符号)上是二次的。
   (define address-taken
-    (if (cfg:graph-indirect? g)
-        (for/hash ([p (in-list (append (cfg:address-taken-paths items)
-                                       (cfg:address-taken-paths (program->items data-items))))])
-          (values p #t))
-        #f))
+    (for/hash ([p (in-list (append (cfg:address-taken-paths items)
+                                   (cfg:address-taken-paths (program->items data-items))))])
+      (values p #t)))
 
   (define blocks
     (for/list ([b (in-vector cfg-blocks)])
@@ -114,8 +121,7 @@
                 (for/list ([it (in-list (cfg:basic-block-items b))] #:when (label-form? it))
                   (label-chain it))))
       (define root? (or (zero? i)
-                        (and address-taken
-                             (ormap (lambda (p) (hash-ref address-taken p #f)) all-labels)
+                        (and (ormap (lambda (p) (hash-ref address-taken p #f)) all-labels)
                              #t)))
       (make-flow succ (or fallthrough #f) root?)))
 

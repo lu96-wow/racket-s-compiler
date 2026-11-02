@@ -208,6 +208,10 @@ symbols: (symbol chain segment offset address)
 | `mode32-unsupported-form` | loko-image | `%mode 32` 段里的 item 不在审计子集里（见 `loko-compatibility/mode32.rkt`） |
 | `value-out-of-range` | bind-labels | 解析后的 `(value 宽度 …)` 值放不进宽度 |
 
+`dce` 的删除动作还有一条更硬的自检：被判死的块的物理前一块必须给出**它有依据的**
+"不落下"理由（`jump` / `indirect` / `ret` / `ud2`），否则直接报错拒绝删除。
+这条不是 problem，而是"删代码必须有证据"的不变式。
+
 所有 kind 都只是符号，细节跟在后面：形状统一是 `(种类 细节 ...)`
 （`compiler/problem.rkt`），所以打印/断言不需要认识某一层。
 

@@ -41,8 +41,8 @@
 ;; 一个基本块: 头部的若干 label + 程序 item + 后继(块下标)
 (struct basic-block (labels items successors) #:transparent)
 
-;; 一张图: 块向量 + 有没有间接跳转
-(struct graph (blocks indirect?) #:transparent)
+;; 一张图: 块向量
+(struct graph (blocks) #:transparent)
 
 ;; ---------------------------------------------------------------------------
 ;; 建图
@@ -112,9 +112,7 @@
                 (succs (and (falls-through? last-insn) fallthrough))]
                [else (succs fallthrough)]))))
 
-  (graph blocks
-         (for/or ([it (in-list items)])
-           (indirect-instruction? it))))
+  (graph blocks))
 
 (define (cfg-block-count g) (vector-length (graph-blocks g)))
 

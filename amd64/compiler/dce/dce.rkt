@@ -66,16 +66,60 @@
         (when (< s n) (visit! s)))))
   (for ([e (in-vector entries)] #:when (flow-root? (caddr e)))
     (visit! (car e)))
+  (check-deletion-evidence! entries seen)
   (define kept (for/list ([e (in-vector entries)] #:when (vector-ref seen (car e))) e))
   (if (= (length kept) n) prog (rebuild-program kept)))
 
-;; ---------------------------------------------------------------------------
-;; pass 2: 转移到紧邻下一块 -> 删掉, 直接落下去
-;; ---------------------------------------------------------------------------
+;; 删一个块之前, 要能说出"它为什么不可达"。
+;;
+;; dce 愿意接受的"不落下"依据。故意不写"所有 insn.rkt 认的种类"。
+(define accepted-deletion-reasons '(jump indirect ret ud2))
 
 (define (last-block-item block)
   (define items (block-items block))
   (and (pair? items) (last items)))
+
+;; 程序顺序就是物理顺序, 所以被判死的块的**前一块**就是那道闸门: 前一块要是
+;; 顺序落下, 这块本来就在它的顺序边上, 不会被判死。于是每个被删的块都该能回答
+;; "前一块为什么不落下"; 而"不落下"这件事只能有两个来源:
+;;   1. 我们自己生成的转移形式(jump / jmp-indirect);
+;;   2. 硬件保证的列表(insn.rkt 的 audited-non-fallthrough-mnemonics, 只有
+;;      ret / ud2 —— 曾经把 hlt 写进去过一次, 后果是删掉了 syscall-hlt 的队尾)。
+;; 这里用 (non-fallthrough-reason …) **重算**一遍, 而不是相信 flow 里的
+;; fallthrough 字段; 而且只接受下面这四种依据 —— 这是**和 insn.rkt 名单
+;; 独立的第二张表**: 那边回答"这条指令凭什么不落下", 这边回答"删代码时我
+;; 愿意接受哪几种依据"。想给某条指令加"不落下", 两边都得改, 而且改这边时必须
+;; 先想清楚"删掉后面的代码会不会出事"。换句话说, 删代码这个动作自己看得懂依据,
+;; 不继承上游一个布尔值。
+(define (check-deletion-evidence! entries seen)
+  (define n (vector-length entries))
+  (for ([e (in-vector entries) ] [i (in-naturals)])
+    (unless (vector-ref seen i)
+      ;; 往前找最近的一个活着的块: 它就是物理上的前一块
+      (define prev
+        (for/first ([j (in-range (sub1 i) -1 -1)] #:when (vector-ref seen j)) j))
+      (when prev
+        (define prev-flow (caddr (vector-ref entries prev)))
+        (define prev-block (cadr (vector-ref entries prev)))
+        (define last-item (last-block-item prev-block))
+        (unless (flow-fallthrough prev-flow)
+          ;; flow 说前一块不顺序落下, 那就必须有 dce 认得的依据
+          (define reason (and last-item (non-fallthrough-reason last-item)))
+          (unless (memq reason accepted-deletion-reasons)
+            (error 'dce
+                   (string-append
+                    "块 ~a 因为没有顺序边被判死, 但前一块(块 ~a)的末条 item ~e "
+                    "给出的\"不落下\"依据是 ~e。\n"
+                    "  dce 只接受 ~a(insn.rkt 的硬件名单另有 ~a)。\n"
+                    "  想加新的依据: 先证明它真的不会继续执行, 再两边一起改。\n"
+                    "  拒绝删除 —— 否则会把还会执行的代码丢掉(参见 hlt 那次)。")
+                   (car e) prev (and last-item (list last-item)) reason
+                   accepted-deletion-reasons audited-non-fallthrough-mnemonics))))))
+  (void))
+
+;; ---------------------------------------------------------------------------
+;; pass 2: 转移到紧邻下一块 -> 删掉, 直接落下去
+;; ---------------------------------------------------------------------------
 
 (define (transfer-to-next? block next-block)
   (define last-insn (last-block-item block))
