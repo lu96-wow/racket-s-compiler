@@ -31,7 +31,7 @@ amd64-help/
   main.rkt      稳定公共 API
   ranges.rkt    纯数值范围判断
   scratch.rkt   scratch 寄存器规则
-  cc.rkt        条件码规范名 / 别名
+  cc.rkt        条件码规范名 / 别名（表在 ../amd64-asm/cc-table.rkt）
   li.rkt        常量装载策略 + li-size
   la.rkt        地址装载策略（RIP-relative / absolute / future far）
   branch.rkt    条件分支形式选择 + 反转 + 范围

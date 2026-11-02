@@ -26,21 +26,14 @@
 
 (require "../../compiler/analyze/analyze.rkt"
          "uses.rkt"
-         "liveness.rkt")
+         "liveness.rkt"
+         "abi-table.rkt")
 
 (provide (struct-out allocation-result)
          allocate-pseudo-registers
          allocation-result->alist
          default-available-registers
          preserved-registers)
-
-;; Loko 可用的 GPR：scratch + preserved，去掉 %pcb/%closure/rsp。
-;; 这是默认集合，不代表跨调用安全。
-(define default-available-registers
-  '(rax rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 rbx rbp))
-
-;; Loko target-convention 里真正跨调用保留的寄存器。
-(define preserved-registers '(rbx rbp))
 
 (struct allocation-result (allocation uncolored available) #:transparent)
 

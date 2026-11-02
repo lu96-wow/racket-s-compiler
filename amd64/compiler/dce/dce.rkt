@@ -17,7 +17,8 @@
 
 (require "../../amd64-asm/sexp.rkt"
          "../analyze/analyze.rkt"
-         "../analyze/insn.rkt")
+         "../analyze/insn.rkt"
+         "evidence-table.rkt")
 
 (provide passes
          pass-names
@@ -70,20 +71,6 @@
   (define kept (for/list ([e (in-vector entries)] #:when (vector-ref seen (car e))) e))
   (if (= (length kept) n) prog (rebuild-program kept)))
 
-;; 删一个块之前, 要能说出"它为什么不可达"。
-;;
-;; 删代码时愿意接受的"不落下"依据。**这是和 amd64-asm 的 flow 事实独立的
-;; 一张表**: 那边说"这条 form 不落下"(事实), 这边说"我愿意据此删代码"(政策)。
-;;   'jump / 'jump-indirect  目标是我们自己摆的转移形式, 后面的代码只能靠
-;;                           label/其它边到达 —— 可以据删。
-;;   'stop                   只有硬件保证的那两条(ret/ud2); 表里新增一个
-;;                           'stop 的 form 不会自动获得删代码的许可。
-(define (accepted-deletion-evidence? reason last-item)
-  (case reason
-    [(jump jump-indirect) #t]
-    [(stop) (and (form? last-item) (memq (car last-item) '(ret ud2)))]
-    [else #f]))
-
 (define (last-block-item block)
   (define items (block-items block))
   (and (pair? items) (last items)))
@@ -119,9 +106,9 @@
                    (string-append
                     "块 ~a 因为没有顺序边被判死, 但前一块(块 ~a)的末条 item ~e "
                     "给出的\"不落下\"依据是 ~e。\n"
-                    "  dce 只接受 jump/jump-indirect, 以及 stop 里的 (ret ud2)。\n"
+                    "  dce 只接受 jump/jump-indirect, 以及 stop 里的 accepted-stop-forms。\n"
                     "  想加新的依据: 先证明它真的不会继续执行, 再改"
-                    " amd64-asm/special 表的 flow 和这里的 accepted-deletion-evidence?。\n"
+                    " amd64-asm/special 表的 flow 和 dce/evidence-table.rkt。\n"
                     "  拒绝删除 —— 否则会把还会执行的代码丢掉(参见 hlt 那次)。")
                    (car e) prev (and last-item (list last-item)) reason))))))
   (void))

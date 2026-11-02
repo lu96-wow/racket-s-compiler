@@ -30,6 +30,7 @@
 
 (require "../amd64-help/cc.rkt"
          "../amd64-asm/shape.rkt"
+         "mode32-table.rkt"
          "../amd64-asm/memory.rkt"
          "../amd64-asm/registers.rkt"
          "../amd64-asm/operand.rkt"
@@ -38,25 +39,6 @@
 
 (provide mode32-compatible-item?
          mode32-audited-instructions)
-
-;; 审计过的指令头。`canonical-cc` 别名（je/jne/…）不在这里：调用方先用
-;; expand-pseudo 的 rewrite-item 把它们变成 jcc-near/jcc-short。
-(define mode32-audited-instructions
-  '(;; 数据搬运 / 算术 / 逻辑
-    mov cmp test add sub and or xor lea
-    inc dec not neg shl shr sar
-    movzx movsx setcc
-    ;; 控制转移
-    jmp-short jmp-near jcc-short jcc-near call-near
-    jmp-far                                 ; 绝对远跳, 32 位下 EA+imm32+sel16
-    ret nop ud2 pause
-    ;; 系统 / 特权（mov crX/drX/sreg 也走上面的 mov 头）
-    lgdt lidt
-    rdmsr wrmsr
-    in out
-    cli sti hlt
-    cdq                                 ; 32 位的 99；cqo 是 REX.W 版本, 不在表内
-    prefix))
 
 (define (mode32-audited-instruction? name)
   (and (symbol? name) (memq name mode32-audited-instructions) #t))

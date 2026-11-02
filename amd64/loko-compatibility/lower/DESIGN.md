@@ -44,6 +44,7 @@ item 语言里存在 `comment`。review 时连同 `comment` 一起删了：等�
 
 ```text
 pseudo.rkt      (reg N) 的形状、查找、替换
+abi-table.rkt   Loko ABI 固定表（available / preserved）
 uses.rkt        一条指令读/写哪些伪寄存器
 liveness.rkt    基本块 + 每条指令之后的 live-out
 calls.rkt       调用点 save/restore 注记 -> 显式伪寄存器搬运

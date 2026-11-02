@@ -14,6 +14,7 @@ amd64-asm/
   registers.rkt   寄存器 class / 编码事实
   target.rkt      目标事实 + 填充
   ranges.rkt      共享整数/立即数/disp/rel 范围谓词
+  cc-table.rkt    条件码固定表（规范码 + 同义拼写）
   insn-core.rkt   共享 ModR/M + SIB + REX + 立即数范围
   operand.rkt     操作数解析/立即数 wrapper/rm helper
   encoding-plan.rkt 手写 form 的底层 plan（literal/rm; size/bytes）
