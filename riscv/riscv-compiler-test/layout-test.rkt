@@ -103,7 +103,7 @@
 (check-true (compressed-form? '(c.addi a0 1)))
 (check-false (compressed-form? '(add a b c)))
 (check-true (control-form? '(beq a b L)))
-(check-equal? (control-target '(beq a b (done))) '(done))
+(check-equal? (control-target '(beq (done) a b)) '(done))
 
 ;; ---------------------------------------------------------------------------
 ;; 正常布局: 偏移 / 对齐 / 符号 / 空 problems
@@ -114,7 +114,7 @@
    '((blocks
       (block ((main))
              (addi a0 a0 1)
-             (beq a0 a0 (done)))
+             (beq (done) a0 a0))
       (block ((done)) (jalr x0 ra 0)))
      (flows
       (flow (succ 1) (fallthrough 1) (root? #t))
@@ -139,7 +139,7 @@
 (check-equal? (layout-problem-list laid) '())
 (check-equal? (layout-request-list laid) '())
 (check-equal? (layout-item-forms laid 'c)
-              '((label main) (addi a0 a0 1) (beq a0 a0 (done))
+              '((label main) (addi a0 a0 1) (beq (done) a0 a0)
                 (label done) (jalr x0 ra 0)))
 (check-equal? (layout-size laid 'c) 12)
 
@@ -392,7 +392,7 @@
 ;; 顺序后继被段剪断
 (define p-broken
   (program-of
-   '((blocks (block ((main)) (addi a0 a0 1) (beq a0 a0 (next)))
+   '((blocks (block ((main)) (addi a0 a0 1) (beq (next) a0 a0))
              (block ((next)) (jalr x0 ra 0)))
      (flows (flow (succ 1) (fallthrough 1) (root? #t))
             (flow (succ) (fallthrough #f) (root? #f))))))
@@ -410,13 +410,13 @@
 
 ;; 目标不存在
 (check-problem
- (lay (one-block '((beq a0 a0 (nope)))) '() (plain-spec))
+ (lay (one-block '((beq (nope) a0 a0))) '() (plain-spec))
  'undefined-target)
 
 ;; 够不着的普通分支: 交给 relax
 (check-request
  (lay (program-of
-       '((blocks (block ((main)) (beq a0 a0 (far)))
+       '((blocks (block ((main)) (beq (far) a0 a0))
                  (block ((far)) (jalr x0 ra 0)))
          (flows (flow (succ 1) (fallthrough #f) (root? #t))
                 (flow (succ) (fallthrough #f) (root? #f)))))

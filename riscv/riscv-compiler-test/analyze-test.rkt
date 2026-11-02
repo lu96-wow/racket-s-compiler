@@ -75,7 +75,7 @@
 (check-true  (unconditional-jump? '(jump-far x0 L)))
 (check-false (unconditional-jump? '(jump-far ra L)))
 
-(check-equal? (jump-target '(beq a b (L))) '(L))
+(check-equal? (jump-target '(beq (L) a b)) '(L))
 (check-equal? (jump-target '(jal x0 (lib f))) '(lib f))
 (check-equal? (jump-target '(c.j L)) 'L)
 
@@ -107,7 +107,7 @@
              (addi a0 a0 1)
              (label mark)                 ; 非目标: 位置标记
              (addi a1 a1 1)
-             (beq a0 a1 (done))
+             (beq (done) a0 a1)
              (addi a2 a2 1)               ; 无 label 的块
              (label done)
              (jalr x0 ra 0))))
@@ -115,7 +115,7 @@
 (check-equal? (length (program-blocks p-blocks)) 3)
 (check-equal? (block-head (block-at p-blocks 0)) '((main)))
 (check-equal? (block-items (block-at p-blocks 0))
-              '((addi a0 a0 1) (label mark) (addi a1 a1 1) (beq a0 a1 (done))))
+              '((addi a0 a0 1) (label mark) (addi a1 a1 1) (beq (done) a0 a1)))
 (check-equal? (block-head (block-at p-blocks 1)) '())
 (check-equal? (block-items (block-at p-blocks 1)) '((addi a2 a2 1)))
 (check-equal? (block-head (block-at p-blocks 2)) '((done)))
@@ -142,7 +142,7 @@
 (define (flow-of items) (program-flows (analyze items)))
 
 (define f-branch
-  (flow-of '((label main) (beq a b (t))
+  (flow-of '((label main) (beq (t) a b)
              (addi a0 a0 1) (label t) (jalr x0 ra 0))))
 (check-equal? (flow-succ (car f-branch)) '(2 1))
 (check-equal? (flow-fallthrough (car f-branch)) 1)
@@ -179,7 +179,7 @@
 
 ;; 目标不存在: 不加边
 (define f-missing
-  (flow-of '((label main) (beq a b (nope)) (jalr x0 ra 0))))
+  (flow-of '((label main) (beq (nope) a b) (jalr x0 ra 0))))
 (check-equal? (flow-succ (car f-missing)) '(1))
 (check-equal? (flow-fallthrough (car f-missing)) 1)
 
@@ -231,7 +231,7 @@
 
 ;; 内部分支引用不是 root
 (define branch-only
-  '((label main) (beq a b (done)) (label done) (jalr x0 ra 0)))
+  '((label main) (beq (done) a b) (label done) (jalr x0 ra 0)))
 (check-false (root-of? (analyze branch-only) 1))
 
 ;; ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define items
-  '((label a) (beq t0 t1 (c))
+  '((label a) (beq (c) t0 t1)
     (label b) (addi t0 t0 1) (jalr x0 ra 0)
     (label c) (addi t1 t1 1) (jalr x0 ra 0)))
 (check-equal? (referenced-labels items) '((c)))
@@ -256,11 +256,11 @@
 ;; program <-> sexp
 ;; ---------------------------------------------------------------------------
 
-(define p (analyze '((label main) (beq a b (done))
+(define p (analyze '((label main) (beq (done) a b)
                      (label done) (jalr x0 ra 0))))
 (define fields (program->sexp p))
 (check-equal? fields
-              '((blocks (block ((main)) (beq a b (done)))
+              '((blocks (block ((main)) (beq (done) a b))
                         (block ((done)) (jalr x0 ra 0)))
                 (flows (flow (succ 1) (fallthrough 1) (root? #t))
                        (flow (succ) (fallthrough #f) (root? #f)))))

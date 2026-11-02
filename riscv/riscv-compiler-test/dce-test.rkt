@@ -53,7 +53,7 @@
 
 (define p-branch-next
   (program-of
-   '((blocks (block ((main)) (addi a0 a0 1) (beq a0 a1 (next)))
+   '((blocks (block ((main)) (addi a0 a0 1) (beq (next) a0 a1))
              (block ((next)) (jalr x0 ra 0)))
      (flows (flow (succ 1) (fallthrough 1) (root? #t))
             (flow (succ) (fallthrough #f) (root? #f))))))
@@ -95,14 +95,14 @@
 ;; 目标不是下一块: 保留转移
 (define p-not-next
   (program-of
-   '((blocks (block ((main)) (beq a0 a1 (other)))
+   '((blocks (block ((main)) (beq (other) a0 a1))
              (block () (jalr x0 ra 0))
              (block ((other)) (jalr x0 ra 0)))
      (flows (flow (succ 2 1) (fallthrough 1) (root? #t))
             (flow (succ 2) (fallthrough 2) (root? #f))
             (flow (succ) (fallthrough #f) (root? #f))))))
 (check-equal? (block-items (block-at (dead p-not-next) 0))
-              '((beq a0 a1 (other))))
+              '((beq (other) a0 a1)))
 
 ;; ---------------------------------------------------------------------------
 ;; 空块并进下一块; label 地址不变
@@ -150,7 +150,7 @@
 ;; 空块 + 冗余转移一起跑: 先删转移, 再合并
 (define p-both
   (program-of
-   '((blocks (block ((main)) (beq a0 a1 (next)))
+   '((blocks (block ((main)) (beq (next) a0 a1))
              (block ((next)) (jalr x0 ra 0)))
      (flows (flow (succ 1) (fallthrough 1) (root? #t))
             (flow (succ) (fallthrough #f) (root? #f))))))

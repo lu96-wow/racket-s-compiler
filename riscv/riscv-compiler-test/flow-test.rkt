@@ -17,10 +17,10 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze bind-labels dce encode expand-data expand-pseudo flatten layout relax))
+              '(analyze bind-labels dce encode expand-data expand-pseudo flatten gas-syntax layout relax))
 
 (check-equal? (providers-of 'data-items) '(expand-data flatten))
-(check-equal? (providers-of 'program-items) '(expand-pseudo flatten))
+(check-equal? (providers-of 'program-items) '(expand-pseudo flatten gas-syntax))
 (check-equal? (providers-of 'names) '(flatten))
 (check-equal? (providers-of 'program) '(analyze dce))
 (check-equal? (providers-of 'measured-layout) '(layout relax))
@@ -46,14 +46,14 @@
               (format "doc for ~a" n)))
 
 (check-equal? default-flow
-              '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
+              '(expand-data flatten analyze dce relax bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 简单跑一趟
 ;; ---------------------------------------------------------------------------
 
 (define simple-src
-  '((label main) (move a0 a1) (jalr x0 ra 0)))
+  '((label main) (mv a0 a1) (jalr x0 ra 0)))
 (define simple-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16)))
     (place c (main))))
@@ -93,15 +93,15 @@
 ;; 选择器 / 层组 / 单层
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (group-names) '(all backend frontend ir))
+(check-equal? (group-names) '(alias all backend frontend gas ir))
 (check-equal? (hash-ref stage-groups 'frontend)
-              '(expand-data flatten expand-pseudo))
+              '(expand-data flatten))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
 (check-equal? (hash-ref stage-groups 'backend) '(relax bind-labels encode))
 (check-equal? (hash-ref stage-groups 'all) default-flow)
 
 (check-equal? (select-stages 'analyze) '(analyze))
-(check-equal? (select-stages 'frontend) '(expand-data flatten expand-pseudo))
+(check-equal? (select-stages 'frontend) '(expand-data flatten))
 (check-equal? (select-stages '(frontend ir backend)) default-flow)
 (check-equal? (select-stages 'all) default-flow)
 (check-equal? (select-stages '((expand-data flatten) (analyze dce)))
@@ -222,7 +222,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define far-src
-  '((label main) (beq a0 a0 (far))
+  '((label main) (beq (far) a0 a0)
     (label hot) (jalr x0 ra 0)
     (label far) (jalr x0 ra 0)))
 

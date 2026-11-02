@@ -92,8 +92,8 @@
 (check-equal? (word 'add 'a0 'a1 'a2) (list #x00c58533 4))
 (check-equal? (word 'add 'a0 'a1 'x0) (list #x00058533 4))
 (check-equal? (word 'addi 'a0 'a0 1) (list #x00150513 4))
-(check-equal? (word 'beq 'a0 'a1 8) (list #x00b50463 4))
-(check-equal? (word 'sw 'a2 'a1 8) (list #x00c5a423 4))
+(check-equal? (word 'beq 8 'a0 'a1) (list #x00b50463 4))
+(check-equal? (word 'sw 8 'a1 'a2) (list #x00c5a423 4))
 (check-equal? (word 'lw 'a0 'a1 8) (list #x0085a503 4))
 (check-equal? (word 'ld 't0 'sp 8) (list #x00813283 4))
 (check-equal? (word 'jal 'ra 8) (list #x008000ef 4))
@@ -104,12 +104,12 @@
 
 (check-equal? (word 'c.addi 'a0 1) (list #x0505 2))
 (check-equal? (word 'c.beqz 'a0 8) (list #xc501 2))
-(check-equal? (word 'c.sd 'a2 'a1 8) (list #xe590 2))
-(check-equal? (word 'c.nop 0) (list #x0001 2))
+(check-equal? (word 'c.sd 'a1 'a2 8) (list #xe590 2))
+(check-equal? (word 'c.nop) (list #x0001 2))
 
 ;; 操作数顺序: 存储 / 分支 / 跳转的 s-exp 位置与函数参数位置不同
-(check-equal? (word 'sw 'a2 'a1 8) (list #x00c5a423 4))
-(check-equal? (word 'c.sd 'a2 'a1 8) (list #xe590 2))
+(check-equal? (word 'sw 8 'a1 'a2) (list #x00c5a423 4))
+(check-equal? (word 'c.sd 'a1 'a2 8) (list #xe590 2))
 (check-equal? (word 'jal 'ra 8) (list #x008000ef 4))
 
 ;; ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@
   (check-equal? size 4 (format "size ~a" n)))
 (for ([n (in-list atomic-binary)])
   (check-equal? (instruction-arity n) 3 (format "arity ~a" n))
-  (define-values (_w size) (encode-instruction n '(a0 a2 a1)))
+  (define-values (_w size) (encode-instruction n '(a0 a1 a2)))
   (check-equal? size 4 (format "size ~a" n)))
 
 ;; fence: (fence) = 完整 fence; pred/succ 按 i,o,r,w 规范顺序; 0 = 空集
@@ -200,11 +200,11 @@
 (check-error "fence.tso 不接受后缀" (lambda () (encode-instruction 'fence.tso.aq '())))
 
 ;; CSR / Zifencei
-(check-equal? (word 'csrrw 'a0 'mstatus 'a1) (list #x30059573 4))
-(check-equal? (word 'csrrs 'a0 'mstatus 'a1) (list #x3005a573 4))
-(check-equal? (word 'csrrc 'a0 'mstatus 'a1) (list #x3005b573 4))
+(check-equal? (word 'csrrw 'a0 'a1 'mstatus) (list #x30059573 4))
+(check-equal? (word 'csrrs 'a0 'a1 'mstatus) (list #x3005a573 4))
+(check-equal? (word 'csrrc 'a0 'a1 'mstatus) (list #x3005b573 4))
 (check-equal? (word 'csrr 'a0 'mstatus) (list #x30002573 4))
-(check-equal? (word 'csrw 'mstatus 'a1) (list #x30059073 4))
+(check-equal? (word 'csrw 'a1 'mstatus) (list #x30059073 4))
 (check-equal? (word 'csrrwi 'a0 'mstatus 3) (list #x3001d573 4))
 (check-equal? (word 'csrwi 'mstatus 3) (list #x3001d073 4))
 (check-equal? (word 'fence.i) (list #x0000100f 4))
@@ -225,7 +225,7 @@
                (cons 'items '((offset 0 (label main))
                               (offset 0 (addi a0 a0 1))
                               (offset 4 (pad 4))
-                              (offset 8 (beq a0 a1 (t)))
+                              (offset 8 (beq (t) a0 a1))
                               (offset 12 (pad 4))
                               (offset 16 (ret))))
                '(size 20))
@@ -295,7 +295,7 @@
                '(name c) '(kind code) '(start #x1000) '(end #x1100) '(align 4)
                (cons 'items '((offset 0 (label main))
                               (offset 0 (fence rw rw))
-                              (offset 4 (amoadd.d.aqrl a0 a2 a1))
+                              (offset 4 (amoadd.d.aqrl a0 a1 a2))
                               (offset 8 (fence.tso))))
                '(size 12)))
    '((symbol (main) c 0 #x1000))))

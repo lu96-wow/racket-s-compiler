@@ -24,17 +24,17 @@
 ;; 提升表: 每次都只升一档
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (far-step '(c.beqz a0 L)) '(beq a0 x0 L))
-(check-equal? (far-step '(c.bnez a0 L)) '(bne a0 x0 L))
+(check-equal? (far-step '(c.beqz a0 L)) '(beq L a0 x0))
+(check-equal? (far-step '(c.bnez a0 L)) '(bne L a0 x0))
 (check-equal? (far-step '(c.j L)) '(jal x0 L))
 (check-equal? (far-step '(c.jal L)) '(jal ra L))
 
-(check-equal? (far-step '(beq a b L)) '(branch-far beq a b L))
-(check-equal? (far-step '(bne a b L)) '(branch-far bne a b L))
-(check-equal? (far-step '(blt a b L)) '(branch-far blt a b L))
-(check-equal? (far-step '(bge a b L)) '(branch-far bge a b L))
-(check-equal? (far-step '(bltu a b L)) '(branch-far bltu a b L))
-(check-equal? (far-step '(bgeu a b L)) '(branch-far bgeu a b L))
+(check-equal? (far-step '(beq L a b)) '(branch-far beq a b L))
+(check-equal? (far-step '(bne L a b)) '(branch-far bne a b L))
+(check-equal? (far-step '(blt L a b)) '(branch-far blt a b L))
+(check-equal? (far-step '(bge L a b)) '(branch-far bge a b L))
+(check-equal? (far-step '(bltu L a b)) '(branch-far bltu a b L))
+(check-equal? (far-step '(bgeu L a b)) '(branch-far bgeu a b L))
 
 (check-equal? (far-step '(branch-far beq a b L))
               '(branch-indirect beq a b L))
@@ -74,8 +74,8 @@
          [out (layout-program p '() spec)])
     out))
 
-(check-false (has-request? (branch-at #x1FFE '(beq a0 a0 (far))) 'needs-far))
-(check-true  (has-request? (branch-at #x2000 '(beq a0 a0 (far))) 'needs-far))
+(check-false (has-request? (branch-at #x1FFE '(beq (far) a0 a0)) 'needs-far))
+(check-true  (has-request? (branch-at #x2000 '(beq (far) a0 a0)) 'needs-far))
 
 (check-false (has-request? (branch-at #x10FE '(c.beqz a0 (far))) 'needs-far))
 (check-true  (has-request? (branch-at #x1100 '(c.beqz a0 (far))) 'needs-far))
@@ -104,7 +104,7 @@
 (check-equal? (car (layout-item-forms out-cbranch 'c))
               '(label main))
 (check-equal? (cadr (layout-item-forms out-cbranch 'c))
-              '(beq a0 x0 (far)))
+              '(beq (far) a0 x0))
 (check-equal? (layout-size out-cbranch 'c) 308)
 
 ;; ---------------------------------------------------------------------------

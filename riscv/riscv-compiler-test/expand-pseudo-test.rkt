@@ -61,17 +61,17 @@
 (check-equal? (rewrite-item '(load-s16 t0 a 4)) '(lh t0 a 4))
 (check-equal? (rewrite-item '(load-64 t0 a 8)) '(ld t0 a 8))
 
-(check-equal? (rewrite-item '(store-32 t0 a 4)) '(sw t0 a 4))
-(check-equal? (rewrite-item '(st64 ra sp)) '(sd ra sp 0))
-(check-equal? (rewrite-item '(store-8 s a)) '(sb s a 0))
+(check-equal? (rewrite-item '(store-32 4 a t0)) '(sw 4 a t0))
+(check-equal? (rewrite-item '(st64 0 sp ra)) '(sd 0 sp ra))
+(check-equal? (rewrite-item '(store-8 0 a s)) '(sb 0 a s))
 
 (check-equal? (rewrite-item '(move a0 a1)) '(add a0 a1 x0))
 (check-equal? (rewrite-item '(mv a0 a1)) '(add a0 a1 x0))
 
-(check-equal? (rewrite-item '(ble a b L)) '(bge b a L))
-(check-equal? (rewrite-item '(bgt a b L)) '(blt b a L))
-(check-equal? (rewrite-item '(bleu a b L)) '(bgeu b a L))
-(check-equal? (rewrite-item '(bgtu a b L)) '(bltu b a L))
+(check-equal? (rewrite-item '(ble L a b)) '(bge L b a))
+(check-equal? (rewrite-item '(bgt L a b)) '(blt L b a))
+(check-equal? (rewrite-item '(bleu L a b)) '(bgeu L b a))
+(check-equal? (rewrite-item '(bgtu L a b)) '(bltu L b a))
 
 (check-equal? (rewrite-item '(nop)) '(addi x0 x0 0))
 (check-equal? (rewrite-item '(c.nop)) '(c.addi x0 0))
@@ -89,8 +89,8 @@
 ;; 遍历 / 透传 / 幂等
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (rw '((load-32 t0 sp 8) (store-64 ra sp 16)))
-              '((lwu t0 sp 8) (sd ra sp 16)))
+(check-equal? (rw '((load-32 t0 sp 8) (store-64 16 sp ra)))
+              '((lwu t0 sp 8) (sd 16 sp ra)))
 (check-equal? (rw '((add t0 t1 t2) (lb t0 t1 0) (li t0 42) (ecall)))
               '((add t0 t1 t2) (lb t0 t1 0) (li t0 42) (ecall)))
 (check-equal? (rw '((quote (load-32 t0 sp 8))))
@@ -98,7 +98,7 @@
 (check-equal? (rw '()) '())
 (check-equal? (rw '(begin)) '())
 
-(define once (rw '((l8 t0 a) (ble a b L) (move a0 a1))))
+(define once (rw '((l8 t0 a) (ble L a b) (move a0 a1))))
 (check-equal? (rw once) once)
 (check-false (pseudo-leftover? once))
 (check-true (fully-rewritten? once))

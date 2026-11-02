@@ -1,8 +1,8 @@
 # riscv-compiler-test
 
-> **注意：本目录的用例仍按重构前的 GAS-canonical 契约编写。**
-> 当前 `riscv-compiler` 已改为 native base + 可选 `gas-syntax`，这些用例尚未迁移；
-> 新实现的契约测试在 [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
+> 本目录已经迁移到新实现：默认契约是 **riscv-opcodes native 顺序**；
+> GAS 顺序是可选 `gas-syntax` 层，专项用例在
+> [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
 
 黑盒契约测试：只通过 `riscv-compiler` 的公开 API 验证每一层的 s-exp
 输入/输出、边界、问题交接，以及整条 `flow` 到字节的产物。
@@ -27,7 +27,7 @@ racket integration-test.rkt
 | `sexp-test.rkt` | `form?` `name?` `path?` `normalize-path` `address-expr?` `as-items` |
 | `expand-data-test.rkt` | rich 数据 → `(value 宽度 值)` / `(bytes …)` / `(fill …)` / `(pad …)` |
 | `flatten-test.rkt` | `module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out` |
-| `expand-pseudo-test.rkt` | 替换表、别名平级、偏移补 0、透传、自环保护 |
+| `expand-pseudo-test.rkt` | 可选便利别名表：别名平级、偏移补 0、native 模板、透传、自环保护 |
 | `analyze-test.rkt` | 指令分类、切块、`succ`/`fallthrough`、`root?` |
 | `dce-test.rkt` | 不可达块、转移到下一块、空块合并、重新编号 |
 | `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems/requests、`hole` 段（`align` → `reserve`） |
@@ -42,7 +42,7 @@ racket integration-test.rkt
 ```
 expand-data : (label …) (bytes …) (fill n b) (pad n) (value w v) (align n)
 flatten     : 输入的链 -> 完整链；module/provide/require 壳消失
-expand-pseudo : 表里的伪指令 -> 真指令；不认识的 form 原样
+expand-pseudo : 表里的便利别名 -> native 指令；不认识的 form 原样
 analyze     : (program (block <头链列表> item...) ...)
               (program (flow (succ id...) (fallthrough id|#f) (root? bool)) ...)
 layout      : ((phase measured)

@@ -19,7 +19,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define doc-src
-  '((label main) (move a0 a1) (ble a0 a1 (hot)) (jal x0 (end))
+  '((label main) (add a0 a1 x0) (ble (hot) a0 a1) (jal x0 (end))
     (label hot) (addi a0 a0 1) (jalr x0 ra 0)
     (label end) (ld t0 sp 8)))
 
@@ -56,7 +56,7 @@
 
 ;; 中间产物: 每层大致在它该在的位置
 (check-equal? (flow-value doc-out 'program-items)
-              '((label main) (add a0 a1 x0) (bge a1 a0 (hot))
+              '((label main) (add a0 a1 x0) (ble (hot) a0 a1)
                 (jal x0 (end))
                 (label hot) (addi a0 a0 1) (jalr x0 ra 0)
                 (label end) (ld t0 sp 8)))
@@ -167,7 +167,7 @@
 (define atomic-src
   '((label main)
     (fence rw rw)
-    (amoadd.d.aqrl a0 a2 a1)
+    (amoadd.d.aqrl a0 a1 a2)
     (fence.tso)
     (ret)))
 
@@ -193,7 +193,7 @@
 
 (define csr-src
   '((label main)
-    (csrrw a0 mstatus a1)
+    (csrrw a0 a1 mstatus)
     (fence.i)
     (ret)))
 
@@ -213,7 +213,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define relax-src
-  '((label main) (beq a0 a0 (far))
+  '((label main) (beq (far) a0 a0)
     (label hot) (jalr x0 ra 0)
     (label far) (ret)))
 (define relax-spec
@@ -316,7 +316,7 @@
                (run-flow default-flow
                          (list (cons 'rich-data '())
                                (cons 'program-items
-                                     '((label main) (beq a0 a0 (far))
+                                     '((label main) (beq (far) a0 a0)
                                        (label hot) (jalr x0 ra 0)
                                        (label far) (ret)))
                                (cons 'layout-spec
