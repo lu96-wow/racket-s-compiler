@@ -18,7 +18,7 @@
          immediate-value
          immediate-form
          symbolic-immediate?
-         choose-symbolic-immediate-forms)
+         choose-symbolic-immediate-widths)
 
 (define (rm-width op)
   (cond
@@ -86,7 +86,7 @@
 ;; Choose one fixed immediate width for each unresolved address expression.
 ;; Layout and encode must agree on the form, so the choice is made once, here,
 ;; from the instruction and its operands -- never from the final value.
-(define (choose-symbolic-immediate-forms name operands)
+(define (choose-symbolic-immediate-widths name operands)
   (define (wrap op)
     (if (symbolic-immediate? op) (list 'imm32 op) op))
   (cond
@@ -95,7 +95,7 @@
        [(list pname inner)
         (and (form? inner)
              (list pname (cons (car inner)
-                               (choose-symbolic-immediate-forms (car inner) (cdr inner)))))]
+                               (choose-symbolic-immediate-widths (car inner) (cdr inner)))))]
        [_ operands])]
     [(memq name '(jmp-short jmp-near jcc-short jcc-near call-near))
      operands]

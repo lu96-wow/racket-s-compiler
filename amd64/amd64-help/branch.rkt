@@ -13,9 +13,10 @@
          short-control-transfer-form?
          near-control-transfer-form?
          control-transfer-target
-         control-transfer-range)
+         control-transfer-fits?)
 
-(require "../amd64-asm/shape.rkt")
+(require "../amd64-asm/shape.rkt"
+         "../amd64-asm/ranges.rkt")
 
 (define control-transfer-mnemonics
   '(jmp-short jmp-near jcc-short jcc-near call-near))
@@ -38,10 +39,12 @@
 
 (define (control-transfer-target x) (last x))
 
-(define (control-transfer-range x)
-  (case (car x)
-    [(jmp-short jcc-short) '(-128 . 127)]
-    [(jmp-near jcc-near call-near) '(-2147483648 . 2147483647)]
+;; 这个形式能不能用位移 DISP 编出来。范围常量在 amd64-asm/ranges.rkt:
+;; 这里只决定"哪一类形式用哪个范围", 不重复写数字。
+(define (control-transfer-fits? x disp)
+  (cond
+    [(short-control-transfer-form? x) (fits-rel8? disp)]
+    [(near-control-transfer-form? x) (fits-rel32? disp)]
     [else #f]))
 
 (define (jump-form target short?)

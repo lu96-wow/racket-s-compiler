@@ -71,7 +71,7 @@
   (define index (and index-name (lookup-register index-name)))
   (define scale (mem-scale m))
   (define disp (mem-disp m))
-  (define disp-width (mem-disp-width m))
+  (define disp-width (mem-disp-mode m))
   (define seg (mem-seg m))
   (unless (exact-integer? disp)
     (error 'make-mem-rm-encoding "memory displacement must be resolved to an integer: ~e" disp))

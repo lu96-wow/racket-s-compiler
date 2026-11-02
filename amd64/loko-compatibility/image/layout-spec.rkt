@@ -34,11 +34,10 @@
                   make-label make-comment)
          (only-in "../../compiler/layout/forms.rkt"
                   item-size align-pad make-segment-form make-place
-                  make-layout-spec)
+                  make-layout-spec make-problem)
          (only-in "plan.rkt" segment-align-for)
          "../../compiler/expand-pseudo/rewrite.rkt"
-         "../mode32.rkt"
-         "../ir.rkt")
+         "../mode32.rkt")
 
 (provide build-layout-spec)
 
@@ -140,8 +139,9 @@
   (for ([path (in-list (all-label-paths sections))])
     (hash-set! used-labels path #t))
   (define problems '())
+  ;; 和 layout 用同一个 problem 形状 (kind . detail), 下游不必认识两种。
   (define (problem! kind . detail)
-    (set! problems (cons (cons 'problem (cons kind detail)) problems)))
+    (set! problems (cons (apply make-problem kind detail) problems)))
 
   (define segments '())
   (define places '())

@@ -43,7 +43,7 @@
   (eval-address expr (lambda (chain) (resolve-symbol symbol-table chain)) here))
 
 (define (value->bytes width expr symbol-table here)
-  (list->bytes (integer->bytes width (resolve-address symbol-table expr here))))
+  (integer->bytes width (resolve-address symbol-table expr here)))
 
 (define (make-build-segment name kind start size bytes)
   (list 'segment
@@ -71,8 +71,10 @@
     [(and (immediate-form op)
           (symbolic-immediate? (cadr op)))
      (list (immediate-form op) (resolve-address symbol-table (cadr op) here))]
-    [(and (address-expr? op) (not (exact-integer? op)))
-     (list 'imm32 (resolve-address symbol-table op here))]
+    ;; 和 instruction-size 一样: 走到这里说明宽度策略漏了, 报错不要猜。
+    [(symbolic-immediate? op)
+     (error 'encode
+            "symbolic operand reached the encoder without a chosen width: ~e" op)]
     [else op]))
 
 (define (encode-code target name operands here symbol-table)
@@ -85,7 +87,7 @@
      ;; The prefix byte shifts the inner instruction by one byte, so
      ;; RIP-relative operands inside it use here+1 and the inner size.
      (define inner-size (instruction-size target (car inner) (cdr inner)))
-     (define prepared (choose-symbolic-immediate-forms (car inner) (cdr inner)))
+     (define prepared (choose-symbolic-immediate-widths (car inner) (cdr inner)))
      (define inner* (cons (car inner)
                           (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbol-table))
                                prepared)))
@@ -100,7 +102,7 @@
        (encode-instruction target name ops))]
 
     [else
-     (let* ([prepared (choose-symbolic-immediate-forms name operands)]
+     (let* ([prepared (choose-symbolic-immediate-widths name operands)]
             [size (instruction-size target name operands)]
             [ops (map (lambda (op) (resolve-operand op here size symbol-table))
                       prepared)])
@@ -166,7 +168,7 @@
       (check-offset! name at cursor it)
       (cond
         [(label-form? it) (void)]
-        [(pad-form? it) (emit! (list->bytes (padding-bytes target kind (pad-size it))))]
+        [(pad-form? it) (emit! (padding-bytes kind (pad-size it)))]
         [(bytes-form? it) (emit! (list->bytes (bytes-content it)))]
         [(fill-form? it) (emit! (make-bytes (fill-size it) (fill-byte it)))]
         [(reserve-form? it)

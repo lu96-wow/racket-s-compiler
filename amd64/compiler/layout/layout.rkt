@@ -83,7 +83,7 @@
 ;;   end   = start + 容量        ((end …) 给绝对上界, (size …) 给相对上界)
 ;; 过了这一步, 段的 start/end 一定是整数, 下游不再需要关心地址从哪来。
 ;; 页边界、权限分组这类约束就以 (align …) 的形式流进来, 分配者不再需要猜。
-(define (resolve-segment-starts decls spec)
+(define (solve-segment-starts decls spec)
   (define cursor (or (layout-spec-origin spec) 0))
   (for/list ([d (in-list decls)])
     (define align (segment-decl-align d))
@@ -94,7 +94,7 @@
 
 (define (parse-spec spec problem!)
   (define segments
-    (resolve-segment-starts (map parse-segment-decl (layout-spec-segments spec)) spec))
+    (solve-segment-starts (map parse-segment-decl (layout-spec-segments spec)) spec))
   (validate-segments segments problem!)
   (define-values (rules wildcard) (parse-places spec segments problem!))
   (values segments rules wildcard))
@@ -113,30 +113,19 @@
   (for/list ([b (in-list (program-blocks prog))] [i (in-naturals)])
     (unit (list 'code i) (block-head b) (block-items b))))
 
-(define (data-items->units items)
-  (define out '())
-  (define labels '())
-  (define body '())
-  (define (flush!)
-    (when (or (pair? labels) (pair? body))
-      (set! out (cons (cons (reverse labels) (reverse body)) out))
-      (set! labels '())
-      (set! body '())))
-  (for ([it (in-list items)])
-    (cond
-      [(label-form? it)
-       (when (pair? body) (flush!))
-       (set! labels (cons (label-chain it) labels))]
-      [else (set! body (cons it body))]))
-  (flush!)
-  (for/list ([r (in-list (reverse out))] [i (in-naturals)])
-    (unit (list 'data i) (car r) (cdr r))))
-
 (define (placed-chain? rules wildcard chain)
   (or wildcard
       (for/or ([r (in-list rules)]) (equal? chain (car r)))))
 
-(define (flat-items->units items rules wildcard)
+;; 把 item 序列切成 unit:
+;;   split-at-label?  这条 label 要不要在这里开新 unit
+;;   kind             unit id 的前缀('data / 'flat), 只影响报到哪条错误上
+;;
+;; data: 每个 label 都切(数据段按 label 划分 run)。
+;; flat: 只有 place 规则认得的 label 才切; 落在 body 后面的其它 label 留在
+;;       body 里当位置标记。
+;; 紧挨着的 label(中间没有 item)位置相同, 归同一个 unit 当别名。
+(define (items->units items split-at-label? kind)
   (define out '())
   (define labels '())
   (define body '())
@@ -150,22 +139,16 @@
       [(label-form? it)
        (define chain (label-chain it))
        (cond
-         [(placed-chain? rules wildcard chain)
+         [(split-at-label? chain)
           (if (and (pair? labels) (null? body))
-              ;; consecutive labels at the same position stay aliases
               (set! labels (cons chain labels))
-              (begin
-                (flush!)
-                (set! labels (list chain))))]
-         [(null? body)
-          (set! labels (cons chain labels))]
-         [else
-          ;; non-place label inside an item sequence: keep it as a marker
-          (set! body (cons it body))])]
+              (begin (flush!) (set! labels (list chain))))]
+         [(null? body) (set! labels (cons chain labels))]
+         [else (set! body (cons it body))])]
       [else (set! body (cons it body))]))
   (flush!)
   (for/list ([r (in-list (reverse out))] [i (in-naturals)])
-    (unit (list 'flat i) (car r) (cdr r))))
+    (unit (list kind i) (car r) (cdr r))))
 
 ;; ---------------------------------------------------------------------------
 ;; 放置
@@ -188,43 +171,36 @@
 (define (add-unit! table seg u)
   (hash-update! table seg (lambda (xs) (cons u xs)) '()))
 
-(define (place-code-units units rules wildcard problem!)
+;; 把 unit 分配到段。
+;;   sticky?  #t: code —— 没命中规则的块沿用上一个块所在的段(顺序落下);
+;;                 既没有 current 也没有 wildcard 时才报 'unplaced-block
+;;   sticky?  #f: data/flat —— 每个 unit 必须自己命中规则; 没有 label 报
+;;                 'unlabeled-run, 有 label 但没规则报 unplaced 种类
+(define (place-units units rules wildcard problem!
+                     #:sticky? [sticky? #f]
+                     #:unplaced [unplaced-kind 'unplaced])
   (define by-seg (make-hash))
   (define rule-table (rules->table rules))
   (define current #f)
   (for ([u (in-list units)])
     (define labels (unit-labels u))
     (define hits (matching-segment-names rule-table labels))
-    (cond
-      [(> (length hits) 1)
-       (problem! (make-problem 'ambiguous-placement labels hits))]
-      [(= 1 (length hits))
-       (set! current (car hits))
-       (add-unit! by-seg current u)]
-      [current (add-unit! by-seg current u)]
-      [wildcard
-       (set! current wildcard)
-       (add-unit! by-seg current u)]
-      [else
-       (problem! (make-problem 'unplaced-block (unit-id u) labels))]))
-  (ordered-table by-seg))
-
-(define (place-exact-units units rules wildcard problem! unplaced-kind)
-  (define by-seg (make-hash))
-  (define rule-table (rules->table rules))
-  (for ([u (in-list units)])
-    (define labels (unit-labels u))
-    (cond
-      [(null? labels)
-       (problem! (make-problem 'unlabeled-run (unit-id u) (unit-items u)))]
-      [else
-       (define hits (matching-segment-names rule-table labels))
-       (cond
-         [(> (length hits) 1)
-          (problem! (make-problem 'ambiguous-placement labels hits))]
-         [(= 1 (length hits)) (add-unit! by-seg (car hits) u)]
-         [wildcard (add-unit! by-seg wildcard u)]
-         [else (problem! (make-problem unplaced-kind (unit-id u) labels))])]))
+    (define picked
+      (cond
+        [(> (length hits) 1)
+         (problem! (make-problem 'ambiguous-placement labels hits))
+         #f]
+        [(= 1 (length hits)) (car hits)]
+        [(and sticky? current) current]
+        [wildcard wildcard]
+        [else
+         (problem! (if (and (not sticky?) (null? labels))
+                       (make-problem 'unlabeled-run (unit-id u) (unit-items u))
+                       (make-problem unplaced-kind (unit-id u) labels)))
+         #f]))
+    (when picked
+      (when sticky? (set! current picked))
+      (add-unit! by-seg picked u)))
   (ordered-table by-seg))
 
 ;; ---------------------------------------------------------------------------
@@ -335,9 +311,7 @@
          [else
           (define here (+ (segment-start seg) offset))
           (define disp (- addr (+ here size)))
-          (define range (control-transfer-range item))
-          (when (and range
-                     (not (<= (car range) disp (cdr range))))
+          (unless (control-transfer-fits? item disp)
             (request! (if (short-control-transfer-form? item)
                           (make-request 'needs-near origin (segment-name seg) offset item disp)
                           (make-request 'needs-far origin (segment-name seg) offset item disp))))])])))
@@ -469,10 +443,12 @@
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (define-values (segments rules wildcard) (parse-spec spec problem!))
-  (define code-by-seg (place-code-units (program->units prog) rules wildcard problem!))
+  (define code-by-seg
+    (place-units (program->units prog) rules wildcard problem!
+                 #:sticky? #t #:unplaced 'unplaced-block))
   (define data-by-seg
-    (place-exact-units (data-items->units (as-items data-items))
-                       rules wildcard problem! 'unplaced-data))
+    (place-units (items->units (program->items data-items) (lambda (_chain) #t) 'data)
+                 rules wildcard problem! #:unplaced 'unplaced-data))
   (define units-by-seg (units-by-segment segments code-by-seg data-by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg code-by-seg (program-flows prog) problem!))
@@ -484,8 +460,11 @@
   (define problems '())
   (define (problem! p) (set! problems (cons p problems)))
   (define-values (segments rules wildcard) (parse-spec spec problem!))
-  (define units (flat-items->units (as-items items) rules wildcard))
-  (define by-seg (place-exact-units units rules wildcard problem! 'unplaced))
+  (define units
+    (items->units (program->items items)
+                  (lambda (chain) (placed-chain? rules wildcard chain))
+                  'flat))
+  (define by-seg (place-units units rules wildcard problem! #:unplaced 'unplaced))
   (define units-by-seg (units-by-segment segments (make-hash) by-seg))
   (define-values (measured anchors requests)
     (build-layout target segments units-by-seg #f #f problem!))

@@ -18,11 +18,13 @@
 ;;;
 ;;; 不认识的指令当普通指令。
 
-(require "../../amd64-asm/sexp.rkt")
+;;; 只提供"一条 item 是哪类控制流指令"。形状（form?/path?）在
+;;; amd64-asm/shape.rkt，label 访问器在 compiler/item.rkt —— 这里不转发它们，
+;;; 否则每个下游模块都会顺手拿到一堆不属于本层的东西。
 
-(provide form? name? path? normalize-path
-         label-form? label-path
-         branch-instruction? jump-instruction? call-instruction?
+(require "../../amd64-asm/shape.rkt")
+
+(provide branch-instruction? jump-instruction? call-instruction?
          indirect-instruction? trap-instruction?
          ends-block? falls-through? unconditional-jump?
          jump-target)
@@ -35,11 +37,6 @@
 
 (define (head-in? x heads)
   (and (form? x) (memq (car x) heads) #t))
-
-(define (label-form? x)
-  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
-
-(define (label-path x) (cdr x))
 
 (define (branch-instruction? x)   (head-in? x branch-mnemonics))
 (define (jump-instruction? x)     (head-in? x jump-mnemonics))
@@ -64,6 +61,7 @@
       (indirect-instruction? x)
       (trap-instruction? x)))
 
+;; 无条件的直接跳转（jmp-short/jmp-near）
 (define (unconditional-jump? x)
   (jump-instruction? x))
 

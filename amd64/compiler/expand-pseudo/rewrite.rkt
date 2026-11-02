@@ -13,7 +13,7 @@
          rewrite-program
          pseudo-name?
          pseudo-leftover?
-         as-items)
+         program->items)
 
 ;; ---------------------------------------------------------------------------
 ;; 条件码别名
@@ -61,7 +61,7 @@
 
 (define (rewrite-program items #:short-transfers? [short? #f])
   (map (lambda (item) (rewrite-item item #:short-transfers? short?))
-       (as-items items)))
+       (program->items items)))
 
 (define (pseudo-leftover? x)
   (define (walk i)
@@ -69,8 +69,4 @@
          (let ([h (car i)])
            (or (pseudo-name? h)
                (jcc-alias? h)))))
-  (define items
-    (cond
-      [(and (form? x) (symbol? (car x))) (list x)]
-      [else (as-items x)]))
-  (for/or ([i (in-list items)]) (and (walk i) #t)))
+  (for/or ([i (in-list (program->items x))]) (and (walk i) #t)))

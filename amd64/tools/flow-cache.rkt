@@ -33,7 +33,6 @@
          read-flow-cache
          write-flow-cache!
          cache-fresh?
-         cache-values
          cache-value
          cache-stamp-string)
 
@@ -112,10 +111,6 @@
       ;; 这个 Racket 的 serialize 返回的是"可写的 serialized 值"，用 write 包一层。
       (write (serialize cache) out)))
   (rename-file-or-directory tmp path #t))
-
-(define (cache-values cache)
-  (for/hash ([p (in-list (cdr (assq 'values (cdr cache))))])
-    (values (car p) (cdr p))))
 
 (define (cache-value cache name [default (lambda () (error 'flow-cache "cache 里没有 ~a" name))])
   (define p (assq name (cdr (assq 'values (cdr cache)))))

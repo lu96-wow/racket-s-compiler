@@ -50,10 +50,9 @@
     jmp-short jmp-near jcc-short jcc-near call-near
     jmp-far                                 ; 绝对远跳, 32 位下 EA+imm32+sel16
     ret nop ud2 pause
-    ;; 系统 / 特权
+    ;; 系统 / 特权（mov crX/drX/sreg 也走上面的 mov 头）
     lgdt lidt
     rdmsr wrmsr
-    mov                                 ; mov crX/drX/sreg 也走这个头
     in out
     cli sti hlt
     cdq                                 ; 32 位的 99；cqo 是 REX.W 版本, 不在表内
@@ -80,7 +79,7 @@
        (or (not (mem-index m))
            (reg32-compatible? (lookup-register (mem-index m))))
        ;; disp 的宽度在 32 位模式里最大 disp32
-       (memq (mem-disp-width m) '(auto 32))))
+       (memq (mem-disp-mode m) '(auto 32))))
 
 (define (operand32-compatible? op)
   (cond

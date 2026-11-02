@@ -27,7 +27,7 @@
          ;; re-exported shared operand helpers
          immediate-form
          symbolic-immediate?
-         choose-symbolic-immediate-forms)
+         choose-symbolic-immediate-widths)
 
 ;; SIZE is fixed when the plan is built.  DETAIL is the source-specific plan
 ;; (generic form plan or special byte plan); ENCODE is a policy-free thunk.
@@ -95,15 +95,18 @@
   (cond
     [(mem-form? op) (operand-for-sizing (parse-mem op))]
     [(and (mem? op) (not (exact-integer? (mem-disp op))))
-     (case (mem-disp-width op)
+     (case (mem-disp-mode op)
        [(32) (struct-copy mem op [disp #x1000])]
        [else
         (error 'instruction-size
                "memory displacement must be resolved before sizing: ~e" op)])]
     [(and (immediate-form op) (symbolic-immediate? (cadr op)))
      (list (immediate-form op) #x1000)]
-    [(and (address-expr? op) (not (exact-integer? op)))
-     (list 'imm32 #x1000)]
+    ;; choose-symbolic-immediate-widths 之后不该再剩裸的符号操作数: 有就说明
+    ;; 那条指令的宽度策略漏了。报出来, 不要在这里猜一个 imm32。
+    [(symbolic-immediate? op)
+     (error 'instruction-size
+            "symbolic operand reached sizing without a chosen width: ~e" op)]
     [else op]))
 
 (define (branch-operands-for-sizing name operands)
@@ -127,7 +130,7 @@
      (define branch? (memq name '(jmp-short jmp-near
                                   jcc-short jcc-near
                                   call-near)))
-     (define prepared (choose-symbolic-immediate-forms name operands))
+     (define prepared (choose-symbolic-immediate-widths name operands))
      (define ops (if branch?
                      (branch-operands-for-sizing name prepared)
                      (map operand-for-sizing prepared)))

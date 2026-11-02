@@ -43,7 +43,7 @@
 
 (provide expand-data
          expand-item
-         as-items
+         program->items
          width-form?
          width-of)
 
@@ -213,4 +213,4 @@
 
 
 (define (expand-data input)
-  (append* (for/list ([it (in-list (as-items input))]) (expand-item it))))
+  (append* (for/list ([it (in-list (program->items input))]) (expand-item it))))

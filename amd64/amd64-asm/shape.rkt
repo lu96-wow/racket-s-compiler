@@ -8,7 +8,7 @@
          name?
          path?
          normalize-path
-         as-items
+         program->items
          arith-head?
          arith-form?
          address-op-head?
@@ -92,7 +92,7 @@
      (define v (resolve expr))
      (or v (error 'eval-address "undefined symbol in address expression: ~s" expr))]))
 
-(define (as-items prog)
+(define (program->items prog)
   (define body
     (cond
       [(and (form? prog) (eq? (car prog) 'quote) (= 2 (length prog)) (list? (cadr prog)))

@@ -22,4 +22,4 @@
          resolved-plan?
          immediate-form
          symbolic-immediate?
-         choose-symbolic-immediate-forms)
+         choose-symbolic-immediate-widths)

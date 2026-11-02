@@ -34,12 +34,13 @@
 ;;; 非目标的 label 不是边界, 它作为位置标记留在块的程序里。
 
 (require "../../amd64-asm/sexp.rkt"
+         (only-in "../item.rkt" label-form? label-chain)
          "insn.rkt"
          (prefix-in cfg: "cfg.rkt"))
 
 (provide (struct-out program)
          analyze
-         as-items
+         program->items
          block-head block-items make-block
          flow-succ flow-fallthrough flow-root? make-flow
          program->sexp sexp->program)
@@ -64,17 +65,11 @@
 (struct program (blocks flows) #:transparent)
 
 ;; ---------------------------------------------------------------------------
-;; 程序 -> item 列表(旧壳 quote/begin 也收)
-;; ---------------------------------------------------------------------------
-
-
-
-;; ---------------------------------------------------------------------------
 ;; 分析
 ;; ---------------------------------------------------------------------------
 
 (define (analyze program-or-items [data-items '()])
-  (define items (as-items program-or-items))
+  (define items (program->items program-or-items))
   (define g (cfg:build-cfg items))
   (define cfg-blocks (cfg:graph-blocks g))
   (define n (vector-length cfg-blocks))
@@ -88,7 +83,7 @@
   (define address-taken
     (if (cfg:graph-indirect? g)
         (for/hash ([p (in-list (append (cfg:address-taken-paths items)
-                                       (cfg:address-taken-paths (as-items data-items))))])
+                                       (cfg:address-taken-paths (program->items data-items))))])
           (values p #t))
         #f))
 
@@ -109,7 +104,7 @@
       (define all-labels
         (append (cfg:basic-block-labels b)
                 (for/list ([it (in-list (cfg:basic-block-items b))] #:when (label-form? it))
-                  (label-path it))))
+                  (label-chain it))))
       (define root? (or (zero? i)
                         (and address-taken
                              (ormap (lambda (p) (hash-ref address-taken p #f)) all-labels)

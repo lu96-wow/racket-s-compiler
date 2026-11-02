@@ -22,6 +22,7 @@
 ;;; 目标 label 不存在时不加边(交给布局层报 undefined-target)。
 
 (require "../../amd64-asm/sexp.rkt"
+         (only-in "../item.rkt" label-form? label-chain)
          "insn.rkt")
 
 (provide (struct-out basic-block)
@@ -63,7 +64,7 @@
   (for ([it (in-list items)])
     (cond
       [(label-form? it)
-       (define path (label-path it))
+       (define path (label-chain it))
        (cond
          ;; 块开头(还没放 item): 归块头的多个名字
          [(null? cur-insns) (set! cur-labels (cons path cur-labels))]

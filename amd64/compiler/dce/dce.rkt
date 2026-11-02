@@ -15,7 +15,8 @@
 ;;;
 ;;; 改完统一重新编号(位置即 id), succ/fallthrough 跟着重映射。
 
-(require "../analyze/analyze.rkt"
+(require "../../amd64-asm/sexp.rkt"
+         "../analyze/analyze.rkt"
          "../analyze/insn.rkt"
          (only-in "../item.rkt" comment-form?))
 
@@ -34,7 +35,7 @@
   (for ([e (in-list kept)] [new (in-naturals)])
     (hash-set! new-of (car e) new))
   (define (map-id id)
-    (and (hash-has-key? new-of id) (hash-ref new-of id)))
+    (hash-ref new-of id #f))
   (program
    (for/list ([e (in-list kept)]) (cadr e))
    (for/list ([e (in-list kept)])
@@ -106,15 +107,16 @@
         [else b])))
   (if (not (ormap values (vector->list changed)))
       prog
-      (rebuild-program
-       (for/list ([b (in-list new-blocks)] [f (in-list flows)] [i (in-naturals)])
-         (cond
-           ;; 删掉转移后只剩顺序边
-           [(vector-ref changed i)
-            (define next (and (< (add1 i) (length new-blocks)) (add1 i)))
-            (list i b (make-flow (if next (list next) '()) next (flow-root? f)))]
-           ;; 没动的块: 流原样交给 rebuild-program 重映射
-           [else (list i b f)])))))
+      (let ([n-new (length new-blocks)])   ; 别在循环里算: 那是 O(块数) 的
+        (rebuild-program
+         (for/list ([b (in-list new-blocks)] [f (in-list flows)] [i (in-naturals)])
+           (cond
+             ;; 删掉转移后只剩顺序边
+             [(vector-ref changed i)
+              (define next (and (< (add1 i) n-new) (add1 i)))
+              (list i b (make-flow (if next (list next) '()) next (flow-root? f)))]
+             ;; 没动的块: 流原样交给 rebuild-program 重映射
+             [else (list i b f)]))))))
 
 ;; ---------------------------------------------------------------------------
 ;; pass 3: 空块并进下一块

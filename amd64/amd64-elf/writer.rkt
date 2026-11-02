@@ -30,7 +30,9 @@
 
 (require racket/list
          racket/string
-         "../amd64-asm/sexp.rkt")
+         "../amd64-asm/sexp.rkt"
+         (only-in "../compiler/bind-labels/forms.rkt"
+                  symbol-entry? symbol-chain symbol-segment symbol-address))
 
 (provide write-elf)
 
@@ -38,7 +40,9 @@
 (struct elf-section (name type flags addr offset size link info align entsize) #:transparent)
 (struct elf-symbol (name chain seg address) #:transparent)
 
-(define (field-value key row)
+;; build segment 和 image-plan 的 clause 都是 (head (key value) ...):
+;; 取一个字段就这一处, 不要写第二份。
+(define (clause-field row key)
   (cond ((assq key (cdr row)) => cadr)
         [else #f]))
 
@@ -72,15 +76,18 @@
   (unless (and (pair? build) (eq? (car build) 'build))
     (error 'write-elf "expected build: ~e" build))
   (for/list ([s (in-list (cdr build))])
-    (elf-segment (field-value 'name s)
-                 (field-value 'kind s)
-                 (field-value 'start s)
-                 (field-value 'size s)
-                 (field-value 'bytes s))))
+    (unless (and (pair? s) (eq? (car s) 'segment))
+      (error 'write-elf "expected segment: ~e" s))
+    (elf-segment (clause-field s 'name)
+                 (clause-field s 'kind)
+                 (clause-field s 'start)
+                 (clause-field s 'size)
+                 (clause-field s 'bytes))))
 
-(define (symbol-chain s) (cadr s))
-(define (symbol-seg s) (caddr s))
-(define (symbol-address s) (list-ref s 4))
+(define (check-symbols! symbols)
+  (for ([s (in-list symbols)])
+    (unless (symbol-entry? s)
+      (error 'write-elf "expected (symbol chain segment offset address): ~e" s))))
 
 (define (normalize-entry entry)
   (cond
@@ -217,7 +224,7 @@
   (for/list ([s (in-list symbols)])
     (elf-symbol (mangle-symbol-name (symbol-chain s))
                 (symbol-chain s)
-                (symbol-seg s)
+                (symbol-segment s)
                 (symbol-address s))))
 
 ;; ---------------------------------------------------------------------------
@@ -233,9 +240,7 @@
              #:when (and (pair? c) (eq? (car c) key)))
     c))
 
-(define (plan-field clause key)
-  (cond ((assq key (cdr clause)) => cadr)
-        [else #f]))
+(define (plan-field clause key) (clause-field clause key))
 
 (define (plan-entry-expr plan)
   ;; Two accepted spellings:
@@ -258,10 +263,14 @@
               #:when (eq? (plan-field c 'id) id))
     c))
 
-(define (plan-symbol-for plan chain)
-  (for/first ([c (in-list (plan-clauses plan 'symbol))]
-              #:when (equal? (plan-field c 'name) chain))
-    c))
+;; plan 里的 symbol clause 按名字建表: 下面是"每个符号查一次", 用线性扫描
+;; 在"plan 给每个符号都写了 clause"的前端上就是二次的。
+(define (plan-symbols->table plan)
+  (for/fold ([h (make-hash)]) ([c (in-list (plan-clauses plan 'symbol))])
+    (define name (plan-field c 'name))
+    (when (and name (not (hash-has-key? h name)))
+      (hash-set! h name c))
+    h))
 
 (define (find-symbol-address symbols chain)
   (for/first ([s (in-list symbols)]
@@ -516,6 +525,8 @@ pad the earlier segment so loads do not share 4K pages"
                    0)))
 
   ;; symbols + string table
+  (check-symbols! symbols)
+  (define plan-symbols (plan-symbols->table plan*))
   (define symbol-records (make-symbol-records symbols))
   (define symbol-names (cons "" (map elf-symbol-name symbol-records)))
   (define-values (symbol-name-offsets symbol-strtab)
@@ -527,9 +538,9 @@ pad the earlier segment so loads do not share 4K pages"
         [orig (in-list symbols)]
         [i (in-naturals 1)])
     (define off (* 24 i))
-    (define plan-sym (plan-symbol-for plan* (symbol-chain orig)))
+    (define plan-sym (hash-ref plan-symbols (symbol-chain orig) #f))
     (define region-id
-      (if plan-sym (plan-field plan-sym 'region) (symbol-seg orig)))
+      (if plan-sym (plan-field plan-sym 'region) (symbol-segment orig)))
     (define region
       (for/first ([r (in-list regions)]
                   #:when (eq? (image-region-id r) region-id))

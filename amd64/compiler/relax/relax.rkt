@@ -10,7 +10,9 @@
 (require "../../amd64-asm/sexp.rkt"
          "../layout/layout.rkt"
          (only-in "../layout/forms.rkt"
-                  request? request-kind request-payload)
+                  layout-requests request? request-kind
+                  request-origin request-origin-kind request-origin-block
+                  request-origin-index request-item)
          (only-in "../analyze/analyze.rkt"
                   program program-blocks program-flows
                   block-head block-items make-block))
@@ -21,11 +23,11 @@
 
 (define max-rounds 64)
 
+;; 只有"代码段里的 short 形式放不下"才需要松弛; 别的 request 是本层之外的事。
 (define (needs-near? request)
   (and (request? request)
        (eq? (request-kind request) 'needs-near)
-       (let ([origin (car (request-payload request))])
-         (and (form? origin) (eq? (car origin) 'code)))))
+       (eq? (request-origin-kind request) 'code)))
 
 (define (promote-short-control-transfer item)
   (case (car item)
@@ -35,10 +37,8 @@
 
 (define (collect-edits requests)
   (for/list ([r (in-list requests)] #:when (needs-near? r))
-    (define origin (car (request-payload r)))
-    (define item (list-ref (request-payload r) 3))
-    (cons (list (cadr origin) (caddr origin))
-          (promote-short-control-transfer item))))
+    (cons (list (request-origin-block r) (request-origin-index r))
+          (promote-short-control-transfer (request-item r)))))
 
 (define (apply-edits prog edits)
   (define table (make-hash))
@@ -54,7 +54,7 @@
 (define (relax target program data-items spec)
   (let loop ([prog program] [round 0])
     (define measured (layout-program target prog data-items spec))
-    (define requests (cdr (or (assq 'requests measured) '(requests))))
+    (define requests (layout-requests measured))
     (define edits (collect-edits requests))
     (cond
       [(or (null? edits) (>= round max-rounds)) measured]

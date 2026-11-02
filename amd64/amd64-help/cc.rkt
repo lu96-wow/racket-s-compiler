@@ -8,28 +8,26 @@
 (provide canonical-cc
          jcc-alias?)
 
+;; 别名表: 源写法 -> 规范条件码。一行一个规范码, 别名按 x86 手册列全,
+;; 不重复登记(重复的 key 在 hash 里会被静默丢掉, 只会误导读者)。
 (define jcc-alias
   (hash
    'je 'e   'jz 'e
    'jne 'ne 'jnz 'ne
-   'jc 'b   'jnae 'b
-   'jnc 'ae 'jnb 'ae 'jae 'ae
+   'jb 'b   'jc 'b  'jnae 'b
+   'jae 'ae 'jnb 'ae 'jnc 'ae
    'jbe 'be 'jna 'be
    'ja 'a   'jnbe 'a
-   'js 's   'jns 'ns
+   'js 's
+   'jns 'ns
    'jp 'p   'jpe 'p
    'jnp 'np 'jpo 'np
    'jl 'l   'jnge 'l
    'jge 'ge 'jnl 'ge
    'jle 'le 'jng 'le
    'jg 'g   'jnle 'g
-   'jo 'o   'jno 'no
-   ;; Canonical condition-code spellings are accepted directly too.
-   'jb 'b   'jae 'ae 'jbe 'be 'ja 'a
-   'js 's   'jns 'ns
-   'jp 'p   'jnp 'np
-   'jl 'l   'jge 'ge 'jle 'le 'jg 'g
-   'jo 'o   'jno 'no))
+   'jo 'o
+   'jno 'no))
 
 (define (jcc-alias? name)
   (and (symbol? name) (hash-has-key? jcc-alias name) #t))

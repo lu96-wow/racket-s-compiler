@@ -9,7 +9,7 @@
          (only-in "../../amd64-help/branch.rkt"
                   control-transfer-form? short-control-transfer-form?
                   near-control-transfer-form? control-transfer-target
-                  control-transfer-range))
+                  control-transfer-fits?))
 
 (provide form? name? path? normalize-path
 
@@ -20,6 +20,9 @@
          make-offset offset? offset-position offset-item
          make-anchor anchor? anchor-chain anchor-segment anchor-position
          make-request request? request-kind request-payload
+         request-origin request-origin-kind request-origin-block
+         request-origin-index request-segment request-offset request-item
+         request-distance
          make-problem problem? problem-kind problem-detail
 
          make-layout-segment layout-segment?
@@ -44,7 +47,7 @@
          item-kind item-size item-kind-allowed-in?
          align-pad
          control-transfer-form? short-control-transfer-form? near-control-transfer-form?
-         control-transfer-target control-transfer-range)
+         control-transfer-target control-transfer-fits?)
 
 
 ;; ---------------------------------------------------------------------------
@@ -152,6 +155,19 @@
   (and (form? x) (symbol? (car x)) #t))
 (define (request-kind x) (car x))
 (define (request-payload x) (cdr x))
+
+;; 控制转移请求(needs-near/needs-far)的 payload 形状是这一层的私事:
+;;   (origin segment offset item distance)
+;;   origin = (code 块下标 项下标) —— 谁产生的、改哪一条
+;; 下游(relax)只通过下面这些访问器读, 不自己数 list 位置。
+(define (request-origin r) (car (request-payload r)))
+(define (request-origin-kind r) (car (request-origin r)))
+(define (request-origin-block r) (cadr (request-origin r)))
+(define (request-origin-index r) (caddr (request-origin r)))
+(define (request-segment r) (cadr (request-payload r)))
+(define (request-offset r) (caddr (request-payload r)))
+(define (request-item r) (cadddr (request-payload r)))
+(define (request-distance r) (car (cddddr (request-payload r))))
 
 (define (make-problem kind . detail)
   (unless (symbol? kind)

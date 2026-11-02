@@ -40,7 +40,7 @@
 ;;; 之后的层看到的全是完整链, 不知道模块存在。链 -> 偏移 是 layout 的事。
 
 (require (only-in "../../amd64-asm/sexp.rkt"
-                  form? name? path? normalize-path as-items
+                  form? name? path? normalize-path program->items
                   arith-head? address-op-head?))
 
 (provide name?
@@ -385,7 +385,7 @@
   (define st (state (make-hash) (make-hash) (make-hash)))
   (define runs
     (for/list ([in (in-list inputs)])
-      (annotate (as-items in) '() st)))
+      (annotate (program->items in) '() st)))
   (index-labels! runs st)
   (resolve-modules! st)
   (values (for/list ([run (in-list runs)]) (resolve-items run st))

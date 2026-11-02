@@ -81,11 +81,12 @@
     '(loko-source
       (text (%origin 0) (%mode 32) (%section text) (%label text) (mov rax 5) (ret))
       (data)))))
+;; problem 的形状和 layout 的一致: (kind detail ...)
 (check-true
  (for/or ([p (in-list problems3)])
-   (and (eq? (cadr p) 'mode32-unsupported-form)
-        (equal? (caddr p) 'text)
-        (equal? (cadddr p) '(mov rax 5)))))
+   (and (eq? (car p) 'mode32-unsupported-form)
+        (equal? (cadr p) 'text)
+        (equal? (caddr p) '(mov rax 5)))))
 
 ;; 16 位模式仍然不支持
 (define-values (_spec4 _p4 _d4 problems4)
@@ -96,7 +97,7 @@
       (data)))))
 (check-true
  (for/or ([p (in-list problems4)])
-   (equal? p '(problem mode-unsupported text 16))))
+   (equal? p '(mode-unsupported text 16))))
 
 ;; Loko Linux plan: plan-only stack/heap regions, no host callbacks.
 (check-equal? (choose-loko-linux-image-plan '() '()) '())

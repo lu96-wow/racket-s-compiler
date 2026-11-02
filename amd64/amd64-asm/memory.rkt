@@ -25,7 +25,12 @@
 ;;   index 存在时 scale 1
 ;; ---------------------------------------------------------------------------
 
-(struct mem (width base index scale disp seg disp-width) #:transparent)
+;; disp-mode 是位移的**编码策略**，不是宽度：
+;;   'auto  由最终值决定（0 / disp8 / disp32 里挑最窄的）
+;;   32     必须按 disp32 编（值还没解出来时 layout 用它保证尺寸不变）
+;; 加载时 displacement 还是地址表达式就用 'auto：等到 bind/encode 有了具体值
+;; 再由 insn-core 按值选。给整数时也一样，因为"是不是 0"只有值知道。
+(struct mem (width base index scale disp seg disp-mode) #:transparent)
 
 (define mem-heads '(b8 b16 b32 b64 b128))
 (define mem-field-keys '(base index scale disp seg))
@@ -51,7 +56,7 @@
 
 (define (parse-mem x)
   (unless (mem-form? x)
-    (error 'parse-mem "expected b8/b16/b32/b64 memory operand: ~e" x))
+    (error 'parse-mem "expected b8/b16/b32/b64/b128 memory operand: ~e" x))
   (define width (mem-head-width (car x)))
   (define fields (cdr x))
   (define names (map car fields))
