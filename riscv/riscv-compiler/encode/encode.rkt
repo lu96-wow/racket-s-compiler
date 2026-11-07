@@ -36,7 +36,7 @@
          (only-in "../../riscv-help/main.rkt"
                   jump-jal jump-auipc-jalr zero-register?
                   li load-pcrel)
-         (only-in "../../riscv-asm/base/register.rkt" register->number register-abi-name)
+         (only-in "../../riscv-asm/base/register.rkt" register->number)
          "../target.rkt"
          "native-help.rkt"
          "insn.rkt")
@@ -84,10 +84,8 @@
 ;; 远形式: 交给 riscv-help 展开成真指令
 ;; ---------------------------------------------------------------------------
 
-;; riscv-help 的 jump-auipc-jalr 用 (eq? link 'zero) 判断"link 是不是零寄存器"，
-;; 直接传数字 0 会走错分支、生成 (auipc x0 …)(jalr x0 x0 …) —— 静默跳到小地址。
-;; 所以进 riscv-help 之前统一换成 ABI 名(0 -> 'zero)。等它改成 zero-register? 就能删掉。
-(define (abi-name r) (or (register-abi-name r) r))
+;; 远形式的目标寄存器由 riscv-help 解释: 它内部用 zero-register? 判"link 是不是零寄存器",
+;; 0 / 'x0 / 'zero 三种写法都能正确分派, 这里原样传下去即可。
 
 (define (branch-distance it here symbols index)
   (define target (normalize-path (list-ref it index)))
@@ -126,7 +124,7 @@
      (error 'encode "(jump-far ~a …) 的空槽没人填, 不能编码" link)]
     [(zero-register? link)
      (jump-auipc-jalr 'zero d #:scratch (list (caddr it)))]
-    [else (jump-auipc-jalr (abi-name link) d)]))
+    [else (jump-auipc-jalr link d)]))
 
 ;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。
 ;;   plain  : 操作数里可能有链, 先换成偏移

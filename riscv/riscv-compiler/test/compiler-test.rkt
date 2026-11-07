@@ -167,6 +167,42 @@
 (check-equal? (seg-bytes (flow-value lit-out 'build) 'd) '(120 0))
 
 ;; ---------------------------------------------------------------------------
+;; 远跳转: auipc+jalr 八字节, link 非零时它自己当 base, link=x0 时用显式 scratch
+;; ---------------------------------------------------------------------------
+
+(define farjump-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
+              (segment (name d) (kind code) (start #x200000) (end #x201000) (align 4)))
+    (place c (main) (after))
+    (place d (far))))
+
+;; beq 提供一条可达的 fallthrough, 中间夹一条 tail 远跳。
+(define (farjump-bytes tail)
+  (define out
+    (run-code default-flow
+              `((label main) (beq (after) a0 a1)
+                ,tail
+                (label after) (jalr x0 ra 0)
+                (label far) (jalr x0 ra 0))
+              farjump-spec))
+  (check-equal? (layout-problems (flow-value out 'bound-layout)) '())
+  (seg-bytes (flow-value out 'build) 'c))
+
+;; (jal ra (far)) 松弛成 (jump-far ra (far)): auipc ra; jalr ra, ra, -4
+(check-equal? (farjump-bytes '(jal ra (far)))
+              '(99 6 181 0        ; bne a0, a1, +12   (跳过 8 字节的远跳)
+                151 240 31 0      ; auipc ra, 0x1ff   -> 0x200004
+                231 128 192 255   ; jalr ra, ra, -4   -> 0x200000
+                103 128 0 0))     ; after: jalr x0, ra, 0
+
+;; link 是零寄存器: auipc 的落点必须换成显式 scratch(t0), 不是 x0
+(check-equal? (farjump-bytes '(jump-far x0 t0 (far)))
+              '(99 6 181 0
+                151 242 31 0      ; auipc t0, 0x1ff
+                103 128 194 255   ; jalr x0, t0, -4
+                103 128 0 0))
+
+;; ---------------------------------------------------------------------------
 ;; native 覆盖应当是完整的
 ;; ---------------------------------------------------------------------------
 

@@ -62,7 +62,9 @@
   (define-values (hi lo) (split-hi-lo offset))
 
   (cond
-    [(eq? link 'zero)
+    ;; link 是零寄存器 -> 判据只能走 zero-register?:
+    ;; 0 / 'x0 / 'zero 是同一个寄存器, 用 eq? 会漏掉前两种。
+    [(zero-register? link)
      (define base (car (take-scratch! 'jump-auipc-jalr regs 1)))
      (check-not-zero! 'jump-auipc-jalr base)
      (list (list 'auipc base hi)
@@ -77,10 +79,12 @@
   (list (list 'jalr link base offset)))
 
 ;; 超出 32 位 PC-relative 范围：
-;;   先加载完整 offset
-;;   auipc base, 0
+;;   auipc base, 0        ; 必须是第一条: offset 的基准就是它
+;;   li    off-reg, offset
 ;;   add   base, base, off-reg
 ;;   jalr  link, base, 0
+;;
+;; 和 load-pcrel 的远形式同构(auipc 在前)。顺序反了会差 li-size 个字节。
 (define (jump-pcrel-far link offset
                   #:scratch [scratch #f]
                   #:word-size [word-size 'rv64])
@@ -92,17 +96,17 @@
   (check-distinct! 'jump-pcrel-far regs)
 
   (cond
-    [(eq? link 'zero)
+    [(zero-register? link)
      (define-values (base off-reg)
        (apply values (take-scratch! 'jump-pcrel-far regs 2)))
      (check-not-zero! 'jump-pcrel-far base)
      (check-not-zero! 'jump-pcrel-far off-reg)
-     (when (eq? base off-reg)
+     (when (same-register? base off-reg)
        (error 'jump-pcrel-far "base and offset scratch must differ"))
      (append
+      (list (list 'auipc base 0))
       (expand-li off-reg offset #:word-size 'rv64)
-      (list (list 'auipc base 0)
-            (list 'add base base off-reg)
+      (list (list 'add base base off-reg)
             (list 'jalr 'zero base 0)))]
     [else
      (define off-reg
@@ -111,9 +115,9 @@
      (when (same-register? off-reg link)
        (error 'jump-pcrel-far "offset scratch must differ from link register"))
      (append
+      (list (list 'auipc link 0))
       (expand-li off-reg offset #:word-size 'rv64)
-      (list (list 'auipc link 0)
-            (list 'add link link off-reg)
+      (list (list 'add link link off-reg)
             (list 'jalr link link 0)))]))
 
 ;; 绝对/间接跳转：先把目标地址放进临时寄存器，再 jalr。

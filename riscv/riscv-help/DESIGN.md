@@ -408,7 +408,9 @@ fits-auipc-pair?(delta, word-size)
 1. `li` 和 `li-size` 使用同一套展开逻辑。
 2. `load-pcrel` 和 `load-pcrel-size` 使用同一套近/远判断。
 3. 低层叶子函数严格检查边界，不静默回退。
-4. `load-pcrel` 的 `delta` 始终相对于 `AUIPC`，且 `AUIPC` 是第一条。
+4. 所有 PC-relative 展开（`load-pcrel`、`jump-auipc-jalr`、`jump-pcrel-far`）的
+   `delta` / `offset` 都相对于 `AUIPC`，且 `AUIPC` 是展开结果的第一条。
+   先放 `li` 再放 `AUIPC` 会让落点整体差 `li-size`。
 5. far 形式必须显式提供合法 scratch。
 6. `la-pcrel #f` / `la-got` 只能作为占位，不能被当成最终正确代码。
 7. 寄存器名只在 `riscv-asm/base/register.rkt` 维护。
@@ -479,6 +481,9 @@ raco test riscv-help/test/*.rkt
 - general64 随机 64 位值语义回归
 - `load-pcrel` 近/远形式
 - far scratch 缺失
+- `jump-*` / `branch-long` 的**落点**回归：`test/jump-test.rkt` 里带一个迷你解释器，
+  按 XLEN 真的走一遍展开结果，而不是只比指令形状
+- `jump-auipc-jalr` / `jump-pcrel-far` 对零寄存器的三种写法（`0` / `'x0` / `'zero`）走同一条路
 - scratch 为 `x0`
 - scratch 等于 `rd`
 - RV32 超范围
@@ -489,7 +494,7 @@ raco test riscv-help/test/*.rkt
 最近结果：
 
 ```text
-1105 tests passed
+1150 tests passed
 ```
 
 ---
