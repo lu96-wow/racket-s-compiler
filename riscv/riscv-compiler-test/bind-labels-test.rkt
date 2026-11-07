@@ -13,9 +13,11 @@
                     [layout-program layout-program*])
          (only-in "../riscv-compiler/bind-labels/bind.rkt"
                   bind-labels bound-layout? layout-symbols layout-link
+                  layout-provides
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../riscv-compiler/target.rkt" target-rv64-base)
-         (only-in "../riscv-compiler/analyze/analyze.rkt" analyze))
+         (only-in "../riscv-compiler/analyze/analyze.rkt" analyze)
+         (only-in "../riscv-compiler/flatten/flatten.rkt" flatten-program))
 
 (define test-target target-rv64-base)
 (define (lay prog data spec) (layout-program* test-target prog data spec))
@@ -208,5 +210,48 @@
               '((base 0)
                 (symbol (a) #x1000)
                 (symbol (b) #x1000)))
+
+;; ---------------------------------------------------------------------------
+;; provides: 对外承诺哪些名字(链), 地址仍在 link 表里
+;;
+;; exports 三种取值: 'all(缺省) / 链列表 / 链没有被 link 覆盖 -> problem
+;; ---------------------------------------------------------------------------
+
+;; 缺省(手搓 measured-layout)按“全导出”算, 顺序跟 link 表一致(按地址升序)。
+(check-equal? (layout-provides (bind-labels measured))
+              '((main) (f) (d t)))
+
+;; 给定导出集合: 只留这些名字, 顺序仍然是 link 表的顺序。
+(check-equal? (layout-provides (bind-labels measured '((d t) (main))))
+              '((main) (d t)))
+
+;; 空集合 = 什么都不导出。
+(check-equal? (layout-provides (bind-labels measured '())) '())
+
+;; 导出一个不存在的名字 -> problem, 不抛异常。
+(check-true (pair? (problems-of (bind-labels measured '((ghost))))))
+(check-true (has-problem? (bind-labels measured '((ghost))) 'provide-unknown)
+            (format "problems: ~s"
+                    (problems-of (bind-labels measured '((ghost))))))
+
+;; provides 只是链, 地址不重复存: 每个链都能在 link 表里查到同样的地址。
+(for ([chain (in-list (layout-provides (bind-labels measured)))])
+  (check-equal? (symbol-address (symbol-for (bind-labels measured) chain))
+                (symbol-address (symbol-for (bind-labels measured) chain))))
+
+;; rename-out: 外部名和本地链不同 -> link 表里补一行别名, provides 用外部名。
+;; 注意: module 必须先 flatten(本层不认识 module 壳, 会当成一条不透明 item)。
+(define renamed
+  (lay (analyze (flatten-program
+                 '((module a (provide (rename-out (f out)))
+                            (label f) (jalr x0 ra 0)))))
+       '()
+       '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
+         (place c (a f)))))
+;; 导出集合记绝对链, 所以 link 表里没有别名行
+(define renamed-bound (bind-labels renamed '((a f))))
+(check-equal? (layout-provides renamed-bound) '((a f)))
+(check-equal? (layout-link renamed-bound)
+              '((base 0) (symbol (a f) #x1000)))
 
 (finish-tests "bind-labels")

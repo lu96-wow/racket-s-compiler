@@ -261,6 +261,7 @@
 ;; 不动点: imports 依赖对方 provides, provides 又可能依赖自己的 imports(re-export)。
 ;; 允许 require 成环 —— 这里只是名字解析, 不涉及初始化顺序。
 ;; 涨不上去的 provide 条目最后统一报错。
+;; 返回最终的 provides 表(模块名 -> ((外部链 . 绝对链) ...)): 导出集合是产物的一部分。
 (define (resolve-modules! st)
   (define mods (sort (hash-keys (state-modules st)) chain<?))
   (define provides (make-hash))
@@ -307,7 +308,34 @@
       (define known (hash-ref (state-label-index st) (append n (car b)) #f))
       (when (and known (equal? (cdr known) n))
         (error 'flatten "module ~s: ~s is both defined here and required"
-               n (car b))))))
+               n (car b)))))
+  provides)
+
+;; ---------------------------------------------------------------------------
+;; 导出集合: 这一个编译单元对外可见的名字, 用**绝对链**表示
+;;
+;;   'all       全单元没有任何 (provide …) 子句 -> 平铺镜像语义: 一切都可见
+;;   (链 …)     各模块 provide 的并集(取绝对链), 去重后按链排序
+;;
+;; 为什么取绝对链而不是 provide 里写的名字: 绝对链是流水线里唯一的名字身份
+;; (flatten 之后所有层只认它), link 表的行也正是按它排的。rename-out 里的
+;; 外部名只在**本单元内**的 require 绑定里有意义; 跨单元怎么称呼它属于输入侧
+;; 的事, 等做输入时再定(那时可能要给 link 表加别名行)。
+;;
+;; 注意: 只要**有** provide 子句, 默认私有就生效 —— 没写的就不导出。
+;; 这是 flatten 的模块规则(“默认私有”), 导出集合只是把它记下来, 不另立规则。
+;; ---------------------------------------------------------------------------
+
+(define (exports-of st provides)
+  (define mods (hash-keys (state-modules st)))
+  (if (for/or ([n (in-list mods)])
+        (pair? (mod-provides (must-module st n))))
+      (sort (remove-duplicates
+             (append* (for/list ([n (in-list mods)])
+                        (for/list ([p (in-list (hash-ref provides n '()))])
+                          (cdr p)))))
+            chain<?)
+      'all))
 
 ;; ---------------------------------------------------------------------------
 ;; 第 4 步: 解析引用
@@ -376,26 +404,28 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-;; flatten-inputs : (listof 输入) -> (values (listof 扁平 input) 名字表)
+;; flatten-inputs : (listof 输入) -> (values (listof 扁平 input) 名字表 导出集合)
 ;;   第一个返回值与输入一一对应, 顺序不变。
 ;;   多个输入共享一张名字表/模块表, 所以 (require 别的输入里的模块) 能查到。
+;;   导出集合 = 绝对链列表(已去重排序), 或 'all(全单元没有 provide 子句)。
 (define (flatten-inputs inputs)
   (define st (state (make-hash) (make-hash) (make-hash)))
   (define runs
     (for/list ([in (in-list inputs)])
       (annotate (as-items in) '() st)))
   (index-labels! runs st)
-  (resolve-modules! st)
+  (define provides (resolve-modules! st))
   (values (for/list ([run (in-list runs)]) (resolve-items run st))
           ;; 对外保持老形状: 链 -> slot（scope 是我们内部用的）
           (for/hash ([(chain entry) (in-hash (state-label-index st))])
-            (values chain (car entry)))))
+            (values chain (car entry)))
+          (exports-of st provides)))
 
 ;; flatten-program : (listof item) -> (listof item)   ; 单个输入
 (define (flatten-program prog)
-  (define-values (outs _) (flatten-inputs (list prog)))
+  (define-values (outs _names _exports) (flatten-inputs (list prog)))
   (car outs))
 
-;; flatten-items : 程序体 -> (values 扁平 item 列表 名字表)
+;; flatten-items : 程序体 -> (values 扁平 item 列表 名字表 导出集合)
 (define (flatten-items items)
   (flatten-inputs (list items)))

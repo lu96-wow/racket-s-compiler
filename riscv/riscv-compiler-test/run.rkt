@@ -16,6 +16,7 @@
     "bind-labels-test.rkt"
     "relax-test.rkt"
     "encode-test.rkt"
+    "link-file-test.rkt"
     "flow-test.rkt"
     "integration-test.rkt"))
 

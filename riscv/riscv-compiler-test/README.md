@@ -55,7 +55,9 @@ bind-labels : ((phase bound) (origin 基址) (segments ...) (anchors ...)
                (link (base 基址) (symbol 链 地址) ...)
                (requests ...) (problems ...))
 build       : (build (link (base 基址) (symbol 链 地址) ...)
+                     (provides 链 ...)
                      (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
+link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.rkt，形状同 link）
 ```
 
 `layout` / `relax` 的 `requests` 是交接点：`needs-far` 给 relax，

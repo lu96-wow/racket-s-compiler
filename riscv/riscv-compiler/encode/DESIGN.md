@@ -23,6 +23,7 @@
 
 ```racket
 (build (link (base B) (symbol 链 地址) …)
+       (provides 链 …)
        (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)
 ```
 

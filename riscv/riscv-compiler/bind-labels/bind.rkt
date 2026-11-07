@@ -28,6 +28,7 @@
          bound-layout?
          layout-symbols
          layout-link
+         layout-provides
          symbol-row
          symbol-address
          eval-symbol-address)
@@ -72,7 +73,32 @@
 ;; 行只来自 anchors, 所以**输出里不会出现未解析的行**; 输出可以直接当
 ;; 另一个镜像的输入用(缺口不随表传播)。
 ;;
+;; 行只来自 anchors 加 provide 引入的别名, 所以**输出里不会出现未解析的行**;
+;; 输出可以直接当另一个镜像的输入用(缺口不随表传播)。
+;;
 ;; 两份输出必须可逐字节比较: 按地址升序, 同址按链的写法排序。
+
+(define (make-link base rows)
+  (cons 'link (cons (list 'base base) rows)))
+
+(define (layout-link layout)
+  (define hit (assoc 'link layout))
+  (and hit (cdr hit)))
+
+;; ---------------------------------------------------------------------------
+;; provides: 对外承诺哪些名字
+;;
+;; `(provides 链 …)` —— 只有链，地址在 link 表里(同一张表, 别存两份)。
+;; 顺序跟 link 表一致(按地址升序), 所以“按 provides 过滤 link”就是取子序列。
+;;
+;; exports 有两种取值(flatten 给的):
+;;   'all     全单元没有 (provide …) 子句 -> 平铺镜像语义, 一切都导出
+;;   (链 …)   各模块 provide 的并集(绝对链)
+;;
+;; 只认 link 表里真有的名字: flatten 已保证 provide 可解, 走到这里还缺说明
+;; 输入不是 flatten 给的(或指到了别的镜像) —— 报 problem, 不抛异常。
+;; ---------------------------------------------------------------------------
+
 (define (chain-string chain) (format "~a" chain))
 
 (define (link-row<? a b)
@@ -83,16 +109,30 @@
     [(> x y) #f]
     [else (string<? (chain-string (cadr a)) (chain-string (cadr b)))]))
 
+;; symbol 行 (symbol 链 段名 偏移 地址) -> link 行 (symbol 链 地址)
 (define (link-rows symbols)
   (sort (for/list ([row (in-list symbols)])
           (list 'symbol (cadr row) (last row)))
         link-row<?))
 
-(define (make-link base symbols)
-  (cons 'link (cons (list 'base base) (link-rows symbols))))
+;; 返回 (values link 行 provides 链列表)
+(define (exported rows exports problem!)
+  (cond
+    [(eq? exports 'all)
+     (values rows (map cadr rows))]
+    [else
+     (define wanted (make-hash))
+     (for ([c (in-list exports)]) (hash-set! wanted c #t))
+     (for ([c (in-list exports)]
+           #:unless (findf (lambda (r) (equal? (cadr r) c)) rows))
+       (problem! `(provide-unknown ,c)))
+     (values rows
+             (for/list ([r (in-list rows)]
+                        #:when (hash-ref wanted (cadr r) #f))
+               (cadr r)))]))
 
-(define (layout-link layout)
-  (define hit (assoc 'link layout))
+(define (layout-provides layout)
+  (define hit (assoc 'provides layout))
   (and hit (cdr hit)))
 
 ;; 绝对地址在最后一列
@@ -156,7 +196,7 @@
 (define (bound-layout? layout)
   (eq? (layout-phase layout) 'bound))
 
-(define (bind-labels measured)
+(define (bind-labels measured [exports 'all])
   (case (layout-phase measured)
     [(bound) measured]
     [(measured)
@@ -170,13 +210,19 @@
      (check-value-widths segments symbols problem!)
      (check-segment-overflow segments problem!)
 
+     ;; link 表 = symbols 的两列投影 + provide 引入的别名(rename-out)
+     (define-values (rows provided) (exported (link-rows symbols) exports problem!))
+     (define link (make-link origin rows))
+
      (list (list 'phase 'bound)
            (list 'origin origin)
            (cons 'segments segments)
            (cons 'anchors anchors)
            (cons 'symbols symbols)
-           ;; 对外接口: 就是 symbols 的两列投影, 不另算地址
-           (make-link origin symbols)
+           ;; 对外接口: 名字 -> 地址; 顺序跟 provides 无关, 按地址升序
+           link
+           ;; 对外承诺哪些名字; 顺序跟 link 表一致, 地址不重复存
+           (cons 'provides provided)
            (cons 'requests (layout-requests measured))
            (cons 'problems (append (layout-problems measured)
                                    (reverse extra))))]

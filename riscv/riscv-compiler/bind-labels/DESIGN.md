@@ -32,6 +32,7 @@
  (anchors …)
  (symbols (symbol 链 段名 偏移 绝对地址) …)
  (link (base 镜像基址) (symbol 链 绝对地址) …)   ; 对外投影，见下节
+ (provides 链 …)                                 ; 对外承诺哪些名字，见下节
  (requests …)
  (problems …))
 ```
@@ -73,7 +74,27 @@
 它取 spec 的 `(origin …)` 而不是 `min(段 start)` —— 后者在有 hole 段时会给出
 没有意义的数（例如 bss 在 `0x80000000`、代码在 `0x1000`）。
 
-`encode` 把它**原样搬进产物**（`(build (link …) (segment …) …)`），不重算地址。
+`encode` 把它**原样搬进产物**（`(build (link …) (provides …) (segment …) …)`），不重算地址。
+
+## provides 表：对外承诺哪些名字
+
+跟 link 表是一对：link 说“所有名字在哪”，provides 说“其中哪些是对外的”。
+
+```racket
+(provides 链 …)        ; 只有链，地址在 link 表里，不存两份
+```
+
+- 来源是 `flatten` 记下的导出集合（各模块 `(provide …)` 的并集，用**绝对链**）；
+- `exports = 'all` 表示**全单元没有 `(provide …)` 子句** → 平铺镜像语义，一切都导出；
+- 顺序跟 link 表一致（按地址升序），所以“按 provides 过滤 link”是取子序列；
+- 名字在 link 表里查不到 → `(provide-unknown 链)` problem（不抛异常）。
+
+为什么记绝对链而不是 `provide` 里写的名字：flatten 之后**绝对链是唯一的名字身份**，
+link 表也按它排。`rename-out` 的外部名只在本单元的 `require` 绑定里有意义；
+跨单元怎么称呼它属于输入侧（等做输入时再定，届时可能要给 link 表加别名行）。
+
+`link-file.rkt` 把这两张表合成**单独一个文件**（内容 = 按 provides 过滤的 link 表），
+所以镜像文件和 link 文件可以分开交付。
 
 ## 未来（现在没做，先记着）
 

@@ -9,6 +9,7 @@
 
 | 输入 | 输出 |
 | --- | --- |
+| `(provide …)` 子句 | 记进**导出集合**（第三个返回值） |
 | `(module 名 item…)` | 去掉壳后的 item |
 | `(provide …)` / `(require …)` | 消失（只影响名字可见性） |
 | `(prefix-in p: 链…)` | 链的头一节加前缀 |
@@ -21,6 +22,10 @@
 - 默认私有：跨模块引用必须 `require`，写全名不是后门。
 - `provide` / `require` 可以成环；这里没有初始化顺序。
 - 链是身份：`(label a f)` 是同一位置的多个名字；解析后所有层只认完整链。
+- 导出集合是产物的一部分：`flatten-inputs` 返回 `(values items names exports)`，
+  `exports` 是各模块 `(provide …)` 的并集（**绝对链**，已去重排序），
+  或 `'all`（全单元没有 provide 子句 = 平铺镜像语义，全导出）。
+  它一路传到 `bind-labels`，最后成为产物的 `(provides 链 …)` 和 link 文件。
 
 ## 边界
 

@@ -137,7 +137,7 @@
              (list (cons 'program-items '((module a (provide f) (label f))))
                    (cons 'data-items '()))))
 (check-equal? (sort (hash-keys flatten-only) symbol<?)
-              '(data-items names program-items))
+              '(data-items exports names program-items))
 
 (define analyze-only (run-stage 'analyze front))
 (check-equal? (sort (hash-keys analyze-only) symbol<?) '(program))

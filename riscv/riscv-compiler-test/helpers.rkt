@@ -33,6 +33,10 @@
   (or (findf (lambda (x) (eq? (car x) 'link)) (cdr build))
       (error 'build-link "no link table in ~e" build)))
 
+(define (build-provides build)
+  (or (findf (lambda (x) (eq? (car x) 'provides)) (cdr build))
+      (error 'build-provides "no provides in ~e" build)))
+
 (define (build-segment build name)
   (or (findf (lambda (seg)
                (equal? (cadr (assoc 'name (cdr seg))) name))

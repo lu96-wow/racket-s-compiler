@@ -119,7 +119,7 @@
 ;; 多输入共享名字表
 ;; ---------------------------------------------------------------------------
 
-(define-values (outs names)
+(define-values (outs names exports)
   (flatten-inputs
    (list '((module a (provide f) (label f)))
          '((module b (require a) (la t0 (f)))
@@ -130,11 +130,13 @@
                 ((la t0 (a f)) (label g))))
 (check-equal? (hash-ref names '(a f)) 0)
 (check-equal? (hash-ref names '(g)) 1)
+;; 导出集合: 这个单元只 provide 了 a/f, 记绝对链
+(check-equal? exports '((a f)))
 
 ;; 跨输入直接引用根 label
 (check-equal? (flatten-program '((label shared)))
               '((label shared)))
-(define-values (outs2 _)
+(define-values (outs2 _ _exports2)
   (flatten-inputs (list '((label shared))
                         '((la t0 (shared))))))
 (check-equal? outs2 '(((label shared)) ((la t0 (shared)))))
@@ -200,9 +202,45 @@
            (module b (label g) (jal x0 (g)))))))
 (check-equal? (flat once) once)
 
-(define-values (items names2)
+(define-values (items names2 exports2)
   (flatten-items '((module a (label f)))))
 (check-equal? items '(((label a f))))
 (check-equal? (hash-ref names2 '(a f)) 0)
+
+;; ---------------------------------------------------------------------------
+;; 导出集合(第三个返回值)
+;;
+;;   'all  = 全单元没有 (provide …) 子句 -> 平铺镜像语义
+;;   列表  = 各模块 provide 的并集(绝对链), 去重按链排序
+;; ---------------------------------------------------------------------------
+
+(define (exports-of inputs)
+  (let-values ([(outs names exports) (flatten-inputs inputs)])
+    (list outs names exports)))
+
+;; 裸程序(没有 module/provide): 全导出
+(check-equal? (third (exports-of (list '((label g) (label h))))) 'all)
+
+;; 只要有一处 provide, 默认私有就生效: 没写的链不在导出集合里。
+(check-equal? (third (exports-of (list '((module a (provide f) (label f) (label g))))))
+              '((a f)))
+
+;; (provide *) = 本模块直接定义的 label 全部导出。
+(check-equal? (third (exports-of (list '((module a (provide *) (label f) (label g))))))
+              '((a f) (a g)))
+
+;; re-export: b 把 require 进来的 f 再导出。导出集合记的是**绝对链**(原定义处),
+;; 所以 a 和 b 导出的是同一个名字, 去重后只剩一条。
+(check-equal? (third (exports-of
+                      (list '((module a (provide f) (label f)))
+                            '((module b (require a) (provide f))))))
+              '((a f)))
+
+;; 改名导出 (rename-out (本地 外部)): 记的是**外部名**(别人怎么称呼它)。
+;; rename-out 的**外部名**只在本单元的 require 绑定里有意义; 导出集合记的是
+;; 绝对链(流水线里唯一的名字身份), 所以这里仍然是 (a f)。
+(check-equal? (third (exports-of
+                      (list '((module a (provide (rename-out (f out))) (label f))))))
+              '((a f)))
 
 (finish-tests "flatten")

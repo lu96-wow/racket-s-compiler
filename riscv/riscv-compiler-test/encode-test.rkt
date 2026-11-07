@@ -36,6 +36,9 @@
                     (for/list ([row (in-list symbols)])
                       (list 'symbol (cadr row) (last row))))))
 
+(define (provides-field symbols)
+  (cons 'provides (map cadr symbols)))
+
 (define (laid segments symbols)
   (list (list 'phase 'bound)
         (list 'origin 0)
@@ -43,6 +46,7 @@
         (cons 'anchors '())
         (cons 'symbols symbols)
         (link-field symbols)
+        (provides-field symbols)
         (cons 'requests '())
         (cons 'problems '())))
 
@@ -57,6 +61,7 @@
         (cons 'anchors '())
         (cons 'symbols (cdr (assoc 'symbols layout)))
         (link-field (cdr (assoc 'symbols layout)))
+        (provides-field (cdr (assoc 'symbols layout)))
         (cons 'requests requests)
         (cons 'problems '())))
 

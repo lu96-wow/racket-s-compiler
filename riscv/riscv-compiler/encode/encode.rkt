@@ -32,7 +32,7 @@
                   layout-problems layout-requests layout-phase layout-segments)
          "../layout/forms.rkt"
          (only-in "../bind-labels/bind.rkt"
-                  bound-layout? layout-symbols layout-link
+                  bound-layout? layout-symbols layout-link layout-provides
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../../riscv-help/main.rkt"
                   jump-jal jump-auipc-jalr zero-register?
@@ -245,11 +245,15 @@
               (format "  ~s" p))
             "\n")))
   (define symbols (layout-symbols layout))
-  ;; link 表原样搬运: 它是 bind-labels 已经算好的"链 -> 地址", 本层不重算。
+  ;; link / provides 原样搬运: 它们是 bind-labels 已经算好的, 本层不重算。
   (define link (layout-link layout))
+  (define provides (layout-provides layout))
   (unless link
     (error 'encode "bound-layout 里没有 link 表: ~e" (map car layout)))
+  (unless provides
+    (error 'encode "bound-layout 里没有 provides: ~e" (map car layout)))
   (list* 'build
          (cons 'link link)
+         (cons 'provides provides)
          (for/list ([seg (in-list (layout-segments layout))])
            (encode-segment target seg symbols))))

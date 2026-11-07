@@ -53,6 +53,7 @@
 ;;   data-items     核心数据 item（label / bytes / fill / value / align / pad）
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
 ;;   names          flatten 建的名字表（链 -> 位置）
+;;   exports        flatten 记下的导出集合（绝对链列表，或 'all）
 ;;   program        (struct program blocks flows)
 ;;   measured-layout 度量产物（segments + anchors + requests + problems）
 ;;   bound-layout    绑定产物（segments + anchors + symbols + requests + problems）
@@ -63,6 +64,12 @@
 
 (struct stage (name requires provides run doc) #:transparent)
 
+;; requires 里的一项: 名字, 或 (optional 名字)。
+;;   (optional x) = 在途值里有 x 就作为输入传进去, 没有也不报错。
+;;   层的 run 必须能处理"缺这个输入"的情况(给缺省)。
+(define (optional-requirement? r) (and (pair? r) (eq? (car r) 'optional)))
+(define (requirement-name r) (if (optional-requirement? r) (cadr r) r))
+
 (define stage-table
   (hash
    'expand-data
@@ -71,15 +78,17 @@
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
-   (stage 'flatten '(program-items data-items) '(program-items data-items names)
+   (stage 'flatten '(program-items data-items)
+          '(program-items data-items names exports)
           (lambda (_target in)
-            (define-values (outs names)
+            (define-values (outs names exports)
               (flatten-inputs (list (hash-ref in 'program-items)
                                     (hash-ref in 'data-items))))
             (hash 'program-items (list-ref outs 0)
                   'data-items (list-ref outs 1)
-                  'names names))
-          "模块展平 + 链式查表（程序和数据共享一张名字表）")
+                  'names names
+                  'exports exports))
+          "模块展平 + 链式查表（程序和数据共享一张名字表）；顺带记下导出集合")
 
    'expand-pseudo
    (stage 'expand-pseudo '(program-items) '(program-items)
@@ -119,11 +128,13 @@
           "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
 
    'bind-labels
-   (stage 'bind-labels '(measured-layout) '(bound-layout)
+   (stage 'bind-labels '(measured-layout (optional exports)) '(bound-layout)
           (lambda (_target in)
+            ;; exports 可选: 没跑 flatten 时按“全导出”算(手搓 measured-layout 的场景)
             (hash 'bound-layout
-                  (bind-labels (hash-ref in 'measured-layout))))
-          "地址绑定: anchors -> symbols（偏移 -> 绝对地址）+ 最终宽度/容量检查")
+                  (bind-labels (hash-ref in 'measured-layout)
+                               (hash-ref in 'exports 'all))))
+          "地址绑定: anchors -> symbols（偏移 -> 绝对地址）+ link/provides + 宽度/容量检查")
 
    'encode
    (stage 'encode '(bound-layout) '(build)
@@ -220,14 +231,18 @@
   (define ctx (seed-context seeds))
   (for ([n (in-list names)] [step (in-naturals)])
     (define st (hash-ref stage-table n))
-    (for ([r (in-list (stage-requires st))])
-      (unless (hash-has-key? ctx r)
+    (for ([r (in-list (stage-requires st))]
+          #:unless (optional-requirement? r))
+      (unless (hash-has-key? ctx (requirement-name r))
         (error 'run-flow
                "第 ~a 步 `~a` 需要 `~a`，但它前面没有层产出它，seed 里也没有。~a"
-               step n r
-               (let ([ps (providers-of r)])
+               step n (requirement-name r)
+               (let ([ps (providers-of (requirement-name r))])
                  (if (null? ps) "" (format "能产出它的是: ~a" ps))))))
-    (define in (for/hash ([r (in-list (stage-requires st))]) (values r (hash-ref ctx r))))
+    ;; 可选输入: 在途值里有才传进去(层自己给缺省)
+    (define in (for/hash ([r (in-list (stage-requires st))]
+                          #:when (hash-has-key? ctx (requirement-name r)))
+                 (values (requirement-name r) (hash-ref ctx (requirement-name r)))))
     (for ([(k v) (in-hash ((stage-run st) target in))]) (hash-set! ctx k v)))
   ctx)
 
