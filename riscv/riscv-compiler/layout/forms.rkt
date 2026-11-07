@@ -173,7 +173,7 @@
      (case (car x)
        [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
        [else 4])]
-    [(eq? (car x) 'li) (li-size (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
+    [(eq? (car x) 'li) (li-size (cadr x) (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
     [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 留 la-too-far request
     [else 4]))
 

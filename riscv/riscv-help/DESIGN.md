@@ -157,16 +157,17 @@ check-not-zero!
 
 ```racket
 ;; 常量 / 绝对地址
-li
-li-size
+li        ; (li rd value #:word-size)
+li-size   ; (li-size rd value #:word-size)
 
 ;; PC 相对地址
-load-pcrel
-load-pcrel-size
+load-pcrel       ; (load-pcrel rd delta #:word-size #:scratch)
+load-pcrel-size  ; (load-pcrel-size rd delta #:word-size #:scratch)
 
 ;; gp / 栈帧相对地址
-la-gp
-la-frame
+la-gp            ; (la-gp rd offset)
+la-frame         ; (la-frame rd base offset #:scratch #:word-size)
+la-frame-size    ; (la-frame-size rd base offset #:scratch #:word-size)
 
 ;; 跳转
 jump-cj
@@ -205,10 +206,24 @@ compressed-branch-register?
 - `load-pcrel`：加载 `address(AUIPC) + delta`
 - `li-size`：返回 `li` 展开后的字节数
 - `load-pcrel-size`：返回 `load-pcrel` 展开后的字节数
-- `la-gp` / `la-frame`：gp 和栈帧相对地址
+- `la-gp`：gp 相对地址
+- `la-frame`：栈帧相对地址（大 offset 需要 scratch，会改尺寸）
+- `la-frame-size`：返回 `la-frame` 展开后的字节数
 - `jump-*` / `branch-*`：跳转和条件分支
 - `fits-*`：调用方选择跳转/分支/gp 形式时使用
 - 寄存器判断：scratch 选择和压缩分支选择时使用
+
+**参数顺序一律跟底层 opcode 一致（rd、base 在前）。**
+`x-size` 必须和 `x` 的**位置参数与关键字完全同形**：
+
+```racket
+(li rd value ...)                   (li-size rd value ...)
+(load-pcrel rd delta ...)           (load-pcrel-size rd delta ...)
+(la-frame rd base offset ...)       (la-frame-size rd base offset ...)
+```
+
+理由不是美学：size 函数必须能看到所有**影响合法性**的参数（`rd`/`base`/`scratch`），
+否则它会为展开时一定会被拒绝的输入报出一个长度（见 §8 第 9 条）。
 
 ### 4.2 内部低层入口
 
@@ -275,7 +290,7 @@ delta = target - address(AUIPC)
 | 情况 | 形式 | 范围 | 大小 |
 | --- | --- | --- | --- |
 | 近 | `auipc` + `addi` | RV64：`[-2^31-2048, 2^31-2049]`；RV32：32 位偏移 | 8B |
-| RV64 远 | `auipc rd,0` + `li temp,delta` + `add` | 任意 64 位 delta，需要 scratch | `li-size(delta) + 8B` |
+| RV64 远 | `auipc rd,0` + `li temp,delta` + `add` | 任意 64 位 delta，需要 scratch | `li-size(temp,delta) + 8B` |
 | RV32 超范围 | 报错 | 没有 far 形式 | - |
 
 ### 5.3 `la` 其他形式
@@ -289,9 +304,11 @@ delta = target - address(AUIPC)
 | `la-got` | `auipc rd,0` + `lw/ld rd,rd,0` | 不判别 | 8B | 占位 |
 | `la-gp` | `addi rd, gp, off` | `[-2048, 2047]` | 4B | 可用 |
 | `la-frame` 小 offset | `addi rd, base, off` | `[-2048, 2047]` | 4B | 可用 |
-| `la-frame` 大 offset | `li tmp, off` + `add rd, base, tmp` | offset 同 `li` | `li-size+4B` | 可用，需要 scratch |
+| `la-frame` 大 offset | `li tmp, off` + `add rd, base, tmp` | offset 同 `li` | `li-size+4B`（最坏 36B） | 可用，需要 scratch |
+| `la-frame-size rd base off` | 同上两条 | 同上 | 4B 或 `li-size(off)+4B` | 可用 |
 
-`la-pcrel`、`la-abs`、`la-got`、`expand-la` 不通过 `main.rkt` 导出。公共地址入口是 `li`、`load-pcrel`、`la-gp`、`la-frame`。
+`la-pcrel`、`la-abs`、`la-got`、`expand-la` 不通过 `main.rkt` 导出。
+公共地址入口是 `li`、`load-pcrel`、`la-gp`、`la-frame`（以及对应的 `-size`）。
 
 ### 5.4 跳转 / 分支范围
 
@@ -405,8 +422,10 @@ fits-auipc-pair?(delta, word-size)
 
 维护时应保持：
 
-1. `li` 和 `li-size` 使用同一套展开逻辑。
-2. `load-pcrel` 和 `load-pcrel-size` 使用同一套近/远判断。
+1. `li` 和 `li-size` 使用同一套展开逻辑（`expand-li`）。
+2. `load-pcrel` 和 `load-pcrel-size` 使用同一套近/远判断，**并且**共用同一个
+   scratch 校验函数（存在 / 非零 / ≠ `rd`），两条路径不会对同一输入给出不同结论。
+2b. `la-frame` 和 `la-frame-size` 同理（共用 `la-frame-scratch`）。
 3. 低层叶子函数严格检查边界，不静默回退。
 4. 所有 PC-relative 展开（`load-pcrel`、`jump-auipc-jalr`、`jump-pcrel-far`）的
    `delta` / `offset` 都相对于 `AUIPC`，且 `AUIPC` 是展开结果的第一条。
@@ -420,6 +439,14 @@ fits-auipc-pair?(delta, word-size)
    - size 判断
    - 测试
    - 本文档
+9. **每个会改尺寸的展开器 `x` 必须有同形同序的 `x-size`。**
+   - 位置参数、关键字、默认值全部对齐，顺序跟底层 opcode（`rd`、`base` 在前）。
+   - `x-size` 必须复用 `x` 的判据函数（范围 + scratch 校验），
+     不能自己重写一遍——否则 size 会为展开时一定被拒的输入报出长度，
+     把失败推到 `encode` 的 size 断言上（那是最后的安全网，不是第一道检查）。
+10. 依赖 `rd` / `base` 的合法性只能在展开器和 size 函数里各判一次，
+    判据写成两个函数共用的 helper（`take-load-pcrel-scratch`、`la-frame-scratch`），
+    不允许在各处内联。
 
 ---
 
@@ -438,7 +465,8 @@ fits-auipc-pair?(delta, word-size)
 - `load-pcrel` 只接受数值 delta，不接受 `target + pc` 自动求差。
 - RV32 没有 far PC 相对形式。
 - `expand-li` 的 `#:scratch` 目前不参与选择。
-- `load-pcrel-size` 的 far 分支只检查 scratch 是否存在且非零，不检查 scratch 与最终 `rd` 是否冲突（size API 没有 `rd`）。
+- `li-size` 的尺寸与 `rd` 无关（拿了 `rd` 只是为了和 `li` 同形；
+  `li x0, v` 目前不优化成 0 字节）。
 
 ---
 
@@ -457,6 +485,7 @@ fits-auipc-pair?(delta, word-size)
 | GOT 占位 | `la.rkt` 的 `la-got` |
 | scratch 规则 | `scratch.rkt` |
 | 寄存器名 | `riscv-asm/base/register.rkt` |
+| 栈帧尺寸 | `la.rkt` 的 `la-frame-size` |
 | 跳转范围 | `ranges.rkt`、`jump.rkt` |
 | 分支范围 | `ranges.rkt`、`branch.rkt` |
 | 对外导出集合 | `main.rkt` 的 `provide` 列表 |
@@ -488,13 +517,15 @@ raco test riscv-help/test/*.rkt
 - scratch 等于 `rd`
 - RV32 超范围
 - `load-pcrel-size` 与生成结果一致
+- `load-pcrel-size` / `la-frame-size` 与对应展开器**接受同一组输入**（scratch = `rd` 在两边都拒绝）
+- `la-frame-size` 覆盖 4B / 12B / 最坏 36B，且恒等于展开结果字节数
 - `la-pcrel`、`la-abs`、`la-gp`、`la-frame`、`expand-la` 基础行为
 - `main.rkt` 公共 API 面
 
 最近结果：
 
 ```text
-1150 tests passed
+1176 tests passed
 ```
 
 ---

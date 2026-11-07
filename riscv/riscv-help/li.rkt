@@ -221,9 +221,12 @@
     (generated-instruction-size instruction)))
 
 ;; 返回 li 展开后的字节数。
-(define (li-size value #:word-size [word-size 'rv64])
+;;
+;; 参数顺序和 li 一致(rd 在前): 尺寸暂时与 rd 无关, 但保持同形,
+;; 这样“size 必须接受所有影响合法性的参数”不需要靠记性保证。
+(define (li-size rd value #:word-size [word-size 'rv64])
   (generated-instructions-size
-   (expand-li 'a0 value #:word-size word-size)))
+   (expand-li rd value #:word-size word-size)))
 
 (provide li-s12
          li-lui

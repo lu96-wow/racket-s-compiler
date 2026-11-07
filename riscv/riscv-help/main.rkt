@@ -27,6 +27,7 @@
  ;; gp / 栈帧相对地址
  la-gp
  la-frame
+ la-frame-size
 
  ;; 跳转
  jump-cj

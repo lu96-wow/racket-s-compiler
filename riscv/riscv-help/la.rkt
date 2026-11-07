@@ -48,9 +48,13 @@
 ;; 自动 PC-relative 加载
 ;; ------------------------------------------------------------
 
-(define (take-load-pcrel-scratch who scratch)
+(define (take-load-pcrel-scratch who rd scratch)
+  ;; far 形式只要一个 scratch: 存在、非零、且不等于 rd。
+  ;; load-pcrel 和 load-pcrel-size 共用这一条, 免得两条路径的“合法输入”再分叉。
   (define temp (car (take-scratch! who (scratch-list scratch) 1)))
   (check-not-zero! who temp)
+  (when (same-register? temp rd)
+    (error who "scratch register ~a must differ from rd" temp))
   temp)
 
 ;; delta = target - address(AUIPC)
@@ -62,6 +66,8 @@
 ;;     auipc rd, 0
 ;;     li    temp, delta
 ;;     add   rd, rd, temp
+;;
+;; 参数顺序跟底层 opcode 一致: auipc rd, imm —— rd 在前。
 (define (load-pcrel rd delta
                     #:word-size [word-size 'rv64]
                     #:scratch [scratch #f])
@@ -69,11 +75,7 @@
     [(fits-auipc-pair? delta word-size)
      (la-pcrel rd #:delta delta #:word-size word-size)]
     [(eq? word-size 'rv64)
-     (define temp (take-load-pcrel-scratch 'load-pcrel scratch))
-     (when (same-register? temp rd)
-       (error 'load-pcrel
-              "scratch register ~a must differ from rd"
-              temp))
+     (define temp (take-load-pcrel-scratch 'load-pcrel rd scratch))
      (append (list (list 'auipc rd 0))
              (li temp delta #:word-size 'rv64)
              (list (list 'add rd rd temp)))]
@@ -82,16 +84,16 @@
             "PC-relative delta ~a cannot be encoded for ~a"
             delta word-size)]))
 
-;; 和 load-pcrel 使用同一套选择规则，但只返回字节数。
-(define (load-pcrel-size delta
+;; 和 load-pcrel 同一套选择规则、同一套 scratch 校验，只返回字节数。
+(define (load-pcrel-size rd delta
                          #:word-size [word-size 'rv64]
                          #:scratch [scratch #f])
   (cond
     [(fits-auipc-pair? delta word-size)
      8]
     [(eq? word-size 'rv64)
-     (take-load-pcrel-scratch 'load-pcrel-size scratch)
-     (+ (li-size delta #:word-size 'rv64) 8)]
+     (define temp (take-load-pcrel-scratch 'load-pcrel-size rd scratch))
+     (+ (li-size temp delta #:word-size 'rv64) 8)]
     [else
      (error 'load-pcrel-size
             "PC-relative delta ~a cannot be encoded for ~a"
@@ -142,6 +144,17 @@
 ;; 超出范围：
 ;;   li tmp, offset
 ;;   add rd, base, tmp
+;;
+;; 参数顺序跟底层 opcode 一致: addi rd, rs1, imm / add rd, rs1, rs2 —— rd、base 在前。
+(define (la-frame-scratch who rd base scratch)
+  (define tmp (car (take-scratch! who (scratch-list scratch) 1)))
+  (check-not-zero! who tmp)
+  (when (or (same-register? tmp rd) (same-register? tmp base))
+    (error who
+           "scratch register ~a must differ from rd and base"
+           tmp))
+  tmp)
+
 (define (la-frame rd base offset
                  #:scratch [scratch #f]
                  #:word-size [word-size 'rv64])
@@ -149,15 +162,21 @@
     [(fits-s12? offset)
      (list (list 'addi rd base offset))]
     [else
-     (define tmp
-       (car (take-scratch! 'la-frame (scratch-list scratch) 1)))
-     (check-not-zero! 'la-frame tmp)
-     (when (or (same-register? tmp rd) (same-register? tmp base))
-       (error 'la-frame
-              "scratch register ~a must differ from rd and base"
-              tmp))
+     (define tmp (la-frame-scratch 'la-frame rd base scratch))
      (append (expand-li tmp offset #:word-size word-size)
              (list (list 'add rd base tmp)))]))
+
+;; 和 la-frame 同一套参数、同一套校验，只返回字节数。
+;; 小 offset 4B；大 offset = li-size(offset) + 4B（最坏 32 + 4 = 36B）。
+(define (la-frame-size rd base offset
+                      #:scratch [scratch #f]
+                      #:word-size [word-size 'rv64])
+  (cond
+    [(fits-s12? offset)
+     4]
+    [else
+     (define tmp (la-frame-scratch 'la-frame-size rd base scratch))
+     (+ (li-size tmp offset #:word-size word-size) 4)]))
 
 ;; ------------------------------------------------------------
 ;; 通用组合
@@ -197,4 +216,5 @@
          la-got
          la-gp
          la-frame
+         la-frame-size
          expand-la)

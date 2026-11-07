@@ -153,15 +153,15 @@
   (check-equal? (li 'a0 value #:word-size 'rv64)
                 (expand-li 'a0 value #:word-size 'rv64)))
 
-(check-equal? (li-size 5 #:word-size 'rv32) 4)
-(check-equal? (li-size 5 #:word-size 'rv64) 4)
-(check-equal? (li-size 4096 #:word-size 'rv64) 4)
-(check-equal? (li-size 2048 #:word-size 'rv64) 8)
-(check-equal? (li-size #x7fffffff #:word-size 'rv64) 8)
-(check-equal? (li-size #x80000000 #:word-size 'rv64) 12)
-(check-equal? (li-size #x123456789abcdef #:word-size 'rv64) 32)
+(check-equal? (li-size 'a0 5 #:word-size 'rv32) 4)
+(check-equal? (li-size 'a0 5 #:word-size 'rv64) 4)
+(check-equal? (li-size 'a0 4096 #:word-size 'rv64) 4)
+(check-equal? (li-size 'a0 2048 #:word-size 'rv64) 8)
+(check-equal? (li-size 'a0 #x7fffffff #:word-size 'rv64) 8)
+(check-equal? (li-size 'a0 #x80000000 #:word-size 'rv64) 12)
+(check-equal? (li-size 'a0 #x123456789abcdef #:word-size 'rv64) 32)
 
 (check-exn exn:fail?
            (lambda () (li 'a0 #x100000000 #:word-size 'rv32)))
 (check-exn exn:fail?
-           (lambda () (li-size #x100000000 #:word-size 'rv32)))
+           (lambda () (li-size 'a0 #x100000000 #:word-size 'rv32)))

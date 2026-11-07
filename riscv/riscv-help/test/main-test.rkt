@@ -9,16 +9,18 @@
 
 ;; 常量 / 绝对地址
 (check-equal? (li 'a0 5) '((addi a0 x0 5)))
-(check-equal? (li-size 5) 4)
+(check-equal? (li-size 'a0 5) 4)
 
 ;; PC 相对地址
 (check-equal? (load-pcrel 'a0 8)
               '((auipc a0 0) (addi a0 a0 8)))
-(check-equal? (load-pcrel-size 8) 8)
+(check-equal? (load-pcrel-size 'a0 8) 8)
 
 ;; gp / 栈帧相对地址
 (check-equal? (la-gp 'a0 16) '((addi a0 gp 16)))
 (check-equal? (la-frame 'a0 'sp 16) '((addi a0 sp 16)))
+(check-equal? (la-frame-size 'a0 'sp 16) 4)
+(check-equal? (la-frame-size 'a0 'sp 5000 #:scratch 't0) 12)
 
 ;; 跳转和分支
 (check-equal? (jump-cj 8) '((c.j 8)))
