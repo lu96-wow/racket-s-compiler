@@ -53,6 +53,7 @@
 | measured-layout | `((phase measured) (origin …) (segments …) (anchors …) (requests …) (problems …))` |
 | bound-layout | `((phase bound) (origin …) (segments …) (anchors …) (symbols …) (link …) (requests …) (problems …))` |
 | `(link (base B) (symbol 链 地址) …)` | 对外的“名字 → 绝对地址”，`symbols` 的两列投影；输出里没有未解析项 |
+| `(la-far rd [tmp] 链)` | 远 PC 相对装载地址（relax 从 `la` 升上来）；缺 `tmp` = 空槽；尺寸是**常量上界**，短出来的补 `nop` |
 | `(provides 链 …)` | 其中哪些名字是**对外**的（`flatten` 的导出集合；没有 `` (provide …) `` 时是全导出） |
 | `build` | `(build (link …) (provides …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |

@@ -28,7 +28,11 @@
 ```
 
 本层处理的 item：`label` / `pad` / `bytes` / `fill` / `value` / `reserve` / 真指令 /
-`li` / `la` / `branch-far` / `branch-indirect` / `jump-far`。
+`li` / `la` / `la-far` / `branch-far` / `branch-indirect` / `jump-far`。
+
+`la-far` 用 `load-pcrel-far` **强制**远形式（不管 delta 多大都不缩回近形式），
+然后按 `item-size` 给的固定上界（rv64 40B）**补 nop**：li 的实际长度取决于 delta，
+而 layout 记的是上界 —— 两边必须一致，否则后面的 offset 全错。
 
 ## 设计思路
 

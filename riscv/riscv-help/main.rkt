@@ -23,6 +23,8 @@
  ;; PC 相对地址
  load-pcrel
  load-pcrel-size
+ load-pcrel-far
+ load-pcrel-far-size
 
  ;; 平台基址 / 栈帧相对地址
  la-gp

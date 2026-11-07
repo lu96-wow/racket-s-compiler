@@ -17,6 +17,7 @@
 
 | 原件 | 升到 |
 | --- | --- |
+| `(la rd 链)` | `(la-far rd [tmp] 链)`（4 → 40，固定上界；缺 `tmp` 就是空槽） |
 | `c.beqz` / `c.bnez` | `beq` / `bne` |
 | `c.j` / `c.jal` | `jal x0` / `jal x1`（压缩形式的 rd 是 ISA 定死的） |
 | `beq/bne/blt/bge/bltu/bgeu` | `(branch-far <cond> …)` |

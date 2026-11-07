@@ -36,7 +36,7 @@
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../../riscv-help/main.rkt"
                   jump-jal jump-auipc-jalr zero-register?
-                  li load-pcrel)
+                  li load-pcrel load-pcrel-far)
          (only-in "../../riscv-asm/base/register.rkt" register->number)
          "../target.rkt"
          "native-help.rkt"
@@ -128,6 +128,20 @@
      (jump-auipc-jalr 'x0 d #:scratch (list (caddr it)))]
     [else (jump-auipc-jalr link d)]))
 
+;; (la-far rd tmp 链): 强制远形式, 然后用 nop 补到 forms.rkt 定的固定尺寸。
+;; 为什么要补: layout 记的是**上界**(li 的最坏情况), 实际 li 往往更短;
+;; 尺寸必须和 layout 说的一致, 否则后面的 offset 全错。
+(define (far-la-expansion target it here symbols)
+  (define rd (cadr it))
+  (define tmp (caddr it))
+  (define d (- (eval-symbol-address (last it) symbols) here))
+  (define insns (load-pcrel-far rd d #:word-size (target-xlen target) #:scratch (list tmp)))
+  (define used (* 4 (length insns)))
+  (define total (item-size target it))
+  (unless (<= used total)
+    (error 'encode "(la-far …) 展开成 ~a 字节, 超过 layout 给的 ~a" used total))
+  (values insns (- total used)))
+
 ;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。
 ;;   plain  : 操作数里可能有链, 先换成偏移
 ;;   远形式 / li / la : riscv-help 已经给出带数字偏移的真指令
@@ -138,6 +152,10 @@
   (define (emit-all! insns)
     (for ([i (in-list insns)]) (emit-instruction! (car i) (cdr i))))
   (case (car it)
+    [(la-far)
+     (define-values (insns pad) (far-la-expansion target it here symbols))
+     (emit-all! insns)
+     (emit! (padding-bytes target 'code pad))]
     [(branch-far)      (emit-all! (encode-far-branch it here symbols))]
     [(branch-indirect) (emit-all! (encode-indirect-branch it here symbols))]
     [(jump-far)        (emit-all! (encode-far-jump it here symbols))]

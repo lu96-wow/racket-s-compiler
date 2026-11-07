@@ -10,6 +10,7 @@
 ;;; 只做一件事: 把 requests 里 needs-far 的 item 换成大一号的形式。
 ;;;
 ;;; 空槽(scratch-hole)**不填**: 那属于"动态内存布局 / 寄存器使用"那一层
+;;; 远 la(la-too-far)会被升成 (la-far …), 同样留一个空槽给那一层
 ;;; (还没实现)。本层把空槽原样留在 requests 里:
 ;;; 升到 branch-indirect / (jump-far x0 …) 时就会产生一个新的空槽。
 ;;;
@@ -33,10 +34,11 @@
 (require (only-in "../analyze/analyze.rkt" program program? program-blocks program-flows
                   block-head block-items make-block)
          (only-in "../layout/layout.rkt" layout-program layout-requests as-items)
-         (only-in "../layout/forms.rkt" form?))
+         (only-in "../layout/forms.rkt" form? la-form?))
 
 (provide relax
-         far-step)
+         far-step
+         la-far-step)
 
 ;; ---------------------------------------------------------------------------
 ;; 提升表: 超范围 -> 大一号。语义不变, 尺寸只增。
@@ -79,24 +81,41 @@
          [(j) (list 'jump-far 'x0 (cadr it))]
          [else #f])))
 
+;; la 的远形式: 只是换形式, **不改 delta**(链还在 item 里, encode 到时候算)。
+;;   (la rd 链)      -> (la-far rd 链)        空槽留给寄存器层
+;;   (la rd tmp 链)  -> (la-far rd tmp 链)    保留前端给的 tmp
+;; 尺寸从 8 涨到 far-la-size(常量上界), 所以本层只增不减。
+(define (la-far-step it)
+  (and (la-form? it)
+       (if (= 4 (length it))
+           (list 'la-far (cadr it) (caddr it) (cadddr it))
+           (list 'la-far (cadr it) (last it)))))
+
 ;; ---------------------------------------------------------------------------
 ;; requests -> edits
-;;   (needs-far 段 偏移 item 距离 (code 块 项))
-;; 只有这一类能被本层改; scratch-hole / la-too-far 原样留着(见文件头)。
+;;
+;; 本层能改两类, 都是“换个更大的定长形式”:
+;;   (needs-far  段 偏移 item 距离 origin)   控制转移够不着
+;;   (la-too-far 段 偏移 item 距离 origin)   近形式 auipc+addi 够不着
+;; 其它 requests(scratch-hole)原样留着(见文件头)。
 ;; ---------------------------------------------------------------------------
 
-;; needs-far 的最后一个字段是定位: (code 块下标 项下标)，layout 在 measure 时记下来的。
-;; 只有它能被本层改; 其它 requests 原样留着。
-(define (needs-far-origin request)
+;; request 的最后一个字段是定位: (code 块下标 项下标)，layout 在 measure 时记下来的。
+(define (request-origin request)
   (define tail (last request))
   (and (pair? tail) (eq? (car tail) 'code) tail))
 
+(define (edit-for p)
+  (case (car p)
+    [(needs-far) (far-step (cadddr p))]
+    [(la-too-far) (la-far-step (cadddr p))]
+    [else #f]))
+
 (define (collect-edits requests)
   (append*
-   (for/list ([p (in-list requests)]
-              #:when (eq? (car p) 'needs-far))
-     (define new (far-step (cadddr p)))
-     (define o (needs-far-origin p))
+   (for/list ([p (in-list requests)])
+     (define o (request-origin p))
+     (define new (edit-for p))
      (if (and o new) (list (cons o new)) '()))))
 
 ;; ---------------------------------------------------------------------------

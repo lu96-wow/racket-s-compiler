@@ -24,6 +24,8 @@
          value-width value-payload
          arith-head? arith-form? address-expr? address-expr-chains
          la-form? la-scratch
+         la-far-form? la-far-scratch
+         far-la-size
          jump-far-form? jump-far-link jump-far-scratch
          item-kind item-size item-kind-allowed-in?
          branch-form? jump-form? control-form? control-target control-target-position
@@ -175,6 +177,7 @@
        [else 4])]
     [(eq? (car x) 'li) (li-size (cadr x) (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
     [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 留 la-too-far request
+    [(eq? (car x) 'la-far) (far-la-size target)] ; 固定上界, 短出来的补 nop(见 la-far-form?)
     [else 4]))
 
 ;; ---------------------------------------------------------------------------
@@ -241,6 +244,8 @@
   (cond
     [(and (form? x) (eq? (car x) 'branch-indirect)) (= 5 (length x))]
     [(far-jump-needs-scratch? x) (= 3 (length x))]
+    ;; 远 la 也要 base: (la-far rd 链) 缺 tmp
+    [(and (form? x) (eq? (car x) 'la-far) (= 3 (length x))) #t]
     [else #f]))
 
 ;; (la rd 链) / (la rd tmp 链): 带"可选 scratch"的形式
@@ -254,3 +259,24 @@
 ;; 显式给出的 scratch; #f = 没写(不等于"不需要")
 (define (la-scratch x)
   (and (la-form? x) (= 4 (length x)) (caddr x)))
+
+;; 远 la: (la-far rd [tmp] 链) —— 近形式 auipc+addi 够不着时 relax 升到这里。
+;;   auipc rd, 0 ; li tmp, delta ; add rd, rd, tmp
+;;
+;; 尺寸必须是**常量**: li 的长度取决于 delta, 而 delta 取决于布局。让它随布局
+;; 变长变短, relax 固定点就会在"尺寸变了但不产生新决策"之间来回, 而
+;; CONSTRAINTS.md 要的是尺寸只增不减。所以取 li 的最坏情况(见 far-la-size),
+;; 实际展开短出来的部分由 encode 补 nop —— 尺寸稳定, 内容正确。
+(define (la-far-form? x)
+  (and (form? x) (eq? (car x) 'la-far) (memq (length x) '(3 4))
+       (address-expr? (last x))))
+
+;; 4 (auipc) + li 最坏 + 4 (add)
+;;   rv64: li 最坏 32B (general64 最坏 8 条) -> 40
+;;   rv32: li 最坏  8B (lui+addi)            -> 16
+;; rv32 实际上永远走不到这里(32 位下 auipc+addi 覆盖全部 delta), 尺寸照样给对。
+(define (far-la-size target)
+  (+ 8 (if (eq? (target-xlen target) 'rv32) 8 32)))
+
+(define (la-far-scratch x)
+  (and (la-far-form? x) (= 4 (length x)) (caddr x)))

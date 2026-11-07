@@ -93,9 +93,13 @@
 
 ;; 近: 什么都不用升
 (check-equal? (requests (uses-la) '((link (symbol (lib f) #x1800)))) '())
-;; la 到 3 GiB 外: auipc+addi 够不着 -> la-too-far(交给还没实现的寄存器层)
-(check-equal? (request-kinds (uses-la) '((link (symbol (lib f) #xC0000000))))
-              '(la-too-far))
+;; la 到 3 GiB 外: auipc+addi 够不着 -> relax 升成 (la-far …),
+;; 升级后它还缺 tmp, 所以最终留在 requests 里的是 scratch-hole(等寄存器层)
+(define far-externs '((link (symbol (lib f) #xC0000000))))
+(check-equal? (request-kinds (uses-la) far-externs) '(scratch-hole))
+;; 升级后的 item 长这样: (la-far rd 链), 缺的 tmp 就是那个空槽
+(check-equal? (cadddr (car (requests (uses-la) far-externs)))
+              '(la-far x10 (lib f)))
 ;; 条件分支到 2 MiB 外: 4 字节的 branch 够不着 -> 先升 branch-far, 再升 indirect
 (check-equal? (request-kinds (calls) '((link (symbol (lib f) #x300000))))
               '(scratch-hole))

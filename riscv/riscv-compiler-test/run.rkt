@@ -16,6 +16,7 @@
     "layout-test.rkt"
     "bind-labels-test.rkt"
     "relax-test.rkt"
+    "la-far-test.rkt"
     "encode-test.rkt"
     "link-file-test.rkt"
     "flow-test.rkt"

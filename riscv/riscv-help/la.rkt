@@ -75,14 +75,38 @@
     [(fits-auipc-pair? delta word-size)
      (la-pcrel rd #:delta delta #:word-size word-size)]
     [(eq? word-size 'rv64)
-     (define temp (take-load-pcrel-scratch 'load-pcrel rd scratch))
-     (append (list (list 'auipc rd 0))
-             (li temp delta #:word-size 'rv64)
-             (list (list 'add rd rd temp)))]
+     (load-pcrel-far rd delta #:word-size word-size #:scratch scratch)]
     [else
      (error 'load-pcrel
             "PC-relative delta ~a cannot be encoded for ~a"
             delta word-size)]))
+
+;; **强制**远形式：不管 delta 有多大, 都走
+;;     auipc rd, 0
+;;     li    temp, delta
+;;     add   rd, rd, temp
+;;
+;; 为什么要“强制”：relax 把 la 升成远形式之后, 尺寸必须**不再变**。如果这里
+;; 又按距离自动挑近形式, 一旦 delta 缩小, 展开会变成 8 字节, 而 layout 记的是
+;; 远形式的固定尺寸 —— 两边对不上。所以远形式就是远形式。
+;;
+;; AUIPC 必须是第一条(delta 的基准就是它), 和 load-pcrel 的近形式同构。
+(define (load-pcrel-far rd delta
+                        #:word-size [word-size 'rv64]
+                        #:scratch [scratch #f])
+  (unless (eq? word-size 'rv64)
+    (error 'load-pcrel-far "RV32 没有远 PC 相对形式: ~a" delta))
+  (define temp (take-load-pcrel-scratch 'load-pcrel-far rd scratch))
+  (append (list (list 'auipc rd 0))
+          (li temp delta #:word-size 'rv64)
+          (list (list 'add rd rd temp))))
+
+;; 和 load-pcrel-far 同参数, 只返回实际字节数(不含上层为了固定尺寸补的 nop)。
+(define (load-pcrel-far-size rd delta
+                             #:word-size [word-size 'rv64]
+                             #:scratch [scratch #f])
+  (define temp (take-load-pcrel-scratch 'load-pcrel-far-size rd scratch))
+  (+ (li-size temp delta #:word-size word-size) 8))
 
 ;; 和 load-pcrel 同一套选择规则、同一套 scratch 校验，只返回字节数。
 (define (load-pcrel-size rd delta
@@ -216,6 +240,8 @@
 (provide la-pcrel
          load-pcrel
          load-pcrel-size
+         load-pcrel-far
+         load-pcrel-far-size
          la-abs
          la-got
          la-gp

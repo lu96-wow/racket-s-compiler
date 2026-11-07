@@ -52,7 +52,12 @@
 
 7. **la 远形式**
    - 如果 la 远形式会改尺寸，并且依赖距离，就放进 relax 固定点。
-   - 如果它需要 scratch，只能使用 reserved scratch。
+   - `la` 够不着（`la-too-far`）→ relax 升成 `(la-far rd [tmp] 链)`。
+   - **尺寸必须是常量**：`li tmp, delta` 的长度取决于 delta，而 delta 取决于布局。
+     让它随布局变长变短，固定点就会在“尺寸变了但不产生新决策”之间来回。
+     所以 `la-far` 取 `li` 的最坏情况当上界（rv64: 4+32+4=40B），
+     实际展开短出来的部分由 `encode` 补 `nop`。
+   - 缺 `tmp` 就是空槽，只能由寄存器那一层填（scratch-fill 阶段只填操作数）。
    - 不要把它放到 relax 之后的 scratch-fill 里做尺寸变化。
 
 8. **未知尺寸必须显式表示**
