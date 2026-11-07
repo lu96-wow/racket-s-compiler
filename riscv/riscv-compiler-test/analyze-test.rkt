@@ -49,7 +49,7 @@
 ;; falls-through? / ends-block?
 (check-true  (falls-through? '(beq a b L)))
 (check-true  (falls-through? '(jal ra L)))
-(check-true  (falls-through? '(jal L)))                 ; 省略 rd 按 ra
+;; (jal L) 这种省略 rd 的写法已移除: link 是 ABI, 汇编层不猜。
 (check-false (falls-through? '(jal x0 L)))
 (check-true  (falls-through? '(c.jal L)))
 (check-false (falls-through? '(c.j L)))
@@ -79,14 +79,16 @@
 (check-equal? (jump-target '(jal x0 (lib f))) '(lib f))
 (check-equal? (jump-target '(c.j L)) 'L)
 
-(check-equal? (jump-register '(jal L)) 'ra)
+(check-equal? (jump-register '(jal x1 L)) 'x1)
+;; 省略 rd 不再被接受(会算出 #f, 后面按“普通指令”处理), 所以必须显式写。
+(check-false (jump-register '(jal L)))
 (check-equal? (jump-register '(jal x0 L)) 'x0)
 (check-equal? (jump-register '(jalr a0 a1 0)) 'a0)
 (check-equal? (jump-register '(jump-far x0 L)) 'x0)
 (check-equal? (jump-register '(c.j L)) 'x0)
-(check-equal? (jump-register '(c.jal L)) 'ra)
+(check-equal? (jump-register '(c.jal L)) 'x1)
 (check-equal? (jump-register '(c.jr a0)) 'x0)
-(check-equal? (jump-register '(c.jalr a0)) 'ra)
+(check-equal? (jump-register '(c.jalr a0)) 'x1)
 
 (check-true  (zero-register? 'x0))
 (check-true  (zero-register? 'zero))

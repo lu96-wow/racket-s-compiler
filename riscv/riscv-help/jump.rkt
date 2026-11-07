@@ -68,7 +68,7 @@
      (define base (car (take-scratch! 'jump-auipc-jalr regs 1)))
      (check-not-zero! 'jump-auipc-jalr base)
      (list (list 'auipc base hi)
-           (list 'jalr 'zero base lo))]
+           (list 'jalr 'x0 base lo))]
     [else
      (list (list 'auipc link hi)
            (list 'jalr link link lo))]))
@@ -107,7 +107,7 @@
       (list (list 'auipc base 0))
       (expand-li off-reg offset #:word-size 'rv64)
       (list (list 'add base base off-reg)
-            (list 'jalr 'zero base 0)))]
+            (list 'jalr 'x0 base 0)))]
     [else
      (define off-reg
        (car (take-scratch! 'jump-pcrel-far regs 1)))

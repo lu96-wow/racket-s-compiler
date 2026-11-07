@@ -17,7 +17,7 @@
 (check-equal? (load-pcrel-size 'a0 8) 8)
 
 ;; gp / 栈帧相对地址
-(check-equal? (la-gp 'a0 16) '((addi a0 gp 16)))
+(check-equal? (la-gp 'a0 'gp 16) '((addi a0 gp 16)))
 (check-equal? (la-frame 'a0 'sp 16) '((addi a0 sp 16)))
 (check-equal? (la-frame-size 'a0 'sp 16) 4)
 (check-equal? (la-frame-size 'a0 'sp 5000 #:scratch 't0) 12)

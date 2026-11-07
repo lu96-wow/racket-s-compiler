@@ -36,13 +36,15 @@
 
 (check-equal? (la-abs 'a0 5)
               '((addi a0 x0 5)))
-(check-equal? (la-gp 'a0 16)
+(check-equal? (la-gp 'a0 'gp 16)
               '((addi a0 gp 16)))
+;; gp 是哪一个由调用方给, 后端不认这个别名。
+(check-equal? (la-gp 'x10 'x3 16) '((addi x10 x3 16)))
 (check-equal? (la-frame 'a0 'sp 16)
               '((addi a0 sp 16)))
 
 (check-exn exn:fail?
-           (lambda () (la-gp 'a0 4096)))
+           (lambda () (la-gp 'a0 'gp 4096)))
 
 ;; ------------------------------------------------------------
 ;; expand-la
@@ -52,8 +54,10 @@
               '((auipc a0 0) (addi a0 a0 8)))
 (check-equal? (expand-la 'a0 5 #:mode 'abs)
               '((addi a0 x0 5)))
-(check-equal? (expand-la 'a0 16 #:mode 'gp)
+(check-equal? (expand-la 'a0 16 #:mode 'gp #:base 'gp)
               '((addi a0 gp 16)))
+(check-exn exn:fail?
+           (lambda () (expand-la 'a0 16 #:mode 'gp)))
 (check-equal? (expand-la 'a0 16 #:mode 'frame #:base 'sp)
               '((addi a0 sp 16)))
 

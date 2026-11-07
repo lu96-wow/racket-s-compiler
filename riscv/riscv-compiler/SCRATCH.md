@@ -74,6 +74,7 @@ scratch 相关处理：
 | `relax/relax.rkt` | 只消费 `needs-far`，把控制转移升成更大的定长形式；`scratch-hole` / `la-too-far` 原样保留。 |
 | `encode/encode.rkt` | 遇到 `scratch-hole?` 仍为真的 item 直接报错，不会猜寄存器。 |
 | `riscv-help/scratch.rkt` | 检查 scratch 非零、数量够、多个 scratch 互不相同。 |
+| `riscv-help/*` 全体 | **不认 ABI 名**：只处理 `x0..x31`；`ra`/`sp`/`gp`/`t*` 一律由前端/IR 给（`test/no-abi-test.rkt` 守这条）。 |
 | `riscv-help/la.rkt` | far `load-pcrel` 要求 scratch 不等于 `rd`；`la-frame` 要求 scratch 不等于 `rd` / `base`。 |
 
 当前没有：
@@ -316,7 +317,10 @@ jalr x0, s, lo     ; 控制流已经离开，没有机会 restore
 - 从池里取寄存器；
 - 检查非零、不重复、不与 rd / base / link 冲突；
 - 填 `(branch-indirect s ...)` / `(jump-far x0 s L)` / 远 `la`；
-- 不改尺寸，不插代码。
+- 不改尺寸，不插代码；
+- **不判断池里的寄存器是不是 caller-saved**。池的成员由前端定，
+  后端若内置一份 `t0..t6` 白名单，等于把 ABI 策略硬编码进汇编层
+  （也和第 6.4 条的"候选集"一样，属于前端/ABI 层的信息）。
 
 优点：
 

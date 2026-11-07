@@ -22,6 +22,7 @@
          branch-instruction? jump-instruction? indirect-instruction?
          trap-instruction? ends-block? falls-through?
          unconditional-jump? jump-target jump-target-position jump-register
+         check-transfer-arity!
          zero-register?)
 
 ;; 真列表(代码形状)
@@ -89,29 +90,49 @@
       (indirect-instruction? x)
       (trap-instruction? x)))
 
+;; 需要显式写 link 的控制转移。
+;;   jal      : (jal rd L)            rd 是 ABI/前端的决定(调用的 link 是 ra 属于 ABI)
+;;   jump-far : (jump-far link [scratch] L)
+;; 省略写法必须挡在入口: 否则 jump-register 会把目标 label 当成 link 寄存器,
+;; 控制流静默算错。
+(define (check-transfer-arity! x)
+  (when (form? x)
+    (case (car x)
+      [(jal)
+       (unless (= 3 (length x))
+         (error 'analyze
+                "jal 必须显式写 link: (jal rd L)，收到 ~s"
+                x))]
+      [(jump-far)
+       (unless (memq (length x) '(3 4))
+         (error 'analyze
+                "jump-far 必须显式写 link: (jump-far link [scratch] L)，收到 ~s"
+                x))]
+      [else (void)])))
+
 ;; 这条指令写哪个链接寄存器? 它决定会不会顺序落下, 也决定是不是无条件跳转。
-;;   jal / jalr / jump-far 有显式 rd; (jal L) 省略 rd 时按 ra 算
-;;   jump-far 的 link 必须显式写(不猜), 否则这里没法回答
-;;   压缩形式没有显式 rd: c.j / c.jr 不写(x0), c.jal / c.jalr 写 ra
+;; jal / jalr / jump-far 都有显式 rd, 不猜: (jal L) 这种“省略 rd 按调用算”
+;; 是 GAS 的简写, 而“调用的 link 是 ra”本身是 ABI —— 汇编层不认。
+;; 压缩形式没有显式 rd, 但那个 rd 是 ISA 定死的: c.j / c.jr 写 x0, c.jal / c.jalr 写 x1。
 (define (jump-register x)
   (and (form? x)
        (case (car x)
-         [(jal)      (if (= 3 (length x)) (cadr x) 'ra)]
+         [(jal)      (and (= 3 (length x)) (cadr x))]
          [(jalr)     (cadr x)]
-         [(jump-far) (cadr x)]
+         [(jump-far) (and (memq (length x) '(3 4)) (cadr x))]
          [(j)        'x0]
          [(jr)       'x0]
          [(c.j)      'x0]
-         [(c.jal)    'ra]
+         [(c.jal)    'x1]
          [(c.jr)     'x0]
-         [(c.jalr)   'ra]
+         [(c.jalr)   'x1]
          [else #f])))
 
 ;; 目标操作数在 cdr 里的位置(0 基)。
 ;;
 ;;   native 分支: (beq L a b) / (ble L b a) / (beqz L a) -> 目标在 cdr 的第一个
 ;;   压缩分支:   (c.beqz a L)                              -> 目标在 cdr 的第二个
-;;   jal:        (jal rd L) / 兼容 (jal L)
+;;   jal:        (jal rd L)                         rd 必须显式写(不猜 ABI)
 ;;   远形式:     仍是各自的内部顺序，目标在最后
 (define (jump-target-position x)
   (and (form? x)
@@ -123,7 +144,7 @@
          [(c.beqz c.bnez) 1]
          [(c.j c.jal) 0]
          [(j) 0]
-         [(jal) (if (= 3 (length x)) 1 0)]
+         [(jal) (and (= 3 (length x)) 1)]
          [(branch-far branch-indirect jump-far) (sub1 (length (cdr x)))]
          [else #f])))
 

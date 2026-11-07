@@ -27,7 +27,7 @@
 (check-equal? (far-step '(c.beqz a0 L)) '(beq L a0 x0))
 (check-equal? (far-step '(c.bnez a0 L)) '(bne L a0 x0))
 (check-equal? (far-step '(c.j L)) '(jal x0 L))
-(check-equal? (far-step '(c.jal L)) '(jal ra L))
+(check-equal? (far-step '(c.jal L)) '(jal x1 L))
 
 (check-equal? (far-step '(beq L a b)) '(branch-far beq a b L))
 (check-equal? (far-step '(bne L a b)) '(branch-far bne a b L))
@@ -43,7 +43,9 @@
 
 (check-equal? (far-step '(jal ra L)) '(jump-far ra L))
 (check-equal? (far-step '(jal x0 L)) '(jump-far x0 L))
-(check-equal? (far-step '(jal L)) '(jump-far ra L))
+(check-equal? (far-step '(jal x1 L)) '(jump-far x1 L))
+;; (jal L) 不再被接受: rd 必须显式写
+(check-false (far-step '(jal L)))
 
 (check-false (far-step '(branch-indirect beq a b L)))
 (check-false (far-step '(jump-far ra L)))

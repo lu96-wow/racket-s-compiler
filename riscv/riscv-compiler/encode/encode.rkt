@@ -86,6 +86,7 @@
 
 ;; 远形式的目标寄存器由 riscv-help 解释: 它内部用 zero-register? 判"link 是不是零寄存器",
 ;; 0 / 'x0 / 'zero 三种写法都能正确分派, 这里原样传下去即可。
+;; 输出寄存器一律用架构名(x0..x31), 不写 a0/t0 这类 ABI 别名。
 
 (define (branch-distance it here symbols index)
   (define target (normalize-path (list-ref it index)))
@@ -99,7 +100,7 @@
                       (register->number (caddr it))
                       (register->number (cadddr it))
                       d
-                      (lambda (offset) (jump-jal 'zero offset))))
+                      (lambda (offset) (jump-jal 'x0 offset))))
 
 ;; (branch-indirect s cond rs1 rs2 L) = 反向条件分支 + auipc+jalr
 (define (encode-indirect-branch it here symbols)
@@ -110,7 +111,7 @@
                       (register->number (cadddr it))
                       (register->number (list-ref it 4))
                d
-               (lambda (offset) (jump-auipc-jalr 'zero offset #:scratch (list s)))))
+               (lambda (offset) (jump-auipc-jalr 'x0 offset #:scratch (list s)))))
 
 ;; (jump-far link [s] L): link 非零时它自己就是 auipc 的落点
 (define (encode-far-jump it here symbols)
@@ -123,7 +124,7 @@
     [(scratch-hole? it)
      (error 'encode "(jump-far ~a …) 的空槽没人填, 不能编码" link)]
     [(zero-register? link)
-     (jump-auipc-jalr 'zero d #:scratch (list (caddr it)))]
+     (jump-auipc-jalr 'x0 d #:scratch (list (caddr it)))]
     [else (jump-auipc-jalr link d)]))
 
 ;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。

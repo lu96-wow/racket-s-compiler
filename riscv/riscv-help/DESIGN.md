@@ -165,7 +165,7 @@ load-pcrel       ; (load-pcrel rd delta #:word-size #:scratch)
 load-pcrel-size  ; (load-pcrel-size rd delta #:word-size #:scratch)
 
 ;; gp / 栈帧相对地址
-la-gp            ; (la-gp rd offset)
+la-gp            ; (la-gp rd base offset)            base = 平台约定的 gp 寄存器
 la-frame         ; (la-frame rd base offset #:scratch #:word-size)
 la-frame-size    ; (la-frame-size rd base offset #:scratch #:word-size)
 
@@ -206,7 +206,7 @@ compressed-branch-register?
 - `load-pcrel`：加载 `address(AUIPC) + delta`
 - `li-size`：返回 `li` 展开后的字节数
 - `load-pcrel-size`：返回 `load-pcrel` 展开后的字节数
-- `la-gp`：gp 相对地址
+- `la-gp`：gp 相对地址（gp 是哪个寄存器由调用方传）
 - `la-frame`：栈帧相对地址（大 offset 需要 scratch，会改尺寸）
 - `la-frame-size`：返回 `la-frame` 展开后的字节数
 - `jump-*` / `branch-*`：跳转和条件分支
@@ -224,6 +224,19 @@ compressed-branch-register?
 
 理由不是美学：size 函数必须能看到所有**影响合法性**的参数（`rd`/`base`/`scratch`），
 否则它会为展开时一定会被拒绝的输入报出一个长度（见 §8 第 9 条）。
+
+### 4.1.1 后端不认 ABI 名
+
+这一层只处理 `x0..x31`。**没有任何 ABI 知识**：
+
+- 不写死 `ra` / `sp` / `gp` / `tp` / `a*` / `t*` / `s*` / `fp` / `zero`；
+- 输出的寄存器就是调用方传进来的（唯一的常量是 `x0`：ISA 规定它恒零，不是 ABI 选择）；
+- `la-gp` 的 gp、`la-frame` 的 base、`jump-*` 的 link、所有 scratch 都由前端/IR 给；
+- scratch 只做**结构校验**（非零 / 不重复 / 不撞 `rd`、`base`、`link`、互相不重复），
+  **不做 ABI 类别校验**。一个寄存器“能不能当 scratch”是前端的分配决定，
+  不是汇编层能知道的事；后端拒绝它反而会把前端的策略硬编码进来。
+
+守卫：`test/no-abi-test.rkt` 喂 x 名调每一展开器，断言输出里没有任何 ABI 别名出现。
 
 ### 4.2 内部低层入口
 
@@ -302,7 +315,7 @@ delta = target - address(AUIPC)
 | `load-pcrel` | 自动近/远 | 见上 | 8B 或 `li-size+8B` | 可用 |
 | `la-abs` | 复用 `expand-li` | 同 `li` | 同 `li` | 可用 |
 | `la-got` | `auipc rd,0` + `lw/ld rd,rd,0` | 不判别 | 8B | 占位 |
-| `la-gp` | `addi rd, gp, off` | `[-2048, 2047]` | 4B | 可用 |
+| `la-gp` | `addi rd, base, off`（base 由调用方给） | `[-2048, 2047]` | 4B | 可用 |
 | `la-frame` 小 offset | `addi rd, base, off` | `[-2048, 2047]` | 4B | 可用 |
 | `la-frame` 大 offset | `li tmp, off` + `add rd, base, tmp` | offset 同 `li` | `li-size+4B`（最坏 36B） | 可用，需要 scratch |
 | `la-frame-size rd base off` | 同上两条 | 同上 | 4B 或 `li-size(off)+4B` | 可用 |
@@ -447,6 +460,9 @@ fits-auipc-pair?(delta, word-size)
 10. 依赖 `rd` / `base` 的合法性只能在展开器和 size 函数里各判一次，
     判据写成两个函数共用的 helper（`take-load-pcrel-scratch`、`la-frame-scratch`），
     不允许在各处内联。
+11. **后端不认 ABI 名**（§4.1.1）。代码里不得出现 `ra`/`sp`/`gp`/`tp`/`a*`/`t*`/`s*`/`fp`/`zero`；
+    scratch 的“用哪个寄存器”由前端/IR 定，后端只校验结构性质。
+    `test/no-abi-test.rkt` 是这条不变量的守卫。
 
 ---
 
@@ -520,12 +536,13 @@ raco test riscv-help/test/*.rkt
 - `load-pcrel-size` / `la-frame-size` 与对应展开器**接受同一组输入**（scratch = `rd` 在两边都拒绝）
 - `la-frame-size` 覆盖 4B / 12B / 最坏 36B，且恒等于展开结果字节数
 - `la-pcrel`、`la-abs`、`la-gp`、`la-frame`、`expand-la` 基础行为
+- 后端不吐 ABI 名：`test/no-abi-test.rkt`（喂 x 名，输出只能是架构名）
 - `main.rkt` 公共 API 面
 
 最近结果：
 
 ```text
-1176 tests passed
+1402 tests passed
 ```
 
 ---

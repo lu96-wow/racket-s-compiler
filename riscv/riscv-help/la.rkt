@@ -129,10 +129,12 @@
 ;; gp-relative
 ;; ------------------------------------------------------------
 
-(define (la-gp rd offset)
+;; gp 是平台/ABI 寄存器(x3)，不是 ISA 规定的。选哪个寄存器由前端/IR 给，
+;; 后端只知道"这是个 rs1 + s12"——参数顺序照 addi rd, rs1, imm。
+(define (la-gp rd base offset)
   (unless (fits-s12? offset)
     (error 'la-gp "gp-relative offset ~a is outside signed 12-bit range" offset))
-  (list (list 'addi rd 'gp offset)))
+  (list (list 'addi rd base offset)))
 
 ;; ------------------------------------------------------------
 ;; 栈帧相对
@@ -186,7 +188,7 @@
 ;;   'pcrel : value = delta 或 #f（#f 表示留 relocation）
 ;;   'abs   : value = 绝对地址
 ;;   'got   : value 忽略
-;;   'gp    : value = gp-relative offset
+;;   'gp    : value = gp-relative offset，必须提供 #:base（gp 是哪一个由调用方定）
 ;;   'frame : value = frame offset，必须提供 #:base
 (define (expand-la rd value
                    #:mode [mode 'pcrel]
@@ -201,7 +203,9 @@
     [(got)
      (la-got rd #:word-size word-size)]
     [(gp)
-     (la-gp rd value)]
+     (unless base
+       (error 'expand-la "gp mode requires #:base"))
+     (la-gp rd base value)]
     [(frame)
      (unless base
        (error 'expand-la "frame mode requires #:base"))

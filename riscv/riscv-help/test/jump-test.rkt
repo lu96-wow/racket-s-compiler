@@ -88,7 +88,7 @@
 
 (for ([link (in-list (list 'zero 'x0 0))])
   (check-equal? (jump-auipc-jalr link 4096 #:scratch '(t0))
-                '((auipc t0 1) (jalr zero t0 0))
+                '((auipc t0 1) (jalr x0 t0 0))
                 (format "link=~a 应借 scratch 当 base" link)))
 
 ;; link 非零：它自己就是 auipc 的落点，不需要 scratch。
@@ -114,7 +114,7 @@
 ;; ------------------------------------------------------------
 
 (check-equal? (jump-pcrel-far 'zero 1000 #:scratch '(t0 t1))
-              '((auipc t0 0) (addi t1 x0 1000) (add t0 t0 t1) (jalr zero t0 0)))
+              '((auipc t0 0) (addi t1 x0 1000) (add t0 t0 t1) (jalr x0 t0 0)))
 
 (check-equal? (car (jump-pcrel-far 'ra #x100000000 #:scratch '(t0)))
               '(auipc ra 0))

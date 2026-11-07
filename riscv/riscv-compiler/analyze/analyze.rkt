@@ -75,6 +75,9 @@
 
 (define (analyze program-or-items [data-items '()])
   (define items (as-items program-or-items))
+  ;; 入口先挡掉"省略 link"的控制转移: 那是 ABI 默认值的残留,
+  ;; 放进来会让 CFG 静默算错(详见 insn.rkt 的 check-transfer-arity!)。
+  (for ([it (in-list items)]) (check-transfer-arity! it))
   (define g (cfg:build-cfg items))
   (define cfg-blocks (cfg:graph-blocks g))
   (define n (vector-length cfg-blocks))
