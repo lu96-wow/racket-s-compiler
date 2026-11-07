@@ -21,10 +21,18 @@
 ;; 小工具
 ;; ---------------------------------------------------------------------------
 
+;; build = (build (link …) (segment …) …); 取段先按 tag 过滤。
+(define (segments-of build)
+  (filter (lambda (x) (eq? (car x) 'segment)) (cdr build)))
+
 (define (seg-of build name)
   (findf (lambda (s)
            (eq? (cadr (assoc 'name (cdr s))) name))
-         (cdr build)))
+         (segments-of build)))
+
+(define (link-of build)
+  (or (findf (lambda (x) (eq? (car x) 'link)) (cdr build))
+      (error 'link-of "no link table in ~e" build)))
 
 (define (seg-size build name)
   (cadr (assoc 'size (cdr (seg-of build name)))))
@@ -201,6 +209,50 @@
                 151 242 31 0      ; auipc t0, 0x1ff
                 103 128 194 255   ; jalr x0, t0, -4
                 103 128 0 0))
+
+;; ---------------------------------------------------------------------------
+;; 产物带 link 表: (build (link (base …) (symbol 链 地址) …) (segment …) …)
+;;
+;; 只投影"名字 -> 绝对地址"两列; 段名/偏移是内部账, 不进 link 表。
+;; ---------------------------------------------------------------------------
+
+(define link-build (flow-value (run-code default-flow lit-src lit-spec lit-rich) 'build))
+
+(check-equal? (car link-build) 'build)
+(check-equal? (cadr link-build)                    ; spec 没给 (origin …) -> base 0
+              '(link (base 0) (symbol (main) #x1000) (symbol (d t) #x8000)))
+;; (link …) 之外仍然是段, 顺序和 layout 一致。
+(check-equal? (map (lambda (x) (cadr (assoc 'name (cdr x)))) (segments-of link-build))
+              '(c d))
+
+;; base 跟着 spec 的 (origin …) 走。
+(define origin-spec
+  '((origin #x400000)
+    (segments (segment (name c) (kind code) (start #x401000) (end #x402000) (align 4)))
+    (place c (main))))
+(define origin-build
+  (flow-value (run-code default-flow '((label main) (jalr x0 ra 0)) origin-spec) 'build))
+(check-equal? (link-of origin-build) '(link (base #x400000) (symbol (main) #x401000)))
+
+;; 行按地址升序, 和段声明顺序无关。
+(define shuffled-spec
+  '((segments (segment (name hi) (kind code) (start #x9000) (end #x9FFF) (align 4))
+              (segment (name lo) (kind code) (start #x1000) (end #x1FFF) (align 4)))
+    (place hi (high))
+    (place lo (low) (mid))))
+(define shuffled-build
+  (flow-value (run-code default-flow
+                        '((label low) (beq (high) a0 a1)
+                          (label mid) (jalr x0 ra 0)
+                          (label high) (jalr x0 ra 0))
+                        shuffled-spec)
+              'build))
+;; 段声明顺序是 hi 在前, link 表仍然按地址升序。
+(check-equal? (link-of shuffled-build)
+              '(link (base 0)
+                     (symbol (low) #x1000)
+                     (symbol (mid) #x1008)
+                     (symbol (high) #x9000)))
 
 ;; ---------------------------------------------------------------------------
 ;; native 覆盖应当是完整的

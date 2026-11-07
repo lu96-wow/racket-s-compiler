@@ -50,10 +50,12 @@ layout      : ((phase measured)
                                   (items (offset k item) ...) (size n)) ...)
                (anchors (anchor 链 段名 偏移) ...)
                (requests ...) (problems ...))
-bind-labels : ((phase bound) (segments ...) (anchors ...)
+bind-labels : ((phase bound) (origin 基址) (segments ...) (anchors ...)
                (symbols (symbol 链 段名 偏移 绝对地址) ...)
+               (link (base 基址) (symbol 链 地址) ...)
                (requests ...) (problems ...))
-build       : (build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
+build       : (build (link (base 基址) (symbol 链 地址) ...)
+                     (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
 ```
 
 `layout` / `relax` 的 `requests` 是交接点：`needs-far` 给 relax，

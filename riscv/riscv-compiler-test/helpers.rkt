@@ -25,10 +25,18 @@
 (define (program-of blocks+flows)
   (sexp->program blocks+flows))
 
+;; build 里除了 (segment …) 还有 (link …); 取段要先按 tag 过滤。
+(define (build-segments build)
+  (filter (lambda (x) (eq? (car x) 'segment)) (cdr build)))
+
+(define (build-link build)
+  (or (findf (lambda (x) (eq? (car x) 'link)) (cdr build))
+      (error 'build-link "no link table in ~e" build)))
+
 (define (build-segment build name)
   (or (findf (lambda (seg)
                (equal? (cadr (assoc 'name (cdr seg))) name))
-             (cdr build))
+             (build-segments build))
       (error 'build-segment "no segment ~a in ~e" name build)))
 
 (define (build-bytes build name)

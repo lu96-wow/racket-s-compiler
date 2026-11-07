@@ -50,9 +50,10 @@
 | `(symbol 链 段名 偏移 地址)` | bound 的最终符号 |
 | `(requests …)` | `needs-far` / `scratch-hole` / `la-too-far`，交给后续 pass |
 | `(problems …)` | 放置 / 段 / fallthrough / `undefined-target` / 最终宽度/容量 |
-| measured-layout | `((phase measured) (segments …) (anchors …) (requests …) (problems …))` |
-| bound-layout | `((phase bound) (segments …) (anchors …) (symbols …) (requests …) (problems …))` |
-| `build` | `(build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
+| measured-layout | `((phase measured) (origin …) (segments …) (anchors …) (requests …) (problems …))` |
+| bound-layout | `((phase bound) (origin …) (segments …) (anchors …) (symbols …) (link …) (requests …) (problems …))` |
+| `(link (base B) (symbol 链 地址) …)` | 对外的“名字 → 绝对地址”，`symbols` 的两列投影；输出里没有未解析项 |
+| `build` | `(build (link …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 
 ## 段 kind
 

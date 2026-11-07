@@ -16,9 +16,10 @@
 ;;; needs-far / scratch-hole / la-too-far 原样留在 requests 里;
 ;;; 没解决就由 encode 拒绝出产物。
 
-(require "../sexp.rkt"
+(require racket/list
+         "../sexp.rkt"
          (only-in "../layout/layout.rkt"
-                  layout-phase layout-problems layout-requests
+                  layout-phase layout-origin layout-problems layout-requests
                   layout-segments layout-anchors)
          (only-in "../layout/forms.rkt"
                   value-form? value-width value-payload))
@@ -26,6 +27,7 @@
 (provide bind-labels
          bound-layout?
          layout-symbols
+         layout-link
          symbol-row
          symbol-address
          eval-symbol-address)
@@ -55,6 +57,43 @@
 
 (define (symbol-row symbols path)
   (and path (findf (lambda (row) (equal? (cadr row) path)) symbols)))
+
+;; ---------------------------------------------------------------------------
+;; link 表: 对外的"名字 -> 绝对地址"
+;;
+;; symbol 行是 (symbol 链 段名 偏移 地址), 其中段名/偏移是**我自己的账**;
+;; 对外能承诺的只有"这个名字在哪个地址"。所以 link 表就是两列投影:
+;;
+;;   (link (base B) (symbol 链 地址) ...)
+;;
+;; base = 这次布局用的镜像基址(spec 的 (origin …))。地址是“相对谁”的数,
+;; 整体搬到别的地址时所有地址加 (新 base - base) —— 没有 base 就只是一个裸数。
+;;
+;; 行只来自 anchors, 所以**输出里不会出现未解析的行**; 输出可以直接当
+;; 另一个镜像的输入用(缺口不随表传播)。
+;;
+;; 两份输出必须可逐字节比较: 按地址升序, 同址按链的写法排序。
+(define (chain-string chain) (format "~a" chain))
+
+(define (link-row<? a b)
+  (define x (list-ref a 2))
+  (define y (list-ref b 2))
+  (cond
+    [(< x y) #t]
+    [(> x y) #f]
+    [else (string<? (chain-string (cadr a)) (chain-string (cadr b)))]))
+
+(define (link-rows symbols)
+  (sort (for/list ([row (in-list symbols)])
+          (list 'symbol (cadr row) (last row)))
+        link-row<?))
+
+(define (make-link base symbols)
+  (cons 'link (cons (list 'base base) (link-rows symbols))))
+
+(define (layout-link layout)
+  (define hit (assoc 'link layout))
+  (and hit (cdr hit)))
 
 ;; 绝对地址在最后一列
 (define (symbol-address row) (last row))
@@ -124,6 +163,7 @@
      (define segments (layout-segments measured))
      (define anchors (layout-anchors measured))
      (define symbols (collect-symbols segments anchors))
+     (define origin (layout-origin measured))
 
      (define extra '())
      (define (problem! p) (set! extra (cons p extra)))
@@ -131,9 +171,12 @@
      (check-segment-overflow segments problem!)
 
      (list (list 'phase 'bound)
+           (list 'origin origin)
            (cons 'segments segments)
            (cons 'anchors anchors)
            (cons 'symbols symbols)
+           ;; 对外接口: 就是 symbols 的两列投影, 不另算地址
+           (make-link origin symbols)
            (cons 'requests (layout-requests measured))
            (cons 'problems (append (layout-problems measured)
                                    (reverse extra))))]

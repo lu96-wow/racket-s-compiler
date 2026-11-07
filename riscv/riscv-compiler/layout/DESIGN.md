@@ -20,6 +20,7 @@ data-items                               ; label / bytes / fill / pad / value / 
 
 ```racket
 ((phase measured)
+ (origin 镜像基址)        ; spec 的 (origin …)，缺省 0；给 link 表当锚
  (segments (segment (name …) (kind …) (start …) (end …) (align …)
                     (items (offset k item) …)
                     (size n)) …)

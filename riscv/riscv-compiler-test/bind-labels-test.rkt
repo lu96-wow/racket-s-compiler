@@ -12,7 +12,7 @@
          (rename-in "../riscv-compiler/layout/layout.rkt"
                     [layout-program layout-program*])
          (only-in "../riscv-compiler/bind-labels/bind.rkt"
-                  bind-labels bound-layout? layout-symbols
+                  bind-labels bound-layout? layout-symbols layout-link
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../riscv-compiler/target.rkt" target-rv64-base)
          (only-in "../riscv-compiler/analyze/analyze.rkt" analyze))
@@ -149,5 +149,64 @@
 
 (check-error "需要 measured-layout"
              (lambda () (bind-labels '())))
+
+;; ---------------------------------------------------------------------------
+;; link 表: symbols 的两列投影 + base
+;;
+;;   (link (base B) (symbol 链 地址) ...)
+;;
+;; 行只来自 anchors, 所以输出里不可能出现未解析的项; 按地址升序。
+;; ---------------------------------------------------------------------------
+
+(check-equal? (layout-link measured) #f)          ; measured 相还没有 link 表
+
+(define bonded (bind-labels measured))
+
+(check-equal? (layout-link bonded)
+              '((base 0)
+                (symbol (main) #x1000)
+                (symbol (f) #x1004)
+                (symbol (d t) #x8000)))
+
+;; 和 symbols 一一对应: 数量相同, 地址相同, 只是去掉了段名/偏移。
+(check-equal? (length (cdr (layout-link bonded)))
+              (length (layout-symbols bound)))
+(for ([row (in-list (layout-symbols bound))])
+  (check-equal? (symbol-address (symbol-for bonded (cadr row)))
+                (last row)))
+
+;; base 跟着 spec 的 (origin …) 走, 而不是段的 start。
+(define moved
+  (lay (analyze '((label main) (jalr x0 ra 0)))
+       '()
+       '((origin #x400000)
+         (segments (segment (name c) (kind code) (start #x401000) (end #x402000) (align 4)))
+         (place c (main)))))
+(check-equal? (layout-link (bind-labels moved))
+              '((base #x400000) (symbol (main) #x401000)))
+
+;; 排序: 段声明顺序和地址顺序不一致时, link 表仍按地址升序。
+(define shuffled
+  (lay (analyze '((label low) (jalr x0 ra 0)
+                  (label high) (jalr x0 ra 0)))
+       '()
+       '((segments (segment (name hi) (kind code) (start #x9000) (end #x9FFF) (align 4))
+                   (segment (name lo) (kind code) (start #x1000) (end #x1FFF) (align 4)))
+         (place hi (high)) (place lo (low)))))
+(check-equal? (layout-link (bind-labels shuffled))
+              '((base 0)
+                (symbol (low) #x1000)
+                (symbol (high) #x9000)))
+
+;; 同址多个名字: 两个名字都在表里(一个位置可以有多个 label 链)。
+(define aliased
+  (lay (analyze '((label a) (label b) (jalr x0 ra 0)))
+       '()
+       '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
+         (place c (a) (b)))))
+(check-equal? (layout-link (bind-labels aliased))
+              '((base 0)
+                (symbol (a) #x1000)
+                (symbol (b) #x1000)))
 
 (finish-tests "bind-labels")

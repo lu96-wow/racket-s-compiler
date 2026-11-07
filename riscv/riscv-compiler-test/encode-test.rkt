@@ -30,11 +30,19 @@
   (define-values (w n) (encode-instruction name ops))
   (list w n))
 
+;; bound-layout 必须带 origin + link 表(encode 会把 link 原样搬进产物)。
+(define (link-field symbols)
+  (cons 'link (cons (list 'base 0)
+                    (for/list ([row (in-list symbols)])
+                      (list 'symbol (cadr row) (last row))))))
+
 (define (laid segments symbols)
   (list (list 'phase 'bound)
+        (list 'origin 0)
         (cons 'segments segments)
         (cons 'anchors '())
         (cons 'symbols symbols)
+        (link-field symbols)
         (cons 'requests '())
         (cons 'problems '())))
 
@@ -44,9 +52,11 @@
 
 (define (with-requests layout requests)
   (list (list 'phase 'bound)
+        (list 'origin 0)
         (cons 'segments (cdr (assoc 'segments layout)))
         (cons 'anchors '())
         (cons 'symbols (cdr (assoc 'symbols layout)))
+        (link-field (cdr (assoc 'symbols layout)))
         (cons 'requests requests)
         (cons 'problems '())))
 

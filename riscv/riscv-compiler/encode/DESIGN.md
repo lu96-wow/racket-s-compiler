@@ -22,7 +22,8 @@
 输出：
 
 ```racket
-(build (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)
+(build (link (base B) (symbol 链 地址) …)
+       (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)
 ```
 
 本层处理的 item：`label` / `pad` / `bytes` / `fill` / `value` / `reserve` / 真指令 /

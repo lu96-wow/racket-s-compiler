@@ -46,6 +46,7 @@
 (provide layout-program
          as-items
          layout-phase
+         layout-origin
          layout-problems
          layout-requests
          layout-segments
@@ -108,8 +109,7 @@
 ;;   游标从 spec 的 (origin …) 起步(缺省 0), start = 对齐后的游标
 ;;   给了 start 就用它; end 缺省时 = start + 容量
 ;; 过了这一步, 段的 start/end 一定是整数, 下游不再需要关心地址从哪来。
-(define (resolve-segment-starts decls input)
-  (define origin (or (segment-field* (cons 'origin (clauses input 'origin)) 'origin) 0))
+(define (resolve-segment-starts decls origin)
   (define cursor origin)
   (for/list ([d (in-list decls)])
     (define-values (tag name kind start end size align) (apply values d))
@@ -117,6 +117,12 @@
     (define end* (or end (+ start* size)))
     (set! cursor end*)
     (segment name kind start* end* align)))
+
+;; 这次布局用的**镜像基址**: spec 里第一条 (origin …), 缺省 0。
+;; 它不参与布局计算以外的任何事, 但要跟着产物走: 绝对地址是“相对谁”的数,
+;; 整体搬到别的地址时所有地址加 (新 base - base), 所以下游(link 表)必须知道它。
+(define (origin-of input)
+  (or (segment-field* (cons 'origin (clauses input 'origin)) 'origin) 0))
 
 (define (parse-places input)
   (for/list ([cl (in-list (clauses input 'place))])
@@ -450,8 +456,9 @@
 ;; 输出
 ;; ---------------------------------------------------------------------------
 
-(define (layout->sexp measured-segs anchors requests problems)
+(define (layout->sexp origin measured-segs anchors requests problems)
   (list (list 'phase 'measured)
+        (list 'origin origin)
         (cons 'segments
               (for/list ([m (in-list measured-segs)])
                 (define seg (measured-segment m))
@@ -472,7 +479,8 @@
 ;; ---------------------------------------------------------------------------
 
 (define (layout-program target program data layout-input)
-  (define segs (resolve-segment-starts (parse-segments layout-input) layout-input))
+  (define origin (origin-of layout-input))
+  (define segs (resolve-segment-starts (parse-segments layout-input) origin))
   (define places (parse-places layout-input))
   (define problems '())
   (define requests '())
@@ -501,7 +509,7 @@
   (define positions (collect-positions measured-segs anchors))
   (verify target measured-segs positions problem! request!)
 
-  (layout->sexp measured-segs anchors (reverse requests) (reverse problems)))
+  (layout->sexp origin measured-segs anchors (reverse requests) (reverse problems)))
 
 ;; 产物字段的便捷访问器(测试/上层用)
 (define (layout-field layout key)
@@ -510,6 +518,11 @@
 
 (define (layout-phase layout)
   (define row (assoc 'phase layout))
+  (and row (cadr row)))
+
+;; 这次布局用的镜像基址(spec 的 (origin …), 缺省 0)。
+(define (layout-origin layout)
+  (define row (assoc 'origin layout))
   (and row (cadr row)))
 (define (layout-problems layout) (layout-field layout 'problems))
 (define (layout-requests layout) (layout-field layout 'requests))

@@ -56,7 +56,7 @@
 ;;   program        (struct program blocks flows)
 ;;   measured-layout 度量产物（segments + anchors + requests + problems）
 ;;   bound-layout    绑定产物（segments + anchors + symbols + requests + problems）
-;;   build           最终产物 (build (segment …) …)
+;;   build           最终产物 (build (link …) (segment …) …)
 ;;
 ;;   外部输入（seed）：rich-data / program-items / data-items / layout-spec
 ;; ---------------------------------------------------------------------------
