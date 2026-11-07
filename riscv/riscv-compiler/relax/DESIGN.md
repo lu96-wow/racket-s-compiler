@@ -18,10 +18,10 @@
 | 原件 | 升到 |
 | --- | --- |
 | `c.beqz` / `c.bnez` | `beq` / `bne` |
-| `c.j` / `c.jal` | `jal x0` / `jal ra` |
+| `c.j` / `c.jal` | `jal x0` / `jal x1`（压缩形式的 rd 是 ISA 定死的） |
 | `beq/bne/blt/bge/bltu/bgeu` | `(branch-far <cond> …)` |
 | `branch-far` | `(branch-indirect <cond> …)` |
-| `jal link` | `(jump-far link …)` |
+| `jal link` | `(jump-far link …)`（rd 必须显式写，不猜 ABI） |
 
 ## 设计思路
 

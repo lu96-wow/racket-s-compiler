@@ -14,7 +14,9 @@
 ;;; 目标位置不再写死为 last: 普通分支的 bimm12 在 native 顺序里通常在前面。
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
-(require "../sexp.rkt")
+(require "../sexp.rkt"
+         ;; 寄存器身份只有一个来源(0 / 'x0 / 'zero 都是 x0)
+         (only-in "../../riscv-asm/base/register.rkt" zero-register?))
 
 (provide form?
          name? path? normalize-path
@@ -152,8 +154,6 @@
   (define p (jump-target-position x))
   (and p (list-ref x (add1 p))))
 
-(define (zero-register? r)
-  (or (eq? r 'x0) (eq? r 'zero) (equal? r 0)))
 
 ;; 无条件直接跳转: 目标确定且不回来
 (define (unconditional-jump? x)

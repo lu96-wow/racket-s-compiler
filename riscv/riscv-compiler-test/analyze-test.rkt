@@ -275,4 +275,25 @@
 (check-error "缺字段"
              (lambda () (sexp->program '((blocks)))))
 
+;; ---------------------------------------------------------------------------
+;; 省略 link 的控制转移: 汇编层不猜 ABI, 必须在 analyze 入口报错
+;; ---------------------------------------------------------------------------
+
+;; jal / jump-far 的 rd 是前端的决定(调用的 link 是 ra 属于 ABI)。
+(check-exn exn:fail? (lambda () (analyze '((label g) (jal g)))))
+(check-exn exn:fail? (lambda () (analyze '((label g) (jump-far g)))))
+(check-exn exn:fail? (lambda () (analyze '((label g) (jump-far x0 t0 t1 g)))))
+;; 显式写就没事。
+(check-true (procedure? analyze))
+;; (jal x1 g) 会顺序落下, (jal x0 g) 不会 —— 链接寄存器决定一切。
+(check-equal? (program->sexp (analyze '((label g) (jal x1 g) (jal x0 g))))
+              '((blocks (block ((g)) (jal x1 g))
+                        (block () (jal x0 g)))
+                (flows (flow (succ 0 1) (fallthrough 1) (root? #t))
+                       (flow (succ 0) (fallthrough #f) (root? #f)))))
+
+;; 判据本身也不许把目标 label 当 link 寄存器。
+(check-false (jump-register '(jal g)))
+(check-false (jump-register '(jump-far g)))
+
 (finish-tests "analyze")
