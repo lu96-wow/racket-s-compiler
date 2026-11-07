@@ -10,7 +10,7 @@
 ;; load-pcrel / load-pcrel-size 在已知 delta 时自动选择近/远形式。
 ;;
 ;; 绝对地址直接复用 expand-li。
-;; GOT / gp / frame 分别提供独立入口。
+;; GOT / 平台基址 / 栈帧 分别提供独立入口。
 ;; ============================================================
 
 (require "ranges.rkt"
@@ -129,8 +129,8 @@
 ;; gp-relative
 ;; ------------------------------------------------------------
 
-;; gp 是平台/ABI 寄存器(x3)，不是 ISA 规定的。选哪个寄存器由前端/IR 给，
-;; 后端只知道"这是个 rs1 + s12"——参数顺序照 addi rd, rs1, imm。
+;; 这一项是平台约定: x3 的用途由 ABI/target 定，不是 ISA 规定。
+;; 用哪个寄存器由前端/IR 给，后端只知道"这是个 rs1 + s12" —— 参数顺序照 addi rd, rs1, imm。
 (define (la-gp rd base offset)
   (unless (fits-s12? offset)
     (error 'la-gp "gp-relative offset ~a is outside signed 12-bit range" offset))
@@ -188,7 +188,7 @@
 ;;   'pcrel : value = delta 或 #f（#f 表示留 relocation）
 ;;   'abs   : value = 绝对地址
 ;;   'got   : value 忽略
-;;   'gp    : value = gp-relative offset，必须提供 #:base（gp 是哪一个由调用方定）
+;;   'gp    : value = 平台基址相对 offset，必须提供 #:base（用哪个寄存器由调用方定）
 ;;   'frame : value = frame offset，必须提供 #:base
 (define (expand-la rd value
                    #:mode [mode 'pcrel]

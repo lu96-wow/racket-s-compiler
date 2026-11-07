@@ -244,8 +244,8 @@
 ;;
 ;; 程序是普通 list:
 ;;
-;;   (rewrite-program '((load-32 t0 sp 8) L))
-;;   => '((lwu t0 sp 8) L)
+;;   (rewrite-program '((load-32 x5 x2 8) L))
+;;   => '((lwu x5 x2 8) L)
 ;;
 ;; 旧壳 (quote ...) / (begin ...) 也收, 出口一律 plain list。
 ;; 代码内部的 quote 仍然是数据, rewrite-tree 不进去。

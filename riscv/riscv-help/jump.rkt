@@ -62,8 +62,8 @@
   (define-values (hi lo) (split-hi-lo offset))
 
   (cond
-    ;; link 是零寄存器 -> 判据只能走 zero-register?:
-    ;; 0 / 'x0 / 'zero 是同一个寄存器, 用 eq? 会漏掉前两种。
+    ;; link 是 x0 -> 判据只能走 zero-register?:
+    ;; 调用方可能写整数、x 名或别名(同一个寄存器), 用 eq? 会漏掉后两种。
     [(zero-register? link)
      (define base (car (take-scratch! 'jump-auipc-jalr regs 1)))
      (check-not-zero! 'jump-auipc-jalr base)

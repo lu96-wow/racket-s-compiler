@@ -24,7 +24,7 @@
  load-pcrel
  load-pcrel-size
 
- ;; gp / 栈帧相对地址
+ ;; 平台基址 / 栈帧相对地址
  la-gp
  la-frame
  la-frame-size
@@ -43,7 +43,7 @@
  branch-b
  branch-long
 
- ;; 分支 / 跳转 / gp 选择需要的范围判断
+ ;; 分支 / 跳转 / 平台基址选择需要的范围判断
  fits-s12?
  fits-cjump?
  fits-branch?

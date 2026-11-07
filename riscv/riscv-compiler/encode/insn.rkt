@@ -39,7 +39,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; ABI 相关的伪指令不进 core 表面语法。
-;;   ret = jalr x0, ra, 0 把 ra / 返回约定写死在助记符里。
+;;   ret = jalr x0, x1, 0 把链接寄存器 / 返回约定写死在助记符里。
 ;; 需要返回就写显式 jalr，由调用者决定链接寄存器。
 (define (abi-only-pseudo? name)
   (memq name '(ret)))
@@ -79,7 +79,7 @@
 
 ;; ---------------------------------------------------------------------------
 ;; 编码
-;;   operands 里可以是寄存器名(x0/zero/a0…)或已经解析好的整数。
+;;   operands 里可以是 x 名(x0..x31)、ABI 别名或已经解析好的整数。
 ;;   立即数/偏移一律是整数。
 ;; ---------------------------------------------------------------------------
 
@@ -87,7 +87,7 @@
   (define-values (base aq rl) (split-aqrl name))
   (when (abi-only-pseudo? base)
     (error 'encode-instruction
-           "~a is an ABI-specific pseudo instruction; write the explicit instruction instead (e.g. (jalr x0 ra 0))"
+           "~a is an ABI-specific pseudo instruction; write the explicit instruction instead (e.g. (jalr x0 x1 0))"
            base))
   (define info (or (lookup-instruction target base)
                    (error 'encode-instruction "unknown instruction: ~a" name)))

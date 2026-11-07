@@ -73,7 +73,7 @@
           (list 'branch-indirect (cadr it) (caddr it) (cadddr it) (list-ref it 4))]
          ;; jal -> 远跳转, 4 -> 8
          ;;   (jal rd L) -> (jump-far rd L)      link 非零时它自己就是 base
-         ;; rd 必须显式写: 汇编层不知道“调用的 link 是 ra”
+         ;; rd 必须显式写: 汇编层不知道“省略 rd 时该用哪个 link”
          [(jal) (and (= 3 (length it)) (list 'jump-far (cadr it) (caddr it)))]
          ;; j L = jal x0, L
          [(j) (list 'jump-far 'x0 (cadr it))]

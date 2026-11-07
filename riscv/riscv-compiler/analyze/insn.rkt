@@ -6,7 +6,7 @@
 ;;; 分类决定 CFG 的形状。操作数顺序是 riscv-opcodes native 顺序:
 ;;;   - 分支        (beq L a b) / (c.beqz a L)   两条边: 目标 + 顺序
 ;;;   - 直接跳转    (jal x0 L) / (c.j L)          一条边: 目标(无顺序边)
-;;;   - 调用        (jal ra L) / (c.jal L)        两条边: 目标 + 顺序
+;;;   - 调用        (jal x1 L) / (c.jal L)        两条边: 目标 + 顺序
 ;;;   - 间接跳转    (jalr ...) / (c.jr r) / (c.jalr r)
 ;;;                 目标不可知: c.jr 无顺序边, c.jalr/jalr 有; 图记为"有间接跳转"
 ;;;   - 陷阱        (ecall) 可能返回 -> 顺序边; (ebreak) / (c.ebreak) 停住 -> 无边
@@ -15,7 +15,7 @@
 ;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
 
 (require "../sexp.rkt"
-         ;; 寄存器身份只有一个来源(0 / 'x0 / 'zero 都是 x0)
+         ;; 寄存器身份只有一个来源(整数 / x 名 / 别名都指向同一个寄存器)
          (only-in "../../riscv-asm/base/register.rkt" zero-register?))
 
 (provide form?
@@ -74,7 +74,7 @@
 
 ;; 执行会不会顺序落到**物理下一条**?
 ;;   分支: 会
-;;   jal ra / c.jal / c.jalr / jalr rd≠x0: 会(返回地址 = pc+4)
+;;   jal x1 / c.jal / c.jalr / jalr rd≠x0: 会(返回地址 = pc+4)
 ;;   jal x0 / c.j / c.jr: 不回来 -> 不会
 ;;   ecall: 会; ebreak / c.ebreak: 不会
 (define (falls-through? x)
@@ -93,7 +93,7 @@
       (trap-instruction? x)))
 
 ;; 需要显式写 link 的控制转移。
-;;   jal      : (jal rd L)            rd 是 ABI/前端的决定(调用的 link 是 ra 属于 ABI)
+;;   jal      : (jal rd L)            rd 是 ABI/前端的决定(省略时写哪个由 ABI 约定)
 ;;   jump-far : (jump-far link [scratch] L)
 ;; 省略写法必须挡在入口: 否则 jump-register 会把目标 label 当成 link 寄存器,
 ;; 控制流静默算错。
@@ -114,7 +114,7 @@
 
 ;; 这条指令写哪个链接寄存器? 它决定会不会顺序落下, 也决定是不是无条件跳转。
 ;; jal / jalr / jump-far 都有显式 rd, 不猜: (jal L) 这种“省略 rd 按调用算”
-;; 是 GAS 的简写, 而“调用的 link 是 ra”本身是 ABI —— 汇编层不认。
+;; 是 GAS 的简写, 而“省略 rd 时该写哪个 link”本身是 ABI —— 汇编层不认。
 ;; 压缩形式没有显式 rd, 但那个 rd 是 ISA 定死的: c.j / c.jr 写 x0, c.jal / c.jalr 写 x1。
 (define (jump-register x)
   (and (form? x)

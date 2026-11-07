@@ -85,8 +85,8 @@
 ;; ---------------------------------------------------------------------------
 
 ;; 远形式的目标寄存器由 riscv-help 解释: 它内部用 zero-register? 判"link 是不是零寄存器",
-;; 0 / 'x0 / 'zero 三种写法都能正确分派, 这里原样传下去即可。
-;; 输出寄存器一律用架构名(x0..x31), 不写 a0/t0 这类 ABI 别名。
+;; 整数 / x 名 / 别名三种写法都能正确分派, 这里原样传下去即可。
+;; 输出寄存器一律用架构名(x0..x31), 不写 ABI 别名。
 
 (define (branch-distance it here symbols index)
   (define target (normalize-path (list-ref it index)))

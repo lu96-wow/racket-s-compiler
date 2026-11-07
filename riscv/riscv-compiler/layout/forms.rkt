@@ -7,7 +7,7 @@
 ;;; 不在表里的助记符: 一律 4 字节; c.* 是显式判定的 2 字节。
 ;;; (真指令名单不在本层维护; 编不出来是后面编码层的事)
 
-;; "是不是零寄存器" 只有一个来源: analyze/insn.rkt (x0 / zero / 0)。
+;; "是不是 x0" 只有一个来源: analyze/insn.rkt (整数 / x 名 / 别名都指向它)。
 ;; 布局层需要它, 因为 jump-far 要不要 scratch 取决于它的 link。
 (require "../sexp.rkt"
          (only-in "../analyze/insn.rkt"
@@ -227,7 +227,7 @@
 ;; 三个形式都**显式**写出寄存器: 谁也不许从助记符里猜 link 或 scratch。
 ;; ---------------------------------------------------------------------------
 
-;; (jump-far link L) / (jump-far link s L); call-far = (jump-far ra L), 不再单独存在
+;; (jump-far link L) / (jump-far link s L); call-far = (jump-far x1 L), 不再单独存在
 (define (jump-far-form? x)
   (and (form? x) (eq? (car x) 'jump-far) (memq (length x) '(3 4)) #t))
 (define (jump-far-link x) (and (jump-far-form? x) (cadr x)))
