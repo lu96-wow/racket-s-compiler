@@ -47,6 +47,7 @@
          as-items
          layout-phase
          layout-origin
+         layout-externs
          layout-problems
          layout-requests
          layout-segments
@@ -368,13 +369,21 @@
 
 ;; measured 相内部的临时位置: 链 -> 段 start + 段内偏移。
 ;; 只在本层用于 needs-far / la-too-far 的距离判断, 不写进产物。
-(define (collect-positions measured-segs anchors)
+(define (collect-positions measured-segs anchors externs)
   (define start-of
     (for/hash ([m (in-list measured-segs)])
       (values (segment-name (measured-segment m))
               (segment-start (measured-segment m)))))
-  (for/hash ([a (in-list anchors)])
-    (values (cadr a) (+ (hash-ref start-of (caddr a)) (cadddr a)))))
+  (define h (make-hash))
+  (for ([a (in-list anchors)])
+    (hash-set! h (cadr a) (+ (hash-ref start-of (caddr a)) (cadddr a))))
+  ;; 外部符号: 地址直接来自输入侧 link 表(绝对的, 不加任何偏移)。
+  ;; 地址未知(#f)的不进位置表 —— 引用它会在 check-control / check-chains 里
+  ;; 变成 undefined-target, 但我们先单独报 unlinked-external 说清原因。
+  (for ([row (in-list externs)])
+    (define addr (caddr row))
+    (when addr (hash-set! h (cadr row) addr)))
+  h)
 
 ;; ---------------------------------------------------------------------------
 ;; 校验: 只报 problems/requests, 不抛异常。
@@ -437,6 +446,44 @@
       (unless (fits-auipc-pair? d (target-xlen target))
         (request! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
 
+;; 外部符号(input 侧 link 表)的自检:
+;;   - 名字不能和自己镜像里的 label 撞(撞了 symbol-row 会静默挑一个)
+;;   - 地址未知 -> unlinked-external: 没有 reloc 层, 编不出来
+;;   - 地址是奇数 -> 不能当 branch/jal/jalr 的目标(立即数忽略 bit0)
+(define (check-externs externs anchors problem!)
+  (define local (for/hash ([a (in-list anchors)]) (values (cadr a) #t)))
+  (for ([row (in-list externs)])
+    (define chain (cadr row))
+    (define addr (caddr row))
+    (when (hash-ref local chain #f)
+      (problem! `(external-conflict ,chain)))
+    (cond
+      [(not addr) (problem! `(unlinked-external ,chain))]
+      [(odd? addr) (problem! `(misaligned-external ,chain ,addr))]
+      [else (void)])))
+
+;; 未链接的外部符号(地址 #f)已经报过 unlinked-external; 引用它的 item 不再重复
+;; 报 undefined-target —— 那不是“未定义”, 是“地址还不知道”。
+(define (unlinked-chains externs)
+  (for/list ([row (in-list externs)] #:unless (caddr row)) (cadr row)))
+
+(define (item-chains it)
+  (cond
+    [(control-form? it) (filter values (list (normalize-path (control-target it))))]
+    [(la-form? it) (address-expr-chains (last it))]
+    [(and (value-form? it) (not (exact-integer? (value-payload it))))
+     (address-expr-chains (value-payload it))]
+    [else '()]))
+
+(define (drop-unlinked-targets problems externs)
+  (define unlinked (unlinked-chains externs))
+  (if (null? unlinked)
+      problems
+      (filter (lambda (p)
+                (not (and (eq? (car p) 'undefined-target)
+                          (ormap (lambda (c) (member c unlinked)) (item-chains (list-ref p 3))))))
+              problems)))
+
 (define (verify target measured-segs positions problem! request!)
   (for ([m (in-list measured-segs)])
     (define seg (measured-segment m))
@@ -456,9 +503,10 @@
 ;; 输出
 ;; ---------------------------------------------------------------------------
 
-(define (layout->sexp origin measured-segs anchors requests problems)
+(define (layout->sexp origin externs measured-segs anchors requests problems)
   (list (list 'phase 'measured)
         (list 'origin origin)
+        (cons 'externs externs)
         (cons 'segments
               (for/list ([m (in-list measured-segs)])
                 (define seg (measured-segment m))
@@ -478,7 +526,7 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (layout-program target program data layout-input)
+(define (layout-program target program data layout-input [externs '()])
   (define origin (origin-of layout-input))
   (define segs (resolve-segment-starts (parse-segments layout-input) origin))
   (define places (parse-places layout-input))
@@ -506,10 +554,13 @@
   (define measured-segs (measure-all target segs code-by-seg data-by-seg problem!))
   (check-fallthrough measured-segs flows problem!)
   (define anchors (collect-anchors measured-segs))
-  (define positions (collect-positions measured-segs anchors))
+  (check-externs externs anchors problem!)
+  (define positions (collect-positions measured-segs anchors externs))
   (verify target measured-segs positions problem! request!)
 
-  (layout->sexp origin measured-segs anchors (reverse requests) (reverse problems)))
+  (layout->sexp origin externs measured-segs anchors
+                (reverse requests)
+                (drop-unlinked-targets (reverse problems) externs)))
 
 ;; 产物字段的便捷访问器(测试/上层用)
 (define (layout-field layout key)
@@ -524,6 +575,11 @@
 (define (layout-origin layout)
   (define row (assoc 'origin layout))
   (and row (cadr row)))
+
+;; 输入侧 link 表的行 ((symbol 链 地址|#f) …), 原样带下去给 bind-labels。
+(define (layout-externs layout)
+  (define hit (assoc 'externs layout))
+  (and hit (cdr hit)))
 (define (layout-problems layout) (layout-field layout 'problems))
 (define (layout-requests layout) (layout-field layout 'requests))
 (define (layout-segments layout) (layout-field layout 'segments))

@@ -21,6 +21,7 @@ data-items                               ; label / bytes / fill / pad / value / 
 ```racket
 ((phase measured)
  (origin 镜像基址)        ; spec 的 (origin …)，缺省 0；给 link 表当锚
+ (externs (symbol 链 地址|#f) …)   ; 输入侧 link 表的行，原样带下去
  (segments (segment (name …) (kind …) (start …) (end …) (align …)
                     (items (offset k item) …)
                     (size n)) …)
@@ -78,6 +79,26 @@ data-items                               ; label / bytes / fill / pad / value / 
   只有 `end < start` 报 `segment-bad-range`。和 amd64 同一条规则。
 - 只有 anchors + 段 start，所以本层只能算临时距离；`needs-far` / `la-too-far` 是请求。
 - `(value w 表达式)` 这里只查链存在；宽度等最终地址定了再查。
+
+## 外部符号（输入侧的 link 表）
+
+`layout-program` 收一个可选的 `externs`：就是 `externs.rkt` 解析出来的
+`(symbol 链 地址|#f)` 行。它们**不是**本镜像的 label，不占字节、不参与放置、
+不参与 fallthrough，只提供两样东西：
+
+- **地址**：并进本层的临时位置表（`positions`），于是距离判断
+  （`needs-far` / `la-too-far` / `value` 的链检查）对它们照常工作；
+- **自检**：
+  - `(external-conflict 链)`：名字和本镜像的 label 撞了（撞了 `symbol-row` 会静默挑一个）
+  - `(unlinked-external 链)`：地址是 `#f` —— 没有 reloc 层，编不出来。宁可拒绝，
+    也不产出一个“看着能跑”的镜像。引用它的 item 不再重复报 `undefined-target`
+    （那不是“未定义”，是“还不知道”）
+  - `(misaligned-external 链 地址)`：奇数地址不能当 `branch`/`jal`/`jalr` 的目标
+    （立即数忽略 bit0，`jalr` 还会清 bit0）
+
+`base` 字段只解析、不参与算术：地址是绝对的，距离就是两个绝对地址相减。
+它真正的用途是“整体搬迁”（所有地址加 Δ）时的锚，等做重定位层再校验。
+外部符号**不进**产物的 `link` / `provides` —— 那不是本镜像提供的东西。
 
 ## 边界
 

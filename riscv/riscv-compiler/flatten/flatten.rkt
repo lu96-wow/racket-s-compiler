@@ -64,7 +64,8 @@
 ;; 一次 flatten 用到的全局状态
 (struct state (label-index   ; 完整链 -> (cons slot 声明模块)
                modules       ; 模块完整链 -> mod
-               imports)      ; 模块链 -> (listof (cons 本地链 绝对链))  require 绑定
+               imports       ; 模块链 -> (listof (cons 本地链 绝对链))  require 绑定
+               externs)      ; 外部符号的链 -> #t（输入侧的 link 表给的名字）
   #:mutable)
 
 ;; ---------------------------------------------------------------------------
@@ -362,6 +363,9 @@
         (define full (append p ref))
         (define known (hash-ref (state-label-index st) full #f))
         (and known (prefix-of? (cdr known) scope) full))
+      ;; 外部符号: 名字由输入侧的 link 表保证存在, 地址在那边。
+      ;; 只按**写全的名字**认(不套模块前缀): 外部名字不是本单元的 label。
+      (and (hash-ref (state-externs st) ref #f) ref)
       #f))
 
 ;; ---------------------------------------------------------------------------
@@ -404,12 +408,14 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-;; flatten-inputs : (listof 输入) -> (values (listof 扁平 input) 名字表 导出集合)
+;; flatten-inputs : (listof 输入) [#:externs 外部符号链] -> (values (listof 扁平 input) 名字表 导出集合)
 ;;   第一个返回值与输入一一对应, 顺序不变。
 ;;   多个输入共享一张名字表/模块表, 所以 (require 别的输入里的模块) 能查到。
 ;;   导出集合 = 绝对链列表(已去重排序), 或 'all(全单元没有 provide 子句)。
-(define (flatten-inputs inputs)
-  (define st (state (make-hash) (make-hash) (make-hash)))
+(define (flatten-inputs inputs #:externs [externs '()])
+  (define extern-names (make-hash))
+  (for ([c (in-list externs)]) (hash-set! extern-names c #t))
+  (define st (state (make-hash) (make-hash) (make-hash) extern-names))
   (define runs
     (for/list ([in (in-list inputs)])
       (annotate (as-items in) '() st)))
@@ -422,10 +428,11 @@
           (exports-of st provides)))
 
 ;; flatten-program : (listof item) -> (listof item)   ; 单个输入
-(define (flatten-program prog)
-  (define-values (outs _names _exports) (flatten-inputs (list prog)))
+(define (flatten-program prog #:externs [externs '()])
+  (define-values (outs _names _exports)
+    (flatten-inputs (list prog) #:externs externs))
   (car outs))
 
 ;; flatten-items : 程序体 -> (values 扁平 item 列表 名字表 导出集合)
-(define (flatten-items items)
-  (flatten-inputs (list items)))
+(define (flatten-items items #:externs [externs '()])
+  (flatten-inputs (list items) #:externs externs))

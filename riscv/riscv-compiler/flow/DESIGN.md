@@ -23,12 +23,12 @@
 | stage | requires | provides |
 | --- | --- | --- |
 | `expand-data` | `rich-data` | `data-items` |
-| `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` `exports` |
+| `flatten` | `program-items` `data-items` (`optional externs`) | `program-items` `data-items` `names` `exports` |
 | `expand-pseudo` | `program-items` | `program-items`（别名 → native，可选） |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
-| `layout` | `program` `data-items` `layout-spec` | `measured-layout` |
-| `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
+| `layout` | `program` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
+| `relax` | `program` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
 | `bind-labels` | `measured-layout` (`optional exports`) | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
 

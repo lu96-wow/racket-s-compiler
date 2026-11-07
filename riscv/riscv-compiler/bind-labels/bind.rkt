@@ -19,7 +19,8 @@
 (require racket/list
          "../sexp.rkt"
          (only-in "../layout/layout.rkt"
-                  layout-phase layout-origin layout-problems layout-requests
+                  layout-phase layout-origin layout-externs
+                  layout-problems layout-requests
                   layout-segments layout-anchors)
          (only-in "../layout/forms.rkt"
                   value-form? value-width value-payload))
@@ -42,6 +43,14 @@
   (and hit (cadr hit)))
 
 ;; anchor 行 (anchor 链 段名 偏移) -> 符号行 (symbol 链 段名 偏移 绝对地址)
+;; 外部符号行: 地址已知的就是 (symbol 链 #f #f 地址) —— 段名/偏移是空的,
+;; 但 symbol-address 只取最后一列, 所以下游(eval-symbol-address / encode)零改动。
+;; 地址未知(#f)的不进符号表: 它已经在 layout 报了 unlinked-external。
+(define (extern-symbols externs)
+  (for/list ([row (in-list externs)]
+             #:when (caddr row))
+    (list 'symbol (cadr row) #f #f (caddr row))))
+
 (define (collect-symbols segments anchors)
   (define start-of
     (for/hash ([seg (in-list segments)])
@@ -202,7 +211,11 @@
     [(measured)
      (define segments (layout-segments measured))
      (define anchors (layout-anchors measured))
-     (define symbols (collect-symbols segments anchors))
+     ;; local-symbols: 本镜像里的 label(有段名/偏移); symbols: 再加外部符号。
+     ;; 只有 local 进 link/provides —— 外部符号不是本镜像“提供”的东西。
+     (define local-symbols (collect-symbols segments anchors))
+     (define symbols (append local-symbols
+                             (extern-symbols (or (layout-externs measured) '()))))
      (define origin (layout-origin measured))
 
      (define extra '())
@@ -211,7 +224,7 @@
      (check-segment-overflow segments problem!)
 
      ;; link 表 = symbols 的两列投影 + provide 引入的别名(rename-out)
-     (define-values (rows provided) (exported (link-rows symbols) exports problem!))
+     (define-values (rows provided) (exported (link-rows local-symbols) exports problem!))
      (define link (make-link origin rows))
 
      (list (list 'phase 'bound)

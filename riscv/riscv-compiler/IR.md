@@ -57,6 +57,19 @@
 | `build` | `(build (link …) (provides …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |
 
+## 输入侧：外部符号
+
+`externs` 是一个 seed（可省），值就是**上一份编译写出来的 link 文件内容**：
+
+```scheme
+(link (base #x80000000)
+      (symbol (lib f) #x80001000)     ; 地址已知：参与距离判断，能做短跳
+      (symbol (lib g) #f))            ; 地址未知：现在报 unlinked-external
+```
+
+用它的层：`flatten`（放行这些名字）、`layout`/`relax`（地址进距离判断 + 自检）。
+`base` 只解析不参与算术；地址未知现在编不出来（没有 reloc 层）。
+
 ## 段 kind
 
 `kind` 只回答两件事：**这一段收哪些 item**、**对齐补出来的空间怎么落**。

@@ -22,6 +22,9 @@
 - 默认私有：跨模块引用必须 `require`，写全名不是后门。
 - `provide` / `require` 可以成环；这里没有初始化顺序。
 - 链是身份：`(label a f)` 是同一位置的多个名字；解析后所有层只认完整链。
+- **外部符号**（输入侧 link 表里的名字）只在解析的最后一步兜底：本地/require 都
+  解不到时，若 `ref` 正好在外部符号表里就原样返回（外部名字不套模块前缀）。
+  于是笔误仍然报 `undefined label`，而真外部引用能过。
 - 导出集合是产物的一部分：`flatten-inputs` 返回 `(values items names exports)`，
   `exports` 是各模块 `(provide …)` 的并集（**绝对链**，已去重排序），
   或 `'all`（全单元没有 provide 子句 = 平铺镜像语义，全导出）。

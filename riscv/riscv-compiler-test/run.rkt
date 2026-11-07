@@ -9,6 +9,7 @@
   '("sexp-test.rkt"
     "expand-data-test.rkt"
     "flatten-test.rkt"
+    "externs-test.rkt"
     "expand-pseudo-test.rkt"
     "analyze-test.rkt"
     "dce-test.rkt"

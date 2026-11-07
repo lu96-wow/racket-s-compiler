@@ -58,6 +58,10 @@ build       : (build (link (base 基址) (symbol 链 地址) ...)
                      (provides 链 ...)
                      (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
 link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.rkt，形状同 link）
+
+输入侧（可省）: externs = 上一份的 link 表
+              (link (base B) (symbol 链 地址) ...)        ; 地址已知
+              (link (base B) (symbol 链 #f) ...)          ; 地址未知 -> unlinked-external
 ```
 
 `layout` / `relax` 的 `requests` 是交接点：`needs-far` 给 relax，

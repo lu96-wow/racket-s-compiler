@@ -25,6 +25,7 @@
 
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
+         (only-in "../externs.rkt" extern-names extern-rows)
          (only-in "../expand-pseudo/rewrite.rkt" rewrite-program)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
@@ -78,12 +79,14 @@
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
-   (stage 'flatten '(program-items data-items)
+   (stage 'flatten '(program-items data-items (optional externs))
           '(program-items data-items names exports)
           (lambda (_target in)
             (define-values (outs names exports)
               (flatten-inputs (list (hash-ref in 'program-items)
-                                    (hash-ref in 'data-items))))
+                                    (hash-ref in 'data-items))
+                              #:externs (let ([e (hash-ref in 'externs '())])
+                                          (if (null? e) '() (extern-names e)))))
             (hash 'program-items (list-ref outs 0)
                   'data-items (list-ref outs 1)
                   'names names
@@ -108,23 +111,27 @@
           "死代码消除（三个 pass 跑到不动点）")
 
    'layout
-   (stage 'layout '(program data-items layout-spec) '(measured-layout)
+   (stage 'layout '(program data-items layout-spec (optional externs))
+          '(measured-layout)
           (lambda (target in)
             (hash 'measured-layout
                   (layout-program target
                                   (hash-ref in 'program)
                                   (hash-ref in 'data-items)
-                                  (hash-ref in 'layout-spec))))
+                                  (hash-ref in 'layout-spec)
+                                  (extern-rows (hash-ref in 'externs '())))))
           "布局度量: 放置 + 尺寸 + anchors + requests/problems（无绝对地址）")
 
    'relax
-   (stage 'relax '(program data-items layout-spec) '(measured-layout)
+   (stage 'relax '(program data-items layout-spec (optional externs))
+          '(measured-layout)
           (lambda (target in)
             (hash 'measured-layout
                   (relax target
                          (hash-ref in 'program)
                          (hash-ref in 'data-items)
-                         (hash-ref in 'layout-spec))))
+                         (hash-ref in 'layout-spec)
+                         #:externs (extern-rows (hash-ref in 'externs '())))))
           "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
 
    'bind-labels
