@@ -76,7 +76,7 @@
 (define p-far-branch-next
   (program-of
    '((blocks (block ((main)) (addi a0 a0 1)
-                          (branch-far beq a0 a1 (next)))
+                          (branch-jal beq a0 a1 (next)))
              (block ((next)) (jalr x0 ra 0)))
      (flows (flow (succ 1) (fallthrough 1) (root? #t))
             (flow (succ) (fallthrough #f) (root? #f))))))
@@ -85,7 +85,7 @@
 
 (define p-far-jump-next
   (program-of
-   '((blocks (block ((main)) (addi a0 a0 1) (jump-far x0 (next)))
+   '((blocks (block ((main)) (addi a0 a0 1) (jump-auipc-jalr x0 t0 (next)))
              (block ((next)) (jalr x0 ra 0)))
      (flows (flow (succ 1) (fallthrough #f) (root? #t))
             (flow (succ) (fallthrough #f) (root? #f))))))

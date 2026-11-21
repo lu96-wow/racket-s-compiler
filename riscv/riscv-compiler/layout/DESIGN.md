@@ -2,8 +2,8 @@
 
 ## 作用
 
-放置与度量：把块/数据游程放进段，算偏移、尺寸，记 `anchors`，把范围检查分成
-`requests` 和 `problems`。**不产出绝对地址。**
+放置与度量：把块/数据游程放进段，算偏移、尺寸，记 `anchors`，只报放置类
+`problems`。**不产出绝对地址，也不选控制转移形式。**
 
 ## 相关 s-exp
 
@@ -26,8 +26,7 @@ data-items                               ; label / bytes / fill / pad / value / 
                     (items (offset k item) …)
                     (size n)) …)
  (anchors (anchor 链 段名 偏移) …)
- (requests (needs-far …) (scratch-hole …) (la-too-far …))
- (problems (unplaced …) (undefined-target …) …))
+ (problems (unplaced …) …))
 ```
 
 本层认识的数据 item：`label` / `bytes` / `fill` / `value` / `align` / `pad` / `reserve`。
@@ -77,8 +76,8 @@ data-items                               ; label / bytes / fill / pad / value / 
   `end = start + size`。求解后各层只看到整数地址。
 - 段范围：`start <= end` 合法（空段是常态：还没有内容的 section，或者还没占地址的洞）；
   只有 `end < start` 报 `segment-bad-range`。和 amd64 同一条规则。
-- 只有 anchors + 段 start，所以本层只能算临时距离；`needs-far` / `la-too-far` 是请求。
-- `(value w 表达式)` 这里只查链存在；宽度等最终地址定了再查。
+- 本层不算目标距离、不检查跳转范围；这些在 `check`。
+- value 的链存在性和宽度检查也在 `check` / `bind-labels`。
 
 ## 外部符号（输入侧的 link 表）
 
@@ -86,15 +85,8 @@ data-items                               ; label / bytes / fill / pad / value / 
 `(symbol 链 地址|#f)` 行。它们**不是**本镜像的 label，不占字节、不参与放置、
 不参与 fallthrough，只提供两样东西：
 
-- **地址**：并进本层的临时位置表（`positions`），于是距离判断
-  （`needs-far` / `la-too-far` / `value` 的链检查）对它们照常工作；
-- **自检**：
-  - `(external-conflict 链)`：名字和本镜像的 label 撞了（撞了 `symbol-row` 会静默挑一个）
-  - `(unlinked-external 链)`：地址是 `#f` —— 没有 reloc 层，编不出来。宁可拒绝，
-    也不产出一个“看着能跑”的镜像。引用它的 item 不再重复报 `undefined-target`
-    （那不是“未定义”，是“还不知道”）
-  - `(misaligned-external 链 地址)`：奇数地址不能当 `branch`/`jal`/`jalr` 的目标
-    （立即数忽略 bit0，`jalr` 还会清 bit0）
+- **地址**：原样带进 measured-layout，`check` 会把它并进位置表，用于距离判断；
+- **自检**：外部符号冲突 / 未链接 / 奇数地址由 `check` 报 problem。
 
 `base` 字段只解析、不参与算术：地址是绝对的，距离就是两个绝对地址相减。
 它真正的用途是“整体搬迁”（所有地址加 Δ）时的锚，等做重定位层再校验。
@@ -102,8 +94,8 @@ data-items                               ; label / bytes / fill / pad / value / 
 
 ## 边界
 
+- 目标存在性、跳转范围、scratch、近 la 够不够：`check`。
 - 绝对地址、`value` 最终宽度、段容量：`bind-labels`。
-- 松弛：`relax`。
-- 填 scratch / `la` 远形式：未来寄存器层。
 - 指令合法性、端序：`encode`。
+- 形式选择（短/远）：前端；本层不升级、不缩回。
 - 补 fallthrough 跳转：未实现。

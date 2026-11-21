@@ -28,11 +28,11 @@
 ;; ---------------------------------------------------------------------------
 
 (for ([it (in-list '((beq a b L) (bne a b L) (c.beqz a L) (c.bnez a L)
-                     (branch-far beq a b L)
-                     (branch-indirect s beq a b L)))])
+                     (branch-jal beq a b L)
+                     (branch-auipc-jalr s beq a b L)))])
   (check-true (branch-instruction? it) (format "branch ~s" it)))
 
-(for ([it (in-list '((jal x0 L) (jal ra L) (c.j L) (c.jal L) (jump-far ra L)))])
+(for ([it (in-list '((jal x0 L) (jal ra L) (c.j L) (c.jal L) (jump-auipc-jalr ra ra L)))])
   (check-true (jump-instruction? it) (format "jump ~s" it)))
 
 (for ([it (in-list '((jalr x0 ra 0) (c.jr a0) (c.jalr a0)))])
@@ -72,8 +72,8 @@
 (check-false (unconditional-jump? '(jal ra L)))
 (check-true  (unconditional-jump? '(c.j L)))
 (check-false (unconditional-jump? '(c.jal L)))
-(check-true  (unconditional-jump? '(jump-far x0 L)))
-(check-false (unconditional-jump? '(jump-far ra L)))
+(check-true  (unconditional-jump? '(jump-auipc-jalr x0 t0 L)))
+(check-false (unconditional-jump? '(jump-auipc-jalr ra ra L)))
 
 (check-equal? (jump-target '(beq (L) a b)) '(L))
 (check-equal? (jump-target '(jal x0 (lib f))) '(lib f))
@@ -84,7 +84,7 @@
 (check-false (jump-register '(jal L)))
 (check-equal? (jump-register '(jal x0 L)) 'x0)
 (check-equal? (jump-register '(jalr a0 a1 0)) 'a0)
-(check-equal? (jump-register '(jump-far x0 L)) 'x0)
+(check-equal? (jump-register '(jump-auipc-jalr x0 t0 L)) 'x0)
 (check-equal? (jump-register '(c.j L)) 'x0)
 (check-equal? (jump-register '(c.jal L)) 'x1)
 (check-equal? (jump-register '(c.jr a0)) 'x0)
@@ -186,22 +186,22 @@
 (check-equal? (flow-fallthrough (car f-missing)) 1)
 
 ;; 远形式按 link 判断
-(define f-jump-far-x0
-  (flow-of '((label main) (jump-far x0 (t)) (label t) (jalr x0 ra 0))))
-(check-equal? (flow-succ (car f-jump-far-x0)) '(1))
-(check-equal? (flow-fallthrough (car f-jump-far-x0)) #f)
+(define f-jump-auipc-jalr-x0
+  (flow-of '((label main) (jump-auipc-jalr x0 t0 (t)) (label t) (jalr x0 ra 0))))
+(check-equal? (flow-succ (car f-jump-auipc-jalr-x0)) '(1))
+(check-equal? (flow-fallthrough (car f-jump-auipc-jalr-x0)) #f)
 
-(define f-jump-far-ra
-  (flow-of '((label main) (jump-far ra (t)) (label t) (jalr x0 ra 0))))
-(check-equal? (flow-succ (car f-jump-far-ra)) '(1))
-(check-equal? (flow-fallthrough (car f-jump-far-ra)) 1)
+(define f-jump-auipc-jalr-ra
+  (flow-of '((label main) (jump-auipc-jalr ra ra (t)) (label t) (jalr x0 ra 0))))
+(check-equal? (flow-succ (car f-jump-auipc-jalr-ra)) '(1))
+(check-equal? (flow-fallthrough (car f-jump-auipc-jalr-ra)) 1)
 
 ;; ---------------------------------------------------------------------------
 ;; root?: 入口 + (有间接跳转时)地址被取过的块
 ;; ---------------------------------------------------------------------------
 
 (define indirect-items
-  '((label main) (la t0 (fn)) (jalr x0 t0 0)
+  '((label main) (la-pcrel t0 (fn)) (jalr x0 t0 0)
     (label fn) (addi a0 a0 1) (jalr x0 ra 0)))
 (define p-indirect (analyze indirect-items))
 
@@ -210,7 +210,7 @@
 
 ;; 没有间接跳转: 数据/取地址都不会凭空造 root
 (define no-indirect-items
-  '((label main) (la t0 (fn)) (jal x0 (fn))
+  '((label main) (la-pcrel t0 (fn)) (jal x0 (fn))
     (label fn) (addi a0 a0 1) (ebreak)))
 (define p-no-indirect (analyze no-indirect-items))
 (check-false (root-of? p-no-indirect 1))
@@ -245,7 +245,7 @@
     (label b) (addi t0 t0 1) (jalr x0 ra 0)
     (label c) (addi t1 t1 1) (jalr x0 ra 0)))
 (check-equal? (referenced-labels items) '((c)))
-(check-equal? (address-taken-paths '((la t0 (a)))) '((a)))
+(check-equal? (address-taken-paths '((la-pcrel t0 (a)))) '((a)))
 (check-equal? (address-taken-paths '((value 8 (- (b) (c)))))
               '((b) (c)))
 
@@ -279,10 +279,10 @@
 ;; 省略 link 的控制转移: 汇编层不猜 ABI, 必须在 analyze 入口报错
 ;; ---------------------------------------------------------------------------
 
-;; jal / jump-far 的 rd 是前端的决定(调用的 link 是 ra 属于 ABI)。
+;; jal / jump-auipc-jalr 的 rd 是前端的决定(调用的 link 是 ra 属于 ABI)。
 (check-exn exn:fail? (lambda () (analyze '((label g) (jal g)))))
-(check-exn exn:fail? (lambda () (analyze '((label g) (jump-far g)))))
-(check-exn exn:fail? (lambda () (analyze '((label g) (jump-far x0 t0 t1 g)))))
+(check-exn exn:fail? (lambda () (analyze '((label g) (jump-auipc-jalr g)))))
+(check-exn exn:fail? (lambda () (analyze '((label g) (jump-auipc-jalr x0 t0 t1 g)))))
 ;; 显式写就没事。
 (check-true (procedure? analyze))
 ;; (jal x1 g) 会顺序落下, (jal x0 g) 不会 —— 链接寄存器决定一切。
@@ -294,6 +294,6 @@
 
 ;; 判据本身也不许把目标 label 当 link 寄存器。
 (check-false (jump-register '(jal g)))
-(check-false (jump-register '(jump-far g)))
+(check-false (jump-register '(jump-auipc-jalr g)))
 
 (finish-tests "analyze")

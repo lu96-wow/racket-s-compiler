@@ -9,7 +9,6 @@
 ;;;                       (items (offset k item) ...) (size n)) ...)
 ;;;    (anchors ...)
 ;;;    (symbols (symbol 链 段名 偏移 绝对地址) ...)
-;;;    (requests)
 ;;;    (problems))
 ;;;
 ;;; 每条 item 怎么落成字节:
@@ -29,14 +28,15 @@
 ;;; 不符说明 layout 和 encode 对尺寸的理解不一致, 直接报错(这是抓这类 bug 的地方)。
 
 (require (only-in "../layout/layout.rkt"
-                  layout-problems layout-requests layout-phase layout-segments)
+                  layout-problems layout-phase layout-segments)
          "../layout/forms.rkt"
          (only-in "../bind-labels/bind.rkt"
                   bound-layout? layout-symbols layout-link layout-provides
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../../riscv-help/main.rkt"
-                  jump-jal jump-auipc-jalr zero-register?
+                  jump-jal jump-auipc-jalr
                   li load-pcrel load-pcrel-far)
+         (only-in "../../riscv-help/ranges.rkt" split-hi-lo)
          (only-in "../../riscv-asm/base/register.rkt" register->number)
          "../target.rkt"
          "native-help.rkt"
@@ -82,19 +82,19 @@
     [else (cdr it)]))
 
 ;; ---------------------------------------------------------------------------
-;; 远形式: 交给 riscv-help 展开成真指令
+;; 显式形式: 按固定序列展开成真指令
 ;; ---------------------------------------------------------------------------
 
-;; 远形式的目标寄存器由 riscv-help 解释: 它内部用 zero-register? 判"link 是不是零寄存器",
-;; 整数 / x 名 / 别名三种写法都能正确分派, 这里原样传下去即可。
+;; branch-auipc-jalr 的 auipc 落点交给 riscv-help 的 jump-auipc-jalr: 它内部
+;; 用 zero-register? 判 link, 整数 / x 名 / 别名都能正确分派。
 ;; 输出寄存器一律用架构名(x0..x31), 不写 ABI 别名。
 
 (define (branch-distance it here symbols index)
   (define target (normalize-path (list-ref it index)))
   (- (resolve-symbol symbols target 0) here))
 
-;; (branch-far cond rs1 rs2 L) = 反向条件分支 + jal
-(define (encode-far-branch it here symbols)
+;; (branch-jal cond rs1 rs2 L) = 反向条件分支 + jal
+(define (encode-branch-jal it here symbols)
   (define cond (cadr it))
   (define d (branch-distance it here symbols 4))
   (native-branch-long cond
@@ -103,48 +103,45 @@
                       d
                       (lambda (offset) (jump-jal 'x0 offset))))
 
-;; (branch-indirect s cond rs1 rs2 L) = 反向条件分支 + auipc+jalr
-(define (encode-indirect-branch it here symbols)
+;; (branch-auipc-jalr tmp cond rs1 rs2 L) = 反向条件分支 + auipc+jalr
+(define (encode-branch-auipc-jalr it here symbols)
   (define s (cadr it))
   (define cond (caddr it))
   (define d (branch-distance it here symbols 5))
   (native-branch-long cond
                       (register->number (cadddr it))
                       (register->number (list-ref it 4))
-               d
-               (lambda (offset) (jump-auipc-jalr 'x0 offset #:scratch (list s)))))
+                      d
+                      (lambda (offset) (jump-auipc-jalr 'x0 offset #:scratch (list s)))))
 
-;; (jump-far link [s] L): link 非零时它自己就是 auipc 的落点
-(define (encode-far-jump it here symbols)
+;; (jump-auipc-jalr link base L): auipc base, hi ; jalr link, base, lo
+;; base 和 link 都是显式操作数; link=x0 时 base 就是 scratch。
+(define (encode-jump-auipc-jalr it here symbols)
   (define link (cadr it))
-  (define target (normalize-path (last it)))
+  (define base (caddr it))
+  (define target (normalize-path (cadddr it)))
   (define d (- (resolve-symbol symbols target 0) here))
-  (cond
-    ;; 空槽没人填。判据用 forms 的 scratch-hole?, 和 layout 报 scratch-hole
-    ;; request 用的是同一个: 不再在这里拄一份"少一个且 link 是零寄存器"。
-    [(scratch-hole? it)
-     (error 'encode "(jump-far ~a …) 的空槽没人填, 不能编码" link)]
-    [(zero-register? link)
-     (jump-auipc-jalr 'x0 d #:scratch (list (caddr it)))]
-    [else (jump-auipc-jalr link d)]))
+  (define-values (hi lo) (split-hi-lo d))
+  (list (list 'auipc base hi)
+        (list 'jalr link base lo)))
 
-;; (la-far rd tmp 链): 强制远形式, 然后用 nop 补到 forms.rkt 定的固定尺寸。
+;; (la-pcrel-li-add rd tmp 链): auipc + li + add, 然后用 nop 补到固定尺寸。
 ;; 为什么要补: layout 记的是**上界**(li 的最坏情况), 实际 li 往往更短;
 ;; 尺寸必须和 layout 说的一致, 否则后面的 offset 全错。
-(define (far-la-expansion target it here symbols)
+(define (la-pcrel-li-add-expansion target it here symbols)
   (define rd (cadr it))
   (define tmp (caddr it))
-  (define d (- (eval-symbol-address (last it) symbols) here))
+  (define d (- (eval-symbol-address (cadddr it) symbols) here))
   (define insns (load-pcrel-far rd d #:word-size (target-xlen target) #:scratch (list tmp)))
   (define used (* 4 (length insns)))
   (define total (item-size target it))
   (unless (<= used total)
-    (error 'encode "(la-far …) 展开成 ~a 字节, 超过 layout 给的 ~a" used total))
+    (error 'encode "(la-pcrel-li-add …) 展开成 ~a 字节, 超过 layout 给的 ~a" used total))
   (values insns (- total used)))
 
 ;; 一条代码 item 可能展开成几条真指令, 逐条交给 emit! 写出去。
 ;;   plain  : 操作数里可能有链, 先换成偏移
-;;   远形式 / li / la : riscv-help 已经给出带数字偏移的真指令
+;;   显式形式 / li / la-pcrel : riscv-help 已经给出带数字偏移的真指令
 (define (encode-code target it here symbols emit!)
   (define (emit-instruction! name operands)
     (define-values (word n) (encode-instruction target name operands))
@@ -152,18 +149,18 @@
   (define (emit-all! insns)
     (for ([i (in-list insns)]) (emit-instruction! (car i) (cdr i))))
   (case (car it)
-    [(la-far)
-     (define-values (insns pad) (far-la-expansion target it here symbols))
+    [(la-pcrel-li-add)
+     (define-values (insns pad) (la-pcrel-li-add-expansion target it here symbols))
      (emit-all! insns)
      (emit! (padding-bytes target 'code pad))]
-    [(branch-far)      (emit-all! (encode-far-branch it here symbols))]
-    [(branch-indirect) (emit-all! (encode-indirect-branch it here symbols))]
-    [(jump-far)        (emit-all! (encode-far-jump it here symbols))]
+    [(branch-jal)        (emit-all! (encode-branch-jal it here symbols))]
+    [(branch-auipc-jalr) (emit-all! (encode-branch-auipc-jalr it here symbols))]
+    [(jump-auipc-jalr)   (emit-all! (encode-jump-auipc-jalr it here symbols))]
     ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
     [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen target)))]
-    ;; (la rd [tmp] 链): 近形式 8 字节; layout 已经保证够得着, 所以不需要 scratch
-    [(la) (define d (- (eval-symbol-address (last it) symbols) here))
-          (emit-all! (load-pcrel (cadr it) d))]
+    ;; (la-pcrel rd expr): auipc + addi, 8 字节; layout/check 已经保证够得着
+    [(la-pcrel) (define d (- (eval-symbol-address (caddr it) symbols) here))
+                (emit-all! (load-pcrel (cadr it) d))]
     [else (emit-instruction! (car it) (operands-at it here symbols))]))
 
 ;; ---------------------------------------------------------------------------
@@ -255,11 +252,10 @@
            "需要 bind-labels 之后的 bound-layout；先跑 bind-labels（当前 phase: ~e）"
            (layout-phase layout)))
   (define problems (layout-problems layout))
-  (define requests (layout-requests layout))
-  (when (or (pair? problems) (pair? requests))
-    (error 'encode "layout 还有未解决的 requests/problems, 拒绝出产物:~%~a"
+  (when (pair? problems)
+    (error 'encode "layout 还有未解决的 problems, 拒绝出产物:~%~a"
            (string-join
-            (for/list ([p (in-list (append requests problems))])
+            (for/list ([p (in-list problems)])
               (format "  ~s" p))
             "\n")))
   (define symbols (layout-symbols layout))

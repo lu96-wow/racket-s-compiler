@@ -2,7 +2,7 @@
 
 ## 作用
 
-把 bound-layout 变成每个段一坨字节。负责端序、填充、`li` / `la` / 远形式展开，
+把 bound-layout 变成每个段一坨字节。负责端序、填充、`li` / `la-pcrel` / 显式形式展开，
 以及把指令交给 `riscv-asm` 编码。
 
 ## 相关 s-exp
@@ -15,7 +15,6 @@
                     (items (offset k item) …)) …)
  (anchors …)
  (symbols (symbol 链 段名 偏移 绝对地址) …)
- (requests …)
  (problems …))
 ```
 
@@ -28,9 +27,9 @@
 ```
 
 本层处理的 item：`label` / `pad` / `bytes` / `fill` / `value` / `reserve` / 真指令 /
-`li` / `la` / `la-far` / `branch-far` / `branch-indirect` / `jump-far`。
+`li` / `la-pcrel` / `la-pcrel-li-add` / `branch-jal` / `branch-auipc-jalr` / `jump-auipc-jalr`。
 
-`la-far` 用 `load-pcrel-far` **强制**远形式（不管 delta 多大都不缩回近形式），
+`la-pcrel-li-add` 用固定的 `auipc + li + add` 展开（不管 delta 多大都不缩回近形式），
 然后按 `item-size` 给的固定上界（rv64 40B）**补 nop**：li 的实际长度取决于 delta，
 而 layout 记的是上界 —— 两边必须一致，否则后面的 offset 全错。
 
@@ -38,9 +37,9 @@
 
 - 端序、填充策略、指令编码都属于“变二进制”，集中在这里。
 - `(offset k item)` 是断言：实际写出的字节数必须正好到达 `k`。
-- 有 request/problem 或 `phase` 不是 `bound` 就拒绝出产物。
+- 有 problem 或 `phase` 不是 `bound` 就拒绝出产物。
 - 编码层只认 native 顺序：`syntax/native.rkt` 直接用 `instruction-info-operands`。
-- `li` / `la` / 远形式先由 `riscv-help` 展开成真指令；分支序列在
+- `li` / `la-pcrel` / 显式形式先由 `riscv-help` 展开成真指令；分支序列在
   `encode/native-help.rkt` 转成 native 顺序后再编码。
 
 ## 两种段，两条路径

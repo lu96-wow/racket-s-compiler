@@ -67,33 +67,19 @@
 (define (layout-problem-list layout)
   (cdr (assoc 'problems layout)))
 
-(define (layout-request-list layout)
-  (cdr (assoc 'requests layout)))
-
 (define (layout-anchor-list layout)
   (cdr (assoc 'anchors layout)))
 
 (define (problem-kinds layout)
   (map car (layout-problem-list layout)))
 
-(define (request-kinds layout)
-  (map car (layout-request-list layout)))
-
 (define (has-problem? layout kind)
   (and (memq kind (problem-kinds layout)) #t))
-
-(define (has-request? layout kind)
-  (and (memq kind (request-kinds layout)) #t))
 
 (define (check-problem layout kind)
   (check-true (has-problem? layout kind)
               (format "expected problem ~a, got ~s"
                       kind (layout-problem-list layout))))
-
-(define (check-request layout kind)
-  (check-true (has-request? layout kind)
-              (format "expected request ~a, got ~s"
-                      kind (layout-request-list layout))))
 
 ;; 一个 layout 里的 item 序列(去掉 offset 外壳)
 (define (layout-item-forms layout name)

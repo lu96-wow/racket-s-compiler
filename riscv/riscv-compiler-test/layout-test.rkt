@@ -8,15 +8,18 @@
          (only-in "../riscv-compiler/layout/forms.rkt"
                   label-form? align-form? pad-form? bytes-form? fill-form?
                   value-form? compressed-form? value-width value-payload
-                  la-form? la-scratch
-                  jump-far-form? jump-far-link jump-far-scratch
+                  la-pcrel-form?
+                  la-pcrel-li-add-form? la-pcrel-li-add-tmp
+                  branch-auipc-jalr-scratch
+                  jump-auipc-jalr-link jump-auipc-jalr-base
                   item-kind
                   branch-form? jump-form? control-form? control-target
-                  form-range scratch-hole?)
+                  form-range)
          (rename-in "../riscv-compiler/layout/layout.rkt"
                     [layout-program layout-program*])
          (only-in "../riscv-compiler/layout/layout.rkt"
-                  layout-problems layout-anchors layout-phase layout-requests)
+                  layout-problems layout-anchors layout-phase)
+         (only-in "../riscv-compiler/check/check.rkt" check-layout)
          (only-in "../riscv-compiler/target.rkt"
                   target-rv64-base target-rv32-all))
 
@@ -24,6 +27,8 @@
 (define (item-size x) (item-size* test-target x))
 
 (define (lay prog data spec) (layout-program* test-target prog data spec))
+(define (check-lay prog data spec)
+  (check-layout test-target (lay prog data spec)))
 
 (define (one-block items)
   (program-of
@@ -51,13 +56,14 @@
 (check-equal? (item-size '(beq a b L)) 4)
 (check-equal? (item-size '(jal x0 L)) 4)
 (check-equal? (item-size '(jalr x0 ra 0)) 4)
-(check-equal? (item-size '(branch-far beq a b L)) 8)
-(check-equal? (item-size '(branch-indirect beq a b L)) 12)
-(check-equal? (item-size '(jump-far ra L)) 8)
+(check-equal? (item-size '(branch-jal beq a b L)) 8)
+(check-equal? (item-size '(branch-auipc-jalr s beq a b L)) 12)
+(check-equal? (item-size '(jump-auipc-jalr ra ra L)) 8)
 (check-equal? (item-size '(li a0 5)) 4)
 (check-equal? (item-size '(li a0 2048)) 8)
 (check-equal? (item-size '(li a0 #x80000000)) 12)
-(check-equal? (item-size '(la a0 (x))) 8)
+(check-equal? (item-size '(la-pcrel a0 (x))) 8)
+(check-equal? (item-size '(la-pcrel-li-add a0 t0 (x))) 40)
 
 ;; li 的尺寸跟着显式 target 的 XLEN 走
 (check-equal? (item-size* target-rv64-base '(li a0 #x80000000)) 12)
@@ -80,25 +86,21 @@
 (check-equal? (form-range '(c.beqz a L)) '(-256 . 254))
 (check-equal? (form-range '(c.j L)) '(-2048 . 2046))
 (check-equal? (form-range '(jal x0 L)) '(-1048576 . 1048574))
-(check-equal? (form-range '(branch-far beq a b L)) '(-1048572 . 1048578))
-(check-false (form-range '(branch-indirect beq a b L)))
-(check-false (form-range '(jump-far ra L)))
+(check-equal? (form-range '(branch-jal beq a b L)) '(-1048572 . 1048578))
+(check-false (form-range '(branch-auipc-jalr s beq a b L)))
+(check-false (form-range '(jump-auipc-jalr ra ra L)))
 (check-false (form-range '(add a b c)))
 
-;; scratch 空槽: 只看缺不缺那一项
-(check-true  (scratch-hole? '(branch-indirect beq a b L)))
-(check-false (scratch-hole? '(branch-indirect s beq a b L)))
-(check-true  (scratch-hole? '(jump-far x0 L)))
-(check-false (scratch-hole? '(jump-far ra L)))
-(check-false (scratch-hole? '(jump-far ra s L)))
-(check-false (scratch-hole? '(la a0 (x))))
-(check-false (scratch-hole? '(add a b c)))
+;; 形式形状 / 必需操作数
+(check-true  (la-pcrel-form? '(la-pcrel a0 (x))))
+(check-false (la-pcrel-form? '(la-pcrel a0 t0 (x))))
+(check-true  (la-pcrel-li-add-form? '(la-pcrel-li-add a0 t0 (x))))
+(check-false (la-pcrel-li-add-form? '(la-pcrel-li-add a0 (x))))
+(check-equal? (la-pcrel-li-add-tmp '(la-pcrel-li-add a0 t0 (x))) 't0)
 
-(check-equal? (la-scratch '(la a0 (x))) #f)
-(check-equal? (la-scratch '(la a0 t0 (x))) 't0)
-(check-equal? (jump-far-link '(jump-far x0 L)) 'x0)
-(check-equal? (jump-far-scratch '(jump-far ra s L)) 's)
-(check-equal? (jump-far-scratch '(jump-far ra L)) #f)
+(check-equal? (branch-auipc-jalr-scratch '(branch-auipc-jalr s beq a b L)) 's)
+(check-equal? (jump-auipc-jalr-link '(jump-auipc-jalr ra ra L)) 'ra)
+(check-equal? (jump-auipc-jalr-base '(jump-auipc-jalr x0 t0 L)) 't0)
 
 (check-true (compressed-form? '(c.addi a0 1)))
 (check-false (compressed-form? '(add a b c)))
@@ -137,7 +139,6 @@
 
 (check-equal? (layout-phase-of laid) 'measured)
 (check-equal? (layout-problem-list laid) '())
-(check-equal? (layout-request-list laid) '())
 (check-equal? (layout-item-forms laid 'c)
               '((label main) (addi a0 a0 1) (beq (done) a0 a0)
                 (label done) (jalr x0 ra 0)))
@@ -410,53 +411,53 @@
 
 ;; 目标不存在
 (check-problem
- (lay (one-block '((beq (nope) a0 a0))) '() (plain-spec))
+ (check-lay (one-block '((beq (nope) a0 a0))) '() (plain-spec))
  'undefined-target)
 
-;; 够不着的普通分支: 交给 relax
-(check-request
- (lay (program-of
-       '((blocks (block ((main)) (beq (far) a0 a0))
-                 (block ((far)) (jalr x0 ra 0)))
-         (flows (flow (succ 1) (fallthrough #f) (root? #t))
-                (flow (succ) (fallthrough #f) (root? #f)))))
-      '()
-      '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
-                  (segment (name d) (kind code) (start #x200000) (end #x201000) (align 16)))
-        (place c (main))
-        (place d (far))))
- 'needs-far)
+;; 够不着的普通分支: check 报 problem, 不自动升级
+(check-problem
+ (check-lay (program-of
+             '((blocks (block ((main)) (beq (far) a0 a0))
+                       (block ((far)) (jalr x0 ra 0)))
+               (flows (flow (succ 1) (fallthrough #f) (root? #t))
+                      (flow (succ) (fallthrough #f) (root? #f)))))
+            '()
+            '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                        (segment (name d) (kind code) (start #x200000) (end #x201000) (align 16)))
+              (place c (main))
+              (place d (far))))
+ 'out-of-range)
 
-;; scratch 空槽: 报 problem, 不抛异常
-(check-request
- (lay (one-block '((branch-indirect beq a0 a1 (main)))) '() (plain-spec))
- 'scratch-hole)
-(check-request
- (lay (one-block '((jump-far x0 (main)))) '() (plain-spec))
- 'scratch-hole)
+;; scratch 空槽: check 报 problem, 不抛异常
+(check-problem
+ (check-lay (one-block '((branch-auipc-jalr x0 beq a0 a1 (main)))) '() (plain-spec))
+ 'zero-scratch)
+(check-problem
+ (check-lay (one-block '((jump-auipc-jalr x0 x0 (main)))) '() (plain-spec))
+ 'zero-scratch)
 
 ;; 地址字里的链不存在
 (check-problem
- (lay (one-block '((jalr x0 ra 0)))
-      '((label d t) (value 4 (nope)))
-      '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
-                  (segment (name d) (kind data) (start #x2000) (end #x2100) (align 16)))
-        (place c (main))
-        (place d (d t))))
+ (check-lay (one-block '((jalr x0 ra 0)))
+            '((label d t) (value 4 (nope)))
+            '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                        (segment (name d) (kind data) (start #x2000) (end #x2100) (align 16)))
+              (place c (main))
+              (place d (d t))))
  'undefined-target)
 
 ;; 近形式 la 够不着
-(check-request
- (lay (program-of
-       '((blocks (block ((main)) (la t0 (far)) (jalr x0 ra 0))
-                 (block ((far)) (jalr x0 ra 0)))
-         (flows (flow (succ) (fallthrough #f) (root? #t))
-                (flow (succ) (fallthrough #f) (root? #f)))))
-      '()
-      '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
-                  (segment (name d) (kind code) (start #x90000000) (end #x90001000) (align 16)))
-        (place c (main))
-        (place d (far))))
+(check-problem
+ (check-lay (program-of
+             '((blocks (block ((main)) (la-pcrel t0 (far)) (jalr x0 ra 0))
+                       (block ((far)) (jalr x0 ra 0)))
+               (flows (flow (succ) (fallthrough #f) (root? #t))
+                      (flow (succ) (fallthrough #f) (root? #f)))))
+            '()
+            '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
+                        (segment (name d) (kind code) (start #x90000000) (end #x90001000) (align 16)))
+              (place c (main))
+              (place d (far))))
  'la-too-far)
 
 ;; li 的尺寸是精确值, 不是上界; 段容量按精确尺寸算

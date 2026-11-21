@@ -13,14 +13,13 @@
 ;;;   - 段实际尺寸是否超过 (end - start)
 ;;;
 ;;; 本层不改 item、不改 offset/size、不做松弛、不填 scratch、不补跳。
-;;; needs-far / scratch-hole / la-too-far 原样留在 requests 里;
-;;; 没解决就由 encode 拒绝出产物。
+;;; 显式形式的范围/scratch 检查在 check 层完成; 本层只做最终地址相关的收尾。
 
 (require racket/list
          "../sexp.rkt"
          (only-in "../layout/layout.rkt"
                   layout-phase layout-origin layout-externs
-                  layout-problems layout-requests
+                  layout-problems
                   layout-segments layout-anchors)
          (only-in "../layout/forms.rkt"
                   value-form? value-width value-payload))
@@ -236,7 +235,6 @@
            link
            ;; 对外承诺哪些名字; 顺序跟 link 表一致, 地址不重复存
            (cons 'provides provided)
-           (cons 'requests (layout-requests measured))
            (cons 'problems (append (layout-problems measured)
                                    (reverse extra))))]
     [else

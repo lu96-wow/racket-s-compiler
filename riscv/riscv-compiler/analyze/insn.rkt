@@ -1,7 +1,7 @@
 #lang racket
 ;;; analyze/insn.rkt
 ;;;
-;;; expand-pseudo 之后代码就是指令 + label。这里只做分类, 不改写。
+;;; analyze 的输入是 native 指令 + label。这里只做分类, 不改写。
 ;;;
 ;;; 分类决定 CFG 的形状。操作数顺序是 riscv-opcodes native 顺序:
 ;;;   - 分支        (beq L a b) / (c.beqz a L)   两条边: 目标 + 顺序
@@ -48,8 +48,8 @@
     ble bleu bgt bgtu
     beqz bnez blez bgtz
     c.beqz c.bnez
-    branch-far branch-indirect))
-(define jump-mnemonics     '(jal j c.j c.jal jump-far))
+    branch-jal branch-auipc-jalr))
+(define jump-mnemonics     '(jal j c.j c.jal jump-auipc-jalr))
 (define indirect-mnemonics '(jalr jr c.jr c.jalr))
 (define trap-mnemonics     '(ecall ebreak c.ebreak))
 ;; ---------------------------------------------------------------------------
@@ -60,10 +60,7 @@
   (and (form? x) (memq (car x) heads) #t))
 
 ;; (label a b) 表示链 (a b); (label) 不算 label
-(define (label-form? x)
-  (and (form? x)
-       (eq? (car x) 'label)
-       (path? (cdr x))))
+;; label-form? 的形状由 ../sexp.rkt 定义（与 expand-data / layout 同一个边界）。
 
 (define (label-path x) (cdr x))
 
@@ -92,11 +89,9 @@
       (indirect-instruction? x)
       (trap-instruction? x)))
 
-;; 需要显式写 link 的控制转移。
-;;   jal      : (jal rd L)            rd 是 ABI/前端的决定(省略时写哪个由 ABI 约定)
-;;   jump-far : (jump-far link [scratch] L)
+;; 固定 arity 的显式形式。
 ;; 省略写法必须挡在入口: 否则 jump-register 会把目标 label 当成 link 寄存器,
-;; 控制流静默算错。
+;; 控制流静默算错; scratch/base 也一样, 不能靠“少一项”来推断。
 (define (check-transfer-arity! x)
   (when (form? x)
     (case (car x)
@@ -105,15 +100,35 @@
          (error 'analyze
                 "jal 必须显式写 link: (jal rd L)，收到 ~s"
                 x))]
-      [(jump-far)
-       (unless (memq (length x) '(3 4))
+      [(branch-jal)
+       (unless (= 5 (length x))
          (error 'analyze
-                "jump-far 必须显式写 link: (jump-far link [scratch] L)，收到 ~s"
+                "branch-jal 形状必须是 (branch-jal cond rs1 rs2 L)，收到 ~s"
+                x))]
+      [(branch-auipc-jalr)
+       (unless (= 6 (length x))
+         (error 'analyze
+                "branch-auipc-jalr 形状必须是 (branch-auipc-jalr tmp cond rs1 rs2 L)，收到 ~s"
+                x))]
+      [(jump-auipc-jalr)
+       (unless (= 4 (length x))
+         (error 'analyze
+                "jump-auipc-jalr 形状必须是 (jump-auipc-jalr link base L)，收到 ~s"
+                x))]
+      [(la-pcrel)
+       (unless (= 3 (length x))
+         (error 'analyze
+                "la-pcrel 形状必须是 (la-pcrel rd expr)，收到 ~s"
+                x))]
+      [(la-pcrel-li-add)
+       (unless (= 4 (length x))
+         (error 'analyze
+                "la-pcrel-li-add 形状必须是 (la-pcrel-li-add rd tmp expr)，收到 ~s"
                 x))]
       [else (void)])))
 
 ;; 这条指令写哪个链接寄存器? 它决定会不会顺序落下, 也决定是不是无条件跳转。
-;; jal / jalr / jump-far 都有显式 rd, 不猜: (jal L) 这种“省略 rd 按调用算”
+;; jal / jalr / jump-auipc-jalr 都有显式 rd, 不猜: (jal L) 这种“省略 rd 按调用算”
 ;; 是 GAS 的简写, 而“省略 rd 时该写哪个 link”本身是 ABI —— 汇编层不认。
 ;; 压缩形式没有显式 rd, 但那个 rd 是 ISA 定死的: c.j / c.jr 写 x0, c.jal / c.jalr 写 x1。
 (define (jump-register x)
@@ -121,7 +136,7 @@
        (case (car x)
          [(jal)      (and (= 3 (length x)) (cadr x))]
          [(jalr)     (cadr x)]
-         [(jump-far) (and (memq (length x) '(3 4)) (cadr x))]
+         [(jump-auipc-jalr) (and (= 4 (length x)) (cadr x))]
          [(j)        'x0]
          [(jr)       'x0]
          [(c.j)      'x0]
@@ -135,7 +150,7 @@
 ;;   native 分支: (beq L a b) / (ble L b a) / (beqz L a) -> 目标在 cdr 的第一个
 ;;   压缩分支:   (c.beqz a L)                              -> 目标在 cdr 的第二个
 ;;   jal:        (jal rd L)                         rd 必须显式写(不猜 ABI)
-;;   远形式:     仍是各自的内部顺序，目标在最后
+;;   显式远形式: 仍是各自的内部顺序，目标在最后
 (define (jump-target-position x)
   (and (form? x)
        (case (car x)
@@ -147,7 +162,7 @@
          [(c.j c.jal) 0]
          [(j) 0]
          [(jal) (and (= 3 (length x)) 1)]
-         [(branch-far branch-indirect jump-far) (sub1 (length (cdr x)))]
+         [(branch-jal branch-auipc-jalr jump-auipc-jalr) (sub1 (length (cdr x)))]
          [else #f])))
 
 (define (jump-target x)

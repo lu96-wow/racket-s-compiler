@@ -1,148 +1,116 @@
-# 设计约束：尺寸、布局与寄存器策略
+# 设计约束：尺寸、布局与形式选择
 
-> 记录“哪些 pass 可以改尺寸、什么时候可以改、scratch 为什么不能反过来触发 relax”。
-> 当前代码不需要为此改动；这是对后续寄存器分配、spill、la 远形式、scratch-fill 的约束。
+> 当前模型：**前端选择形式，后端只做布局度量 + 检查 + 编码**。
+> 没有分支松弛，没有固定点，没有 requests。
 
-## 1. 三类决策
+## 1. 责任划分
 
-| 决策 | 依赖 offset | 改尺寸 | 放置位置 |
-| --- | --- | --- | --- |
-| 变量 spill / restore / regalloc 插代码 | 否 | 是 | `relax` 之前 |
-| 分支 / 跳转 / la 远形式选择 | 是 | 是 | `relax` 固定点内 |
-| scratch 填操作数 | 否 | **否** | `relax` 之后 |
+| 决策 | 谁做 | 什么时候 |
+| --- | --- | --- |
+| 短/远分支、短/远跳转 | 前端 | 产生 item 时 |
+| `la-pcrel` / `la-pcrel-li-add` | 前端 | 产生 item 时 |
+| `li` 展开 | 前端/共享 `li-size` | 产生 item 时 |
+| 指令顺序、段、对齐、label 位置 | `layout` | 一次线性度量 |
+| 目标存在/范围/scratch 检查 | `check` | 布局之后 |
+| 绝对地址、宽度/容量 | `bind-labels` | 检查之后 |
+| 字节编码 | `encode` | 最后 |
 
 核心原则：
 
-> **只有依赖 offset 的尺寸变化，才进入 relax 固定点。**  
-> **不依赖 offset 的尺寸变化，在 relax 之前完成。**  
-> **尺寸不变的操作数填充，在 relax 之后完成。**
+> **尺寸在进入 `layout` 前就固定。`layout` 之后不允许改 item 尺寸。**
+> **跳转够不够远是检查条件，不是后端选择形式的依据。**
 
 ---
 
 ## 2. 强制规则
 
-1. **relax 只做 offset 相关的形式选择**
-   - 输入：当前 measured-layout 的 `needs-far` / `la-too-far`。
-   - 输出：更大的、尺寸已知的 item。
-   - 不插入 spill/restore，不做寄存器分配。
+1. **item 尺寸是形式的纯函数**
+   - `beq` 4 字节；`branch-jal` 8；`branch-auipc-jalr` 12。
+   - `j` / `jal` 4；`jump-auipc-jalr` 8。
+   - `la-pcrel` 8；`la-pcrel-li-add` 固定上界（rv64 40）。
+   - `li` 由常量精确决定；同一常量同一尺寸。
 
-2. **尺寸单调增长**
-   - 只允许从小形式升到大形式。
-   - 如果某个决策理论上能缩小，**填 nop 保持原尺寸**，不要缩短。
-   - 这样 relax 的“太远集合单调递增、必然收敛”仍然成立。
+2. **前端必须显式选择形式**
+   - 短形式超范围 -> `check` 报 `out-of-range`。
+   - 近 `la-pcrel` 够不着 -> `check` 报 `la-too-far`。
+   - scratch/base/tmp 是零寄存器 -> `check` 报 `zero-scratch`；tmp 和 rd 重合 -> `bad-scratch`。
+   - 不自动升级，不自动缩回。
 
-3. **scratch 不能改变尺寸**
-   - `branch-indirect` = 12 字节，`jump-far` = 8 字节，缺的只是操作数。
-   - scratch-fill 只允许把 hole 换成一个**已预留的 scratch 寄存器**。
-   - 不允许在 scratch-fill 里 spill、插 load/store、加 label。
+3. **`check` 不改尺寸、不改 item、不加 label**
+   - 只追加 `problems`，`segments` / `anchors` 原样传下去。
 
-4. **会改尺寸的寄存器分配必须在 relax 之前**
-   - 变量缓存溢出、spill/restore、调用前后保存，都属于这一类。
-   - 它们不依赖 offset，所以不需要进入 relax 固定点。
-   - 完成后，普通指令尺寸固定，再进入 relax。
-
-5. **reserved scratch**
-   - 每个 region 预留 **0 或 1 个**寄存器，且由**前端指名**（后端不维护候选集、不认 ABI 类别）。
-     `SCRATCH.md` §10.2 有 "k=1 充分" 的论证，§10 是协商模型的完整记录。
-   - 预留的语义是**承诺**："这个寄存器在这个 region 内从未被分配" ⇒ 它在每一点都死。
-   - far 形式按顺序展开，同一时刻只需要一个 scratch；同一 region 内所有站点共用它。
-   - 如果预留池不够，应在 relax 之前报错，而不是在 relax 之后插代码补救。
-
-6. **不要在 relax 之后重新引入尺寸变化**
-   - relax 收敛后，只允许 `scratch-fill`（尺寸不变）、`bind-labels`、`encode`。
+4. **`bind-labels` / `encode` 是尺寸不变的收尾**
+   - 不松弛、不填 scratch、不补跳。
    - `encode` 的 `(offset k item)` / `(size n)` 断言是最后的安全网。
 
-7. **la 远形式**
-   - 如果 la 远形式会改尺寸，并且依赖距离，就放进 relax 固定点。
-   - `la` 够不着（`la-too-far`）→ relax 升成 `(la-far rd [tmp] 链)`。
-   - **尺寸必须是常量**：`li tmp, delta` 的长度取决于 delta，而 delta 取决于布局。
-     让它随布局变长变短，固定点就会在“尺寸变了但不产生新决策”之间来回。
-     所以 `la-far` 取 `li` 的最坏情况当上界（rv64: 4+32+4=40B），
-     实际展开短出来的部分由 `encode` 补 `nop`。
-   - 缺 `tmp` 就是空槽，只能由寄存器那一层填（scratch-fill 阶段只填操作数）。
-   - 不要把它放到 relax 之后的 scratch-fill 里做尺寸变化。
+5. **scratch 是显式操作数**
+   - `branch-auipc-jalr` / `jump-auipc-jalr` / `la-pcrel-li-add` 需要哪个 scratch，由前端写。
+   - 后端不维护 scratch 候选集，不做 liveness 选寄存器。
 
-8. **未知尺寸必须显式表示**
+6. **会改尺寸的 pass 必须在 `layout` 之前**
+   - spill / restore / regalloc 插代码、`li` 展开、形式选择都属于这一类。
+   - `layout` 之后只允许尺寸不变的收尾。
+
+7. **未知尺寸必须显式表示**
    - 不能依赖 `layout/forms.rkt` 的 `[else 4]` 兜底。
    - 兜底 4 字节是给“不透明代码”的设计，不是给“未来会变尺寸的 form”。
-   - 真正未知尺寸的 item 必须有显式的大小契约或进入 relax 固定点。
 
 ---
 
-## 3. 当前代码的状态
-
-当前实现已经满足这些约束：
-
-- `relax` 只消费 `needs-far`，升成固定尺寸的 `branch-far` / `branch-indirect` / `jump-far`。
-- `branch-indirect` / `jump-far` 的 scratch 是“缺一个操作数”的 hole，尺寸固定。
-- 当前没有 scratch-fill，也没有 regalloc/spill；`encode` 遇到未解决的 request 会拒绝。
-- `layout` / `relax` 产 measured-layout；`bind-labels` 只绑定地址，不改尺寸。
-
-所以现在：
-
-> **代码不需要改，这是后续实现的约束。**
-
----
-
-## 4. 推荐的流水线
+## 3. 当前流水线
 
 ```text
 frontend / lower
-  → [expand-pseudo]     ; 可选: 便利别名 -> native
-  → analyze
-  → dce
-  → regalloc / spill        ; 尺寸可变，不依赖 offset
-  → relax                   ; 尺寸可变，依赖 offset；只用 reserved scratch
-  → scratch-fill            ; 尺寸不变，只填操作数
-  → bind-labels
-  → encode
+  -> analyze
+  -> dce
+  -> layout              ; 位置 + 尺寸 + anchors；不选形式
+  -> check               ; 显式形式检查；只报 problems
+  -> bind-labels         ; 绝对地址 + 宽度/容量
+  -> encode              ; 字节
 ```
 
 对应检查：
 
 | 阶段 | 允许改尺寸 | 允许改 label | scratch |
 | --- | --- | --- | --- |
-| regalloc / spill | 是 | 可以（在 layout 前） | 预留 |
-| relax | 是 | 否（不造 label） | 只产生固定尺寸 hole |
-| scratch-fill | **否** | **否** | 填 reserved register |
+| frontend / lower | 是 | 是 | 前端显式写 |
+| layout | 否 | 否 | 不关心 |
+| check | 否 | 否 | 只检查缺失 |
 | bind-labels | 否 | 否 | 不关心 |
 | encode | 否 | 否 | 不关心 |
 
 ---
 
-## 5. 新 pass 的自检清单
+## 4. 新 pass 自检清单
 
 加一个 pass 时先回答：
 
-1. 它依赖 offset 吗？
-   - 是 → 可能属于 relax 固定点。
-   - 否 → 放在 relax 之前或之后。
-2. 它会改尺寸吗？
-   - 是 → 不能在 relax 之后；要么在 relax 之前，要么进入 relax。
-3. 它会加/删 label 吗？
-   - 是 → 必须在 layout 之前；不能放在 relax 之后。
+1. 它会改尺寸吗？
+   - 会 → 必须在 `layout` 之前。
+2. 它会加/删 label 吗？
+   - 会 → 必须在 `layout` 之前。
+3. 它依赖 offset 吗？
+   - 是 → 只能放在 `layout` / `check` 里做**只读检查**，不能改形式。
 4. 它需要 scratch 吗？
-   - 是 → 用 reserved scratch；不要临时 spill 普通值。
+   - 是 → 由前端显式写；`check` 只检查是否缺失。
 5. 它能在 `encode` 的 offset/size 断言下通过吗？
-   - 不能 → 说明尺寸契约被破坏。
+   - 不能 → 尺寸契约被破坏。
 
 ---
 
-## 6. 为什么不做联合固定点
+## 5. 为什么不做联合固定点
 
-理论上可以把 relax 和 scratch/spill 放进同一个循环：
+旧模型把“形式选择”和“布局”放在同一个循环里：
 
 ```text
-layout -> relax -> scratch/spill -> layout -> ...
+layout -> needs-far -> 升形式 -> layout -> ...
 ```
 
-但不推荐：
+新模型直接取消这个循环：
 
-- scratch/spill 决策会随代码增长变化，可能反复；
-- 单调增长只能保证不缩，不能保证不浪费；
-- 收敛上界不再是“每条 item 最多升几档”；
-- 逻辑会从 relax 泄漏到寄存器分配。
+- 尺寸由前端固定，`layout` 一次线性度量；
+- 范围不够是错误，不是重新布局的信号；
+- 没有“尺寸变了但不产生新决策”的振荡；
+- 没有 `needs-far` / `scratch-hole` 这类跨层请求。
 
-所以采用分段模型：
-
-> **regalloc/spill 在前，relax 在中，scratch-fill 在后。**
+代价是前端必须自己选择形式，并且代码可能比自动松弛更大；这是用可预测性换优化。

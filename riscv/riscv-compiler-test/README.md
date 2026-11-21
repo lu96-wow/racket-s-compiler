@@ -23,37 +23,35 @@ racket integration-test.rkt
 
 | 文件 | 对应层 / 契约 |
 | --- | --- |
-| `helpers.rkt` | 读 layout / build / problem / request 的小工具，不含编译器逻辑 |
+| `helpers.rkt` | 读 layout / build / problem 的小工具，不含编译器逻辑 |
 | `sexp-test.rkt` | `form?` `name?` `path?` `normalize-path` `address-expr?` `as-items` |
 | `expand-data-test.rkt` | rich 数据 → `(value 宽度 值)` / `(bytes …)` / `(fill …)` / `(pad …)` |
 | `flatten-test.rkt` | `module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out` |
-| `expand-pseudo-test.rkt` | 可选便利别名表：别名平级、偏移补 0、native 模板、透传、自环保护 |
 | `analyze-test.rkt` | 指令分类、切块、`succ`/`fallthrough`、`root?` |
 | `dce-test.rkt` | 不可达块、转移到下一块、空块合并、重新编号 |
-| `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems/requests、`hole` 段（`align` → `reserve`） |
-| `bind-labels-test.rkt` | anchors → symbols、phase、绝对地址、最终宽度/容量、requests 保留 |
-| `relax-test.rkt` | 提升阶梯、区间边界、收敛、`scratch-hole` request 交接 |
-| `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la`/远形式、`hole` 段（`size` 保留 + `bytes` 为空）、断言 |
-| `flow-test.rkt` | stage 表、依赖检查、可选层、`layout`/`relax` 平层、`bind-labels`、层组/选择器、`run-stage`、context 续跑 |
-| `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、完整流松弛、错误 |
+| `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems、`hole` 段（`align` → `reserve`） |
+| `bind-labels-test.rkt` | anchors → symbols、phase、绝对地址、最终宽度/容量、problems 保留 |
+| `check-test.rkt` | 显式短/远形式、范围边界、`zero-scratch` / `bad-scratch`、`la-too-far`、check 不改布局 |
+| `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la-pcrel`/显式形式、`hole` 段（`size` 保留 + `bytes` 为空）、断言 |
+| `flow-test.rkt` | stage 表、依赖检查、`layout`/`check`、`bind-labels`、层组/选择器、`run-stage`、context 续跑 |
+| `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、显式远形式、错误 |
 
 ## 测试里刻意锁住的 s-exp 形状
 
 ```
 expand-data : (label …) (bytes …) (fill n b) (pad n) (value w v) (align n)
 flatten     : 输入的链 -> 完整链；module/provide/require 壳消失
-expand-pseudo : 表里的便利别名 -> native 指令；不认识的 form 原样
 analyze     : (program (block <头链列表> item...) ...)
               (program (flow (succ id...) (fallthrough id|#f) (root? bool)) ...)
 layout      : ((phase measured)
                (segments (segment (name …) (kind …) (start …) (end …) (align …)
                                   (items (offset k item) ...) (size n)) ...)
                (anchors (anchor 链 段名 偏移) ...)
-               (requests ...) (problems ...))
+               (problems ...))
 bind-labels : ((phase bound) (origin 基址) (segments ...) (anchors ...)
                (symbols (symbol 链 段名 偏移 绝对地址) ...)
                (link (base 基址) (symbol 链 地址) ...)
-               (requests ...) (problems ...))
+               (problems ...))
 build       : (build (link (base 基址) (symbol 链 地址) ...)
                      (provides 链 ...)
                      (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
@@ -64,10 +62,10 @@ link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.
               (link (base B) (symbol 链 #f) ...)          ; 地址未知 -> unlinked-external
 ```
 
-`layout` / `relax` 的 `requests` 是交接点：`needs-far` 给 relax，
-`scratch-hole` / `la-too-far` 给尚未实现的寄存器使用层；`bind-labels` 才产出
-绝对地址并检查 `value` 宽度 / 段容量；`encode` 只吃 `phase=bound` 且
-`requests` / `problems` 都为空的 layout。
+`layout` 只度量位置；`check` 检查前端显式选择的控制转移/地址形式，把
+`out-of-range` / `zero-scratch` / `bad-scratch` / `la-too-far` 都报成 `problems`；
+`bind-labels` 才产出绝对地址并检查 `value` 宽度 / 段容量；`encode` 只吃
+`phase=bound` 且 `problems` 为空的 layout。没有自动升级，没有 `requests`。
 
 ## 写测试时抓到的三个实现问题（已修）
 
@@ -78,4 +76,4 @@ link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.
 | --- | --- | --- |
 | `analyze/analyze.rkt` | `(jal x0 L)` 的目标正好是物理下一块时，`fallthrough` 被算成下一块（它并不会顺序落下） | `fallthrough` 用 `falls-through?` 判断，不再只看下一块是否在 `succ` 里 |
 | `flatten/flatten.rkt` | `(prefix-in p: a)` 导入 `(d table)` 时只绑成 `(p:d)`，丢了 `table` | 前缀只加在链的头一节，保留尾巴 |
-| `encode/encode.rkt` | `(jump-far ra L)` 的 link 非零，却因为“少一项”被当成 scratch 空槽拒绝 | 空槽 = 少一项 **且** link 是零寄存器 |
+| `encode/encode.rkt` | `(jump-auipc-jalr ra ra L)` 的 link 非零，却被当成 scratch 空槽拒绝 | scratch/base 是必需操作数，按形式固定 arity 检查 |

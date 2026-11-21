@@ -1,17 +1,15 @@
 #lang racket
 ;;; layout/forms.rkt
 ;;;
-;;; 形式表: 每条 item 的字节数、类别、可达距离、是否需要 scratch。
+;;; 形式表: 每条 item 的字节数、类别、可达距离、必需操作数。
 ;;; 只放数据 + 查询; 布局计算本身在 layout.rkt。
 ;;;
 ;;; 不在表里的助记符: 一律 4 字节; c.* 是显式判定的 2 字节。
 ;;; (真指令名单不在本层维护; 编不出来是后面编码层的事)
 
-;; "是不是 x0" 只有一个来源: analyze/insn.rkt (整数 / x 名 / 别名都指向它)。
-;; 布局层需要它, 因为 jump-far 要不要 scratch 取决于它的 link。
 (require "../sexp.rkt"
          (only-in "../analyze/insn.rkt"
-                  zero-register? branch-instruction? jump-instruction?
+                  branch-instruction? jump-instruction?
                   jump-target jump-target-position)
          (only-in "../target.rkt" target-xlen)
          ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
@@ -23,52 +21,21 @@
          reserve-form? reserve-size
          value-width value-payload
          arith-head? arith-form? address-expr? address-expr-chains
-         la-form? la-scratch
-         la-far-form? la-far-scratch
-         far-la-size
-         jump-far-form? jump-far-link jump-far-scratch
+         la-pcrel-form?
+         la-pcrel-li-add-form? la-pcrel-li-add-tmp la-pcrel-li-add-size
+         branch-auipc-jalr-scratch
+         jump-auipc-jalr-link jump-auipc-jalr-base
          item-kind item-size item-kind-allowed-in?
          branch-form? jump-form? control-form? control-target control-target-position
-         form-range scratch-hole?
+         form-range
          segment-form? segment-kind?)
 
 ;; ---------------------------------------------------------------------------
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
 
-
-
-
-
-
-
-;; 裸原子当单节链
-
-
-(define (label-form? x)
-  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
-
-(define (align-form? x)
-  (and (form? x) (eq? (car x) 'align) (= 2 (length x))
-       (exact-positive-integer? (cadr x))))
-
-;; (pad n): "这里要补 n 个字节" —— 是**事实**, 不是要求。
-;; `align` 是输入侧的请求, 本层度量时把它换算成 pad 写进产物。
-(define (pad-form? x)
-  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
-       (exact-nonnegative-integer? (cadr x))))
-
-(define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
-
-(define (bytes-form? x)
-  (and (form? x) (eq? (car x) 'bytes)
-       (andmap byte? (cdr x))))
-
-;; (fill 字节数 b): b 重复 字节数 次。和数据层的同一个名字。
-(define (fill-form? x)
-  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
-       (exact-nonnegative-integer? (cadr x))
-       (byte? (caddr x))))
+;; label / bytes / align / pad / fill / value / byte? 的形状
+;; 只在 ../sexp.rkt 定义（expand-data 与本层共用同一个边界），这里 re-provide。
 
 ;; (reserve n): n 字节**位置**, 不产生文件字节。
 ;; 只在 hole 段里合法: 洞之外的地方, 地址和字节必须一一对应。
@@ -81,14 +48,10 @@
 ;; (value 宽度 值): 宽度个字节, 值是什么由 encode 解释。
 ;; 尺寸现在就知道(= 宽度); 本层**不看**值是什么(整数还是地址字):
 ;;   整数                 -> encode 按目标端序落字节
-;;   (链) / (+ …) / (- …)  -> 本层求值看范围(下面), encode 落字节
+;;   (链) / (+ …) / (- …)  -> check 求值看链是否存在, encode 落字节
 (define value-width   cadr)
 (define value-payload caddr)
 
-(define (value-form? x)
-  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
-       (memq (value-width x) '(1 2 4 8))
-       #t))
 
 ;; C 扩展: 拼写以 c. 开头 (c.addi / c.j / c.beqz / c.nop ...), 一律 2 字节
 (define (compressed-form? x)
@@ -108,7 +71,6 @@
 ;; ---------------------------------------------------------------------------
 
 ;; 分支/跳转的名单不在这里重复: 直接借 analyze/insn.rkt 的分类。
-;; (以前这里抄了一份, 加远形式时只改了一边, 块边界全错。)
 ;; 名字保留: 这是本层的词汇(尺寸/距离/目标位都按它查)。
 (define (branch-form? x) (branch-instruction? x))
 (define (jump-form? x)   (jump-instruction? x))
@@ -168,16 +130,16 @@
     [(compressed-form? x) 2]          ; c.* 必须先于 branch/jump 判, 也是 2 字节
     [(branch-form? x)
      (case (car x)
-       [(branch-far) 8]
-       [(branch-indirect) 12]
+       [(branch-jal) 8]               ; 反向分支 + jal
+       [(branch-auipc-jalr) 12]       ; 反向分支 + auipc+jalr
        [else 4])]
     [(jump-form? x)
      (case (car x)
-       [(jump-far) 8]                 ; 8 = auipc + jalr; 远形式是尺寸契约的事
+       [(jump-auipc-jalr) 8]          ; auipc + jalr
        [else 4])]
     [(eq? (car x) 'li) (li-size (cadr x) (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
-    [(eq? (car x) 'la) 8]             ; 近形式 auipc+addi; 够不着由 layout 留 la-too-far request
-    [(eq? (car x) 'la-far) (far-la-size target)] ; 固定上界, 短出来的补 nop(见 la-far-form?)
+    [(eq? (car x) 'la-pcrel) 8]       ; auipc + addi
+    [(eq? (car x) 'la-pcrel-li-add) (la-pcrel-li-add-size target)] ; auipc + li + add; 短出来的补 nop
     [else 4]))
 
 ;; ---------------------------------------------------------------------------
@@ -190,93 +152,62 @@
 ;;   JAL    : [-1048576, 1048574]
 ;; 用区间是为了不放过 +4096 这种"幅度看起来够、其实编不出来"的边界。
 ;;
-;; 远形式的区间要把自己的偏置算进去: branch-far = 反向分支 + jal,
-;; 真正的 jal 在 +4, 所以区间整体右移 4。
+;; branch-jal = 反向分支 + jal, 真正的 jal 在 +4, 所以区间整体右移 4。
 ;; ---------------------------------------------------------------------------
 
 (define (form-range x)
   (cond
     [(branch-form? x)
      (case (car x)
-       [(branch-far) '(-1048572 . 1048578)]
-       [(branch-indirect) #f]
+       [(branch-jal) '(-1048572 . 1048578)]
+       [(branch-auipc-jalr) #f]
        [(c.beqz c.bnez) '(-256 . 254)]
        [else '(-4096 . 4094)])]
     [(jump-form? x)
      (case (car x)
-       [(jump-far) #f]
+       [(jump-auipc-jalr) #f]
        [(c.j c.jal) '(-2048 . 2046)]
        [else '(-1048576 . 1048574)])]
     [else #f]))
 
 ;; ---------------------------------------------------------------------------
-;; scratch: 三种, 不要混
+;; 形式形状 / 必需操作数
 ;;
-;; 1. 条件空槽 = "这条指令需要 scratch, 但没给":
-;;      (branch-indirect <cond> a b L)   ; 远分支: 反向分支 + auipc+jalr, 总要 base
-;;      (jump-far x0 L)                  ; link 是零寄存器: auipc 没有落点, 必须借 base
-;;    要不要 scratch 是 **link / 形式** 的函数, 所以 scratch-hole? 必须读操作数,
-;;    不能只看"比满长度少一项"。报的是 request(不是错误), 留给寄存器层填。
-;;
-;; 2. 已填:
-;;      (branch-indirect s <cond> a b L)
-;;      (jump-far link s L)
-;;
-;; 3. 可选槽 = la 的 scratch, 缺省不代表缺陷:
-;;      (la rd 链)        ; 短形式 auipc+addi 不需要 scratch; 远形式由 encode 挑
-;;      (la rd tmp 链)    ; 显式指定, 给以后的 frame/regalloc 用
-;;    所以 la 不进 scratch-hole?: 否则每个 la 都会报空槽。
-;;
-;; 三个形式都**显式**写出寄存器: 谁也不许从助记符里猜 link 或 scratch。
+;; 所有 scratch/base/tmp 都是**必需操作数**, 没有可省略的空槽。
+;; 缺操作数在 analyze 的 arity 检查里挡掉; check 只检查寄存器值是否合法。
 ;; ---------------------------------------------------------------------------
 
-;; (jump-far link L) / (jump-far link s L); call-far = (jump-far x1 L), 不再单独存在
-(define (jump-far-form? x)
-  (and (form? x) (eq? (car x) 'jump-far) (memq (length x) '(3 4)) #t))
-(define (jump-far-link x) (and (jump-far-form? x) (cadr x)))
-(define (jump-far-scratch x) (and (jump-far-form? x) (= 4 (length x)) (caddr x)))
-
-;; link 是零寄存器 -> 空槽; link 非零 -> auipc/jalr 都用它自己, 不需要 scratch
-(define (far-jump-needs-scratch? x)
-  (and (jump-far-form? x) (zero-register? (jump-far-link x))))
-
-(define (scratch-hole? x)
-  (cond
-    [(and (form? x) (eq? (car x) 'branch-indirect)) (= 5 (length x))]
-    [(far-jump-needs-scratch? x) (= 3 (length x))]
-    ;; 远 la 也要 base: (la-far rd 链) 缺 tmp
-    [(and (form? x) (eq? (car x) 'la-far) (= 3 (length x))) #t]
-    [else #f]))
-
-;; (la rd 链) / (la rd tmp 链): 带"可选 scratch"的形式
-;; (la rd 地址表达式) / (la rd tmp 地址表达式)
-(define (la-form? x)
+;; 近 la: (la-pcrel rd expr) = auipc + addi
+(define (la-pcrel-form? x)
   (and (form? x)
-       (eq? (car x) 'la)
-       (memq (length x) '(3 4))
-       (address-expr? (last x))))
+       (eq? (car x) 'la-pcrel)
+       (= 3 (length x))
+       (address-expr? (caddr x))))
 
-;; 显式给出的 scratch; #f = 没写(不等于"不需要")
-(define (la-scratch x)
-  (and (la-form? x) (= 4 (length x)) (caddr x)))
+;; 远 la: (la-pcrel-li-add rd tmp expr) = auipc rd,0 ; li tmp,delta ; add rd,rd,tmp
+(define (la-pcrel-li-add-form? x)
+  (and (form? x)
+       (eq? (car x) 'la-pcrel-li-add)
+       (= 4 (length x))
+       (address-expr? (cadddr x))))
 
-;; 远 la: (la-far rd [tmp] 链) —— 近形式 auipc+addi 够不着时 relax 升到这里。
-;;   auipc rd, 0 ; li tmp, delta ; add rd, rd, tmp
-;;
-;; 尺寸必须是**常量**: li 的长度取决于 delta, 而 delta 取决于布局。让它随布局
-;; 变长变短, relax 固定点就会在"尺寸变了但不产生新决策"之间来回, 而
-;; CONSTRAINTS.md 要的是尺寸只增不减。所以取 li 的最坏情况(见 far-la-size),
-;; 实际展开短出来的部分由 encode 补 nop —— 尺寸稳定, 内容正确。
-(define (la-far-form? x)
-  (and (form? x) (eq? (car x) 'la-far) (memq (length x) '(3 4))
-       (address-expr? (last x))))
+(define (la-pcrel-li-add-tmp x)
+  (and (la-pcrel-li-add-form? x) (caddr x)))
 
 ;; 4 (auipc) + li 最坏 + 4 (add)
 ;;   rv64: li 最坏 32B (general64 最坏 8 条) -> 40
 ;;   rv32: li 最坏  8B (lui+addi)            -> 16
 ;; rv32 实际上永远走不到这里(32 位下 auipc+addi 覆盖全部 delta), 尺寸照样给对。
-(define (far-la-size target)
+(define (la-pcrel-li-add-size target)
   (+ 8 (if (eq? (target-xlen target) 'rv32) 8 32)))
 
-(define (la-far-scratch x)
-  (and (la-far-form? x) (= 4 (length x)) (caddr x)))
+;; branch-auipc-jalr: (branch-auipc-jalr tmp cond rs1 rs2 target)
+(define (branch-auipc-jalr-scratch x)
+  (and (form? x) (eq? (car x) 'branch-auipc-jalr) (cadr x)))
+
+;; jump-auipc-jalr: (jump-auipc-jalr link base target)
+(define (jump-auipc-jalr-link x)
+  (and (form? x) (eq? (car x) 'jump-auipc-jalr) (cadr x)))
+
+(define (jump-auipc-jalr-base x)
+  (and (form? x) (eq? (car x) 'jump-auipc-jalr) (caddr x)))

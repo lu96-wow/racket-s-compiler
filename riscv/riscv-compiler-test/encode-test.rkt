@@ -47,23 +47,11 @@
         (cons 'symbols symbols)
         (link-field symbols)
         (provides-field symbols)
-        (cons 'requests '())
         (cons 'problems '())))
 
 ;; measured layout: encode 必须拒绝
 (define (measured layout)
   (cons (list 'phase 'measured) (cdr layout)))
-
-(define (with-requests layout requests)
-  (list (list 'phase 'bound)
-        (list 'origin 0)
-        (cons 'segments (cdr (assoc 'segments layout)))
-        (cons 'anchors '())
-        (cons 'symbols (cdr (assoc 'symbols layout)))
-        (link-field (cdr (assoc 'symbols layout)))
-        (provides-field (cdr (assoc 'symbols layout)))
-        (cons 'requests requests)
-        (cons 'problems '())))
 
 ;; ---------------------------------------------------------------------------
 ;; 目标事实
@@ -345,7 +333,7 @@
 ;; la 近形式: auipc + addi
 (check-equal? (build-bytes
                (encode-layout
-                (one-item-layout 'c '(la a0 (d t)) 8))
+                (one-item-layout 'c '(la-pcrel a0 (d t)) 8))
                'c)
               '(#x17 #x15 #x00 #x00
                 #x13 #x05 #x05 #x00))
@@ -353,31 +341,22 @@
 ;; 远分支: 反向分支 + jal, 8 字节
 (check-equal? (build-size
                (encode-layout
-                (one-item-layout 'c '(branch-far beq a0 a1 (d t)) 8))
+                (one-item-layout 'c '(branch-jal beq a0 a1 (d t)) 8))
                'c)
               8)
 ;; 间接远分支: 反向分支 + auipc + jalr, 12 字节
 (check-equal? (build-size
                (encode-layout
-                (one-item-layout 'c '(branch-indirect s0 beq a0 a1 (d t)) 12))
+                (one-item-layout 'c '(branch-auipc-jalr s0 beq a0 a1 (d t)) 12))
                'c)
               12)
 ;; 远跳转: 8 字节
 (check-equal? (build-size
                (encode-layout
-                (one-item-layout 'c '(jump-far ra (d t)) 8))
+                (one-item-layout 'c '(jump-auipc-jalr ra ra (d t)) 8))
                'c)
               8)
 
-;; 空槽不能编码
-(check-error "branch-indirect 空槽"
-             (lambda ()
-               (encode-layout
-                (one-item-layout 'c '(branch-indirect beq a0 a1 (d t)) 12))))
-(check-error "jump-far 空槽"
-             (lambda ()
-               (encode-layout
-                (one-item-layout 'c '(jump-far x0 (d t)) 8))))
 
 ;; ---------------------------------------------------------------------------
 ;; 断言: offset / size / problems
@@ -409,13 +388,6 @@
 (check-error "需要 bound-layout"
              (lambda () (encode-layout (measured (laid '() '())))))
 
-;; 有 request 就拒绝出产物
-(check-error "requests 非空"
-             (lambda ()
-               (encode-layout
-                (with-requests (laid '() '())
-                               '((needs-far c 0 (beq a b L) 9999 (code 0 0)))))))
-
 ;; 有 problem 就拒绝出产物
 (check-error "problems 非空"
              (lambda ()
@@ -424,7 +396,6 @@
                       (cons 'segments '())
                       (cons 'anchors '())
                       (cons 'symbols '())
-                      (cons 'requests '())
                       (cons 'problems '((undefined-target c 0 (jal x0 (nope)))))))))
 
 ;; code 段 pad 奇数字节: 编不出来

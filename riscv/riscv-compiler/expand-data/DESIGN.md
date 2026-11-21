@@ -1,5 +1,7 @@
 # expand-data（`expand.rkt`）
 
+完整语法见 [`../RICH-DATA.md`](../RICH-DATA.md)。
+
 ## 作用
 
 把“人写的数据定义”变成核心数据 item：确定宽度、值域、UTF-8、数组压缩和地址字透传。

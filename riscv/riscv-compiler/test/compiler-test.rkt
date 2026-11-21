@@ -4,7 +4,7 @@
 ;;; 汇编器契约测试:
 ;;;   - native 是默认基础语法
 ;;;   - 便利别名是另一个可选层
-;;;   - analyze / relax / encode 不再假设“目标在最后一个操作数”
+;;;   - analyze / layout / check / encode 不再假设“目标在最后一个操作数”
 
 (require rackunit
          (only-in "../flow/flow.rkt"
@@ -71,10 +71,8 @@
     103 128 0 0))
 
 ;; ---------------------------------------------------------------------------
-;; native 是默认流
+;; native 是唯一输入
 ;; ---------------------------------------------------------------------------
-
-(check-false (memq 'expand-pseudo default-flow))
 
 (define native-out (run-code default-flow native-src code-spec))
 (check-equal? (layout-problems (flow-value native-out 'bound-layout)) '())
@@ -102,12 +100,13 @@
 (check-equal? (jump-register '(jalr x0 ra 0)) 'x0)
 
 ;; ---------------------------------------------------------------------------
-;; native pseudo 分支也能松弛
+;; native pseudo 分支也能显式写远形式
 ;; ---------------------------------------------------------------------------
 
 (define far-src
   '((label main)
-    (ble (far) a0 a1)
+    ;; 前端显式选择远形式: ble = bge a1 a0, 用 branch-jal 而不是让后端自动升级
+    (branch-jal bge a1 a0 (far))
     (label hot)
     (jalr x0 ra 0)
     (label far)
@@ -124,39 +123,13 @@
 (check-equal? (seg-size (flow-value far-out 'build) 'c) 12)
 
 ;; ---------------------------------------------------------------------------
-;; 便利别名是可选层，模板已经是 native 顺序
-;; ---------------------------------------------------------------------------
-
-(define alias-src
-  '((label main)
-    (store-8 8 sp t0)
-    (load-8 t1 sp 8)
-    (move a0 t1)
-    (jalr x0 ra 0)))
-
-(define alias-flow
-  '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
-
-(define alias-spec
-  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4)))
-    (place c (main))))
-
-(define alias-out (run-code alias-flow alias-src alias-spec))
-(check-equal? (flow-value alias-out 'program-items)
-              '((label main)
-                (sb 8 sp t0)
-                (lbu t1 sp 8)
-                (add a0 t1 x0)
-                (jalr x0 ra 0)))
-
-;; ---------------------------------------------------------------------------
 ;; 数据 / li / la 不受顺序重构影响
 ;; ---------------------------------------------------------------------------
 
 (define lit-src
   '((label main)
     (li t0 #x12345678)
-    (la t1 (d t))
+    (la-pcrel t1 (d t))
     (jalr x0 ra 0)))
 
 (define lit-rich
@@ -196,19 +169,42 @@
   (check-equal? (layout-problems (flow-value out 'bound-layout)) '())
   (seg-bytes (flow-value out 'build) 'c))
 
-;; (jal ra (far)) 松弛成 (jump-far ra (far)): auipc ra; jalr ra, ra, -4
-(check-equal? (farjump-bytes '(jal ra (far)))
+;; 前端显式写 (jump-auipc-jalr ra ra (far)): auipc ra; jalr ra, ra, -4
+(check-equal? (farjump-bytes '(jump-auipc-jalr ra ra (far)))
               '(99 6 181 0        ; bne a0, a1, +12   (跳过 8 字节的远跳)
                 151 240 31 0      ; auipc ra, 0x1ff   -> 0x200004
                 231 128 192 255   ; jalr ra, ra, -4   -> 0x200000
                 103 128 0 0))     ; after: jalr x0, ra, 0
 
 ;; link 是零寄存器: auipc 的落点必须换成显式 scratch(t0), 不是 x0
-(check-equal? (farjump-bytes '(jump-far x0 t0 (far)))
+(check-equal? (farjump-bytes '(jump-auipc-jalr x0 t0 (far)))
               '(99 6 181 0
                 151 242 31 0      ; auipc t0, 0x1ff
                 103 128 194 255   ; jalr x0, t0, -4
                 103 128 0 0))
+
+;; ---------------------------------------------------------------------------
+;; 普通短形式超范围: check 报 problem, encode 拒绝; 不自动升级
+;; ---------------------------------------------------------------------------
+
+(define short-far-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
+              (segment (name d) (kind code) (start #x200000) (end #x201000) (align 4)))
+    (place c (main) (mid))
+    (place d (far))))
+
+(define short-far-src
+  '((label main) (jal ra (far))
+    (label mid) (jalr x0 ra 0)
+    (label far) (jalr x0 ra 0)))
+
+(define short-far-out
+  (run-code (remq 'encode default-flow) short-far-src short-far-spec))
+(check-true (pair? (layout-problems (flow-value short-far-out 'bound-layout))))
+(check-not-false (memq 'out-of-range
+                        (map car (layout-problems (flow-value short-far-out 'bound-layout)))))
+(check-exn exn:fail?
+           (lambda () (run-code default-flow short-far-src short-far-spec)))
 
 ;; ---------------------------------------------------------------------------
 ;; 产物带 link 表: (build (link (base …) (symbol 链 地址) …) (segment …) …)
@@ -242,7 +238,7 @@
     (place lo (low) (mid))))
 (define shuffled-build
   (flow-value (run-code default-flow
-                        '((label low) (beq (high) a0 a1)
+                        '((label low) (branch-jal beq a0 a1 (high))
                           (label mid) (jalr x0 ra 0)
                           (label high) (jalr x0 ra 0))
                         shuffled-spec)

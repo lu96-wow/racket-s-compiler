@@ -125,15 +125,16 @@
               #:when p)
      p)))
 
-;; 被当成"值"用过的链(不是控制转移目标的引用), 例如 (la x5 (b)) / (ld x5 (table))。
+;; 被当成"值"用过的链(不是控制转移目标的引用), 例如 (la-pcrel x5 (b)) / (ld x5 (table))。
 ;; 间接跳转的目标只能来自"取过地址"的链, 所以它们是有间接跳转时的候选落点。
 ;; 数据侧也算（analyze 的第二个参数就是 data items）。什么算"取过地址":
-;;   (la rd [tmp] 地址表达式)     表达式里的所有链
+;;   (la-pcrel rd 地址表达式) / (la-pcrel-li-add rd tmp 地址表达式)
+;;                                     表达式里的所有链
 ;;   (value 宽度 地址表达式)       数据里的所有链（差值也算: 那两个 label 必须存在）
 ;;   其它指令:                              操作数里出现的裸链
 (define (item-address-chains it)
   (cond
-    [(eq? (car it) 'la) (address-expr-chains (last it))]
+    [(memq (car it) '(la-pcrel la-pcrel-li-add)) (address-expr-chains (last it))]
     [(eq? (car it) 'value) (address-expr-chains (caddr it))]
     [(or (branch-instruction? it) (jump-instruction? it))
      (define ops (cdr it))

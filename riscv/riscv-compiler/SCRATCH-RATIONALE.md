@@ -1,3 +1,9 @@
+> **历史文档（已过时）**：当前模型已删除分支松弛/`requests`。
+> 控制转移与远地址形式由前端显式选择，后端只做 `layout` 度量、`check` 检查和 `encode`。
+> 当前约束见 [`CONSTRAINTS.md`](CONSTRAINTS.md)。
+>
+> 下面内容保留为旧设计和外部资料记录，不再对应当前代码。
+
 # scratch 寄存器的上游依据：RISC-V 设计者到底怎么想
 
 > 本文是 [`SCRATCH.md`](SCRATCH.md) 的**外部资料**附录，只收集证据，不改实现。

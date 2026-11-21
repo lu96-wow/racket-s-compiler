@@ -19,7 +19,6 @@
  (origin 镜像基址)              ; spec 的 (origin …)，缺省 0
  (segments …)
  (anchors (anchor 链 段名 偏移) …)
- (requests …)
  (problems …))
 ```
 
@@ -33,7 +32,6 @@
  (symbols (symbol 链 段名 偏移 绝对地址) …)
  (link (base 镜像基址) (symbol 链 绝对地址) …)   ; 对外投影，见下节
  (provides 链 …)                                 ; 对外承诺哪些名字，见下节
- (requests …)
  (problems …))
 ```
 
@@ -44,10 +42,10 @@
 
 ## 设计思路
 
-- `layout`/`relax` 只该管“位置”；`offset → address` 是一个独立的收尾。
-- 绝对地址只在 bound-layout 出现，`encode` 就不可能误用松弛中间值。
+- `layout` / `check` 只该管“位置/检查”；`offset → address` 是一个独立的收尾。
+- 绝对地址只在 bound-layout 出现，`encode` 就不可能误用中间布局值。
 - `value` 宽度和段容量只有最终地址/最终尺寸才知道，所以放在这里。
-- 幂等；不改 item / offset / size；不解决 requests。
+- 幂等；不改 item / offset / size；不解决 check 报出的 problems。
 
 ## link 表：对外的“名字 → 绝对地址”
 
@@ -109,6 +107,6 @@ link 表也按它排。`rename-out` 的外部名只在本单元的 `require` 绑
 ## 边界
 
 不松弛、不填 scratch、不补跳、不重定位/链接。
-`needs-far` / `scratch-hole` / `la-too-far` 原样保留，`encode` 要求 requests/problems 都空。
+`check` 产生的 problems 原样保留，`encode` 要求 problems 为空。
 
-未来寄存器层应插在 `relax` 之后、`bind-labels` 之前；凡会改尺寸的 pass 也必须在它之前收敛。
+凡会改尺寸的 pass 都必须在 `layout` 之前完成；`layout` / `check` / `bind-labels` 只做尺寸不变的收尾。

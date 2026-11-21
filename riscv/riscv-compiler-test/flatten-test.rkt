@@ -61,45 +61,45 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (flat '((module a (provide f) (label f))
-                      (module b (require a) (la t0 (f)))))
-              '((label a f) (la t0 (a f))))
+                      (module b (require a) (la-pcrel t0 (f)))))
+              '((label a f) (la-pcrel t0 (a f))))
 
 (check-equal? (flat '((module a (provide (d table)) (label d table))
-                      (module b (require a) (la t0 (d table)))))
-              '((label a d table) (la t0 (a d table))))
+                      (module b (require a) (la-pcrel t0 (d table)))))
+              '((label a d table) (la-pcrel t0 (a d table))))
 
 ;; prefix-in 只给链的头加前缀
 (check-equal? (flat '((module a (provide f) (provide (d table))
                                         (label f) (label d table))
                       (module b (require (prefix-in p: a))
-                               (la t0 (p:f))
-                               (la t1 (p:d table)))))
+                               (la-pcrel t0 (p:f))
+                               (la-pcrel t1 (p:d table)))))
               '((label a f) (label a d table)
-                (la t0 (a f)) (la t1 (a d table))))
+                (la-pcrel t0 (a f)) (la-pcrel t1 (a d table))))
 
 ;; rename-in: (外部链 -> 本地链)
 (check-equal? (flat '((module a (provide f) (label f))
                       (module b (require (rename-in a ((f) tbl)))
-                               (la t0 (tbl)))))
-              '((label a f) (la t0 (a f))))
+                               (la-pcrel t0 (tbl)))))
+              '((label a f) (la-pcrel t0 (a f))))
 
 ;; rename-out: 内部名 f, 外部名 fn
 (check-equal? (flat '((module a (provide (rename-out ((f) fn))) (label f))
-                      (module b (require a) (la t0 (fn)))))
-              '((label a f) (la t0 (a f))))
+                      (module b (require a) (la-pcrel t0 (fn)))))
+              '((label a f) (la-pcrel t0 (a f))))
 
 ;; (provide *) 只导出本模块直接定义的 label
 (check-equal? (flat '((module a (provide *) (label d table) (label g))
-                      (module b (require a) (la t0 (d table)))))
+                      (module b (require a) (la-pcrel t0 (d table)))))
               '((label a d table) (label a g)
-                (la t0 (a d table))))
+                (la-pcrel t0 (a d table))))
 
 ;; re-export
 (check-equal? (flat '((module a (provide f) (label f))
                       (module b (require a)
                                 (provide (rename-out ((f) ff))))
-                      (module c (require b) (la t0 (ff)))))
-              '((label a f) (la t0 (a f))))
+                      (module c (require b) (la-pcrel t0 (ff)))))
+              '((label a f) (la-pcrel t0 (a f))))
 
 ;; 根作用域也可以写 provide/require
 (check-equal? (flat '((module a (provide f) (label f))
@@ -111,9 +111,9 @@
 (check-equal? (flat '((module a (provide f) (label f))
                       (module b (provide g) (label g))
                       (module c (require a) (require b)
-                                (la t0 (f)) (la t1 (g)))))
+                                (la-pcrel t0 (f)) (la-pcrel t1 (g)))))
               '((label a f) (label b g)
-                (la t0 (a f)) (la t1 (b g))))
+                (la-pcrel t0 (a f)) (la-pcrel t1 (b g))))
 
 ;; ---------------------------------------------------------------------------
 ;; 多输入共享名字表
@@ -122,12 +122,12 @@
 (define-values (outs names exports)
   (flatten-inputs
    (list '((module a (provide f) (label f)))
-         '((module b (require a) (la t0 (f)))
+         '((module b (require a) (la-pcrel t0 (f)))
            (label g)))))
 
 (check-equal? outs
               '(((label a f))
-                ((la t0 (a f)) (label g))))
+                ((la-pcrel t0 (a f)) (label g))))
 (check-equal? (hash-ref names '(a f)) 0)
 (check-equal? (hash-ref names '(g)) 1)
 ;; 导出集合: 这个单元只 provide 了 a/f, 记绝对链
@@ -138,8 +138,8 @@
               '((label shared)))
 (define-values (outs2 _ _exports2)
   (flatten-inputs (list '((label shared))
-                        '((la t0 (shared))))))
-(check-equal? outs2 '(((label shared)) ((la t0 (shared)))))
+                        '((la-pcrel t0 (shared))))))
+(check-equal? outs2 '(((label shared)) ((la-pcrel t0 (shared)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 循环 require: 允许, 但必须有 base
@@ -163,7 +163,7 @@
 
 (check-error "没 provide, 写全名也引用不到"
              (lambda () (flat '((module a (label f))
-                                (module b (la t0 (a f)))))))
+                                (module b (la-pcrel t0 (a f)))))))
 (check-error "undefined label"
              (lambda () (flat '((label f) (jal x0 (nope))))))
 (check-error "同一链两个位置"
@@ -188,7 +188,7 @@
              (lambda () (flat '((module a (provide f) (label f))
                                 (module b (provide f) (label f))
                                 (module c (require a) (require b)
-                                          (la t0 (f)))))))
+                                          (la-pcrel t0 (f)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; 容器 / 幂等 / flatten-items

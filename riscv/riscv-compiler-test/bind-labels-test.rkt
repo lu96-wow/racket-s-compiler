@@ -5,7 +5,7 @@
 ;;;   - measured 只有 anchors，没有 symbols
 ;;;   - bind-labels 后 phase=bound，地址 = 段 start + 偏移
 ;;;   - value 宽度 / segment 容量在 bind-labels 才检查
-;;;   - requests 原样保留；bind 不改 item/size
+;;;   - check 产出的 problems 原样保留；bind 不改 item/size
 
 (require rackunit
          "helpers.rkt"
@@ -15,6 +15,7 @@
                   bind-labels bound-layout? layout-symbols layout-link
                   layout-provides
                   symbol-row symbol-address eval-symbol-address)
+         (only-in "../riscv-compiler/check/check.rkt" check-layout)
          (only-in "../riscv-compiler/target.rkt" target-rv64-base)
          (only-in "../riscv-compiler/analyze/analyze.rkt" analyze)
          (only-in "../riscv-compiler/flatten/flatten.rkt" flatten-program))
@@ -26,7 +27,6 @@
   (symbol-row (layout-symbols layout) chain))
 
 (define (problems-of layout) (layout-problem-list layout))
-(define (requests-of layout) (layout-request-list layout))
 
 ;; ---------------------------------------------------------------------------
 ;; anchors -> symbols
@@ -43,14 +43,12 @@
 (check-equal? (layout-phase-of measured) 'measured)
 (check-false (assoc 'symbols measured))
 (check-equal? (problems-of measured) '())
-(check-equal? (requests-of measured) '())
 
 (define bound (bind-labels measured))
 
 (check-equal? (layout-phase-of bound) 'bound)
 (check-true (bound-layout? bound))
 (check-equal? (problems-of bound) '())
-(check-equal? (requests-of bound) '())
 
 (check-equal? (symbol-for bound '(main)) '(symbol (main) c 0 #x1000))
 (check-equal? (symbol-for bound '(f)) '(symbol (f) c 4 #x1004))
@@ -121,29 +119,19 @@
               '(#x2000 #x2008))
 
 ;; ---------------------------------------------------------------------------
-;; requests / problems 原样带过去
+;; check 产出的 problems 原样带过去
 ;; ---------------------------------------------------------------------------
-
-(define with-request
-  (lay (analyze '((label main) (branch-indirect beq a0 a1 (done))
-                  (label keep) (jal x0 (keep))
-                  (label done) (jalr x0 ra 0)))
-       '()
-       '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
-         (place c (main) (keep) (done)))))
-
-(check-true (has-request? with-request 'scratch-hole))
-(check-equal? (requests-of (bind-labels with-request))
-              (requests-of with-request))
 
 (define with-ghost
   (lay (analyze '((label main) (jal x0 (ghost))))
        '()
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place c (main)))))
+(define with-ghost-checked (check-layout test-target with-ghost))
 
-(check-equal? (problems-of (bind-labels with-ghost))
-              (problems-of with-ghost))
+(check-true (has-problem? with-ghost-checked 'undefined-target))
+(check-equal? (problems-of (bind-labels with-ghost-checked))
+              (problems-of with-ghost-checked))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口检查

@@ -9,26 +9,19 @@ RISC-V s-expression 汇编器。
 ```text
 rich-data ─→ expand-data ─┐
                           ↓
-program-items ─┬─→ flatten ─→ [expand-pseudo] ─→ analyze ─→ dce ─→ relax ─→ bind-labels ─→ encode
-data-items ────┘                                                                      │          │            │
-                                                                                      ↓          ↓            ↓
-                                                                                   measured     bound        build
+program-items ─┬─→ flatten ─→ analyze ─→ dce ─→ layout ─→ check ─→ bind-labels ─→ encode
+data-items ────┘                                                                        │        │        │            │
+                                                                                        ↓        ↓        ↓            ↓
+                                                                                     measured  checked  bound        build
 ```
 
-- `[expand-pseudo]`：可选。便利别名（`load-8` / `store-*` / `branch-le`）→ native 指令。
-- 默认流只跑 native：
+输入是 canonical native；没有可选别名层。
 
 ```racket
-'(expand-data flatten analyze dce relax bind-labels encode)
+'(expand-data flatten analyze dce layout check bind-labels encode)
 ```
 
-- 需要便利别名：
-
-```racket
-'(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
-```
-
-`layout` 仍然在 `relax` 内部反复跑。
+`layout` 只度量位置；`check` 只检查前端显式选择的跳转/地址形式，不改尺寸。
 
 ## native 顺序
 
@@ -52,6 +45,7 @@ canonical 操作数顺序来自 `riscv-asm` 的 `instruction-info-operands`，�
 | 文档 | 内容 |
 | --- | --- |
 | [`SYNTAX.md`](SYNTAX.md) | native 表面语法 |
+| [`RICH-DATA.md`](RICH-DATA.md) | rich-data 的完整数据语法与展开规则 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与 stage |
 | [`IR.md`](IR.md) | 层间 IR 类型 |
 | [`encode/syntax/DESIGN.md`](encode/syntax/DESIGN.md) | native plan / direct form |

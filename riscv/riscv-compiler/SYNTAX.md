@@ -65,7 +65,7 @@ chain  := (name ...)        ; 非空
 - `(label data1 table)` 表示链 `(data1 table)`，不是两个独立的 label。
 - 裸原子当单节链看只在少数层成立；**规范写法是链**，例如 `(jal x0 (end))`。
 
-地址表达式只出现在数据值和 `la` 的地址操作数里：
+地址表达式只出现在数据值和 `la-pcrel` / `la-pcrel-li-add` 的地址操作数里：
 
 ```scheme
 expr := integer
@@ -83,7 +83,7 @@ expr := integer
 (+ (- (d end) (d start)) 4)  ; 差 + 4
 ```
 
-地址表达式**不在前端求值**：`layout` / `relax` 用临时 anchor，`bind-labels`
+地址表达式**不在前端求值**：`layout` / `check` 用临时 anchor，`bind-labels`
 之后才有最终绝对地址。
 
 ---
@@ -109,7 +109,7 @@ expr := integer
 ```scheme
 (jal x0 (end))
 (beq (hot) a0 a1)
-(la t0 (data table))
+(la-pcrel t0 (data table))
 ```
 
 跨模块引用必须写完整链：`(jal x0 (prog1 f))`。
@@ -204,74 +204,46 @@ native 分支的目标**不固定在最后**：
 (j (end))             ; 目标在第一个操作数
 ```
 
-`analyze` / `layout` / `relax` / `encode` 使用
+`analyze` / `layout` / `check` / `encode` 使用
 `analyze/insn.rkt` 的 `jump-target` / `jump-target-position`，
 不再假设 `last`。
 
-### 3.4 可选便利别名
-
-默认流不包含 `expand-pseudo`。需要这些别名时再加：
-
-```scheme
-(move  rd rs)             ; 别名 mv -> add rd rs x0
-
-(load-8  rd rs1 [off])    ; 别名 l8  -> lbu
-(load-16 rd rs1 [off])    ; 别名 l16 -> lhu
-(load-32 rd rs1 [off])    ; 别名 l32 -> lwu
-(load-64 rd rs1 [off])    ; 别名 l64 -> ld
-(load-s8  rd rs1 [off])   ; 别名 ls8  -> lb
-(load-s16 rd rs1 [off])   ; 别名 ls16 -> lh
-(load-s32 rd rs1 [off])   ; 别名 ls32 -> lw
-
-(store-8  off rs1 rs2)    ; 别名 st8  -> sb
-(store-16 off rs1 rs2)    ; 别名 st16 -> sh
-(store-32 off rs1 rs2)    ; 别名 st32 -> sw
-(store-64 off rs1 rs2)    ; 别名 st64 -> sd
-
-(branch-le  L rs1 rs2)    ; 别名 ble  -> bge  L rs2 rs1
-(branch-gt  L rs1 rs2)    ; 别名 bgt  -> blt  L rs2 rs1
-(branch-leu L rs1 rs2)    ; 别名 bleu -> bgeu L rs2 rs1
-(branch-gtu L rs1 rs2)    ; 别名 bgtu -> bltu L rs2 rs1
-
-(nop)
-(c.nop)
-```
-
-### 3.5 `li` / `la`
+### 3.4 `li` / `la-pcrel`
 
 ```scheme
 (li rd integer)
-(la rd expr)
-(la rd scratch expr)
+(la-pcrel rd expr)
+(la-pcrel-li-add rd tmp expr)
 ```
 
 例子：
 
 ```scheme
 (li t0 #x12345678)
-(la t1 (data table))
-(la t2 t3 (+ (data table) 8))
+(la-pcrel t1 (data table))
+(la-pcrel-li-add t2 t3 (+ (data table) 8))
 ```
 
 - `li` 的尺寸由常量精确决定，可能是 4 / 8 / 12 / 16 / … / 32 字节。
-- `la` 当前只有近形式 `auipc + addi`，固定 8 字节；够不够得着由 layout 报
-  `la-too-far` request。
-- `la` 的显式 scratch 在当前近形式里用不上，但形状保留。
+- `la-pcrel` 是近形式 `auipc + addi`，固定 8 字节；够不着时 `check` 报
+  `la-too-far` problem，前端必须显式改写成 `la-pcrel-li-add`。
+- `la-pcrel-li-add` 是显式形式，`tmp` 必需；固定尺寸，短出来的部分由 encode 补 `nop`。
 
-### 3.6 远形式
+### 3.5 显式形式
 
-以下形式通常由 `relax` 生成；远形式使用自己的内部顺序，目标仍在最后：
+以下远形式由前端显式选择；它们使用自己的内部顺序，目标仍在最后：
 
 ```scheme
-(branch-far cond rs1 rs2 target)                    ; 8 字节
-(branch-indirect cond rs1 rs2 target)               ; 12 字节，scratch 为空槽
-(branch-indirect scratch cond rs1 rs2 target)       ; 12 字节，scratch 已填
-(jump-far link target)                              ; 8 字节；link 为零寄存器时 scratch 为空槽
-(jump-far link scratch target)                      ; 8 字节，scratch 已填
+(branch-jal cond rs1 rs2 target)             ; 8 字节
+(branch-auipc-jalr tmp cond rs1 rs2 target)  ; 12 字节
+(jump-auipc-jalr link base target)           ; 8 字节
 ```
 
-`link` 是链接寄存器（通常是 `ra` 或 `x0`）。`scratch` 必须是显式寄存器；
-当前 `encode` 遇到未填的 scratch-hole 会拒绝出产物。
+`link` 是链接寄存器（通常是 `ra` 或 `x0`）；`base` 是 `auipc` 的落点。
+`tmp` / `base` 都是必需操作数，没有可省略的空槽。
+零寄存器用作 scratch/base/tmp 时 `check` 报 `zero-scratch`；
+`la-pcrel-li-add` 的 tmp 和 rd 重合时报 `bad-scratch`。
+普通短形式超范围时 `check` 报 `out-of-range`，不会自动升级。
 
 ---
 
@@ -292,6 +264,8 @@ native 分支的目标**不固定在最后**：
 ## 5. 数据 item
 
 ### 5.1 人写的 rich 形式
+
+完整语法、边界和展开规则见 [`RICH-DATA.md`](RICH-DATA.md)。
 
 ```scheme
 (label d table)
@@ -444,10 +418,10 @@ native 分支的目标**不固定在最后**：
 | `c.*` 真指令 | 2 | 压缩指令 |
 | 普通真指令 | 4 | 当前实现的不透明兜底 |
 | `li` | 4 / 8 / 12 / … / 32 | 由常量决定 |
-| `la` | 8 | 当前近形式 |
-| `branch-far` | 8 | 反向分支 + `jal` |
-| `branch-indirect` | 12 | 反向分支 + `auipc + jalr` |
-| `jump-far` | 8 | `auipc + jalr` |
+| `la-pcrel` | 8 | `auipc + addi` |
+| `branch-jal` | 8 | 反向分支 + `jal` |
+| `branch-auipc-jalr` | 12 | 反向分支 + `auipc + jalr` |
+| `jump-auipc-jalr` | 8 | `auipc + jalr` |
 
 控制转移的目标位置由 `jump-target-position` 决定；`encode` 在原位置把目标
 换成相对偏移。地址表达式和 `value` 的最终宽度由 `bind-labels` / `encode` 检查。
@@ -529,21 +503,20 @@ main:
 | --- | --- |
 | form / name / chain / 地址表达式 | `sexp.rkt` |
 | label、数据宽度、字符串、数组 | `expand-data/expand.rkt` |
-| 便利别名 | `expand-pseudo/table*.rkt` |
 | module / provide / require / 链解析 | `flatten/flatten.rkt` |
 | native 操作数计划 | `encode/syntax/native.rkt` |
 | 特殊指令形式（`fence` 等） | `encode/syntax/direct.rkt` |
 | 操作数种类（GPR / CSR / …） | `encode/syntax/operand*.rkt` |
 | 控制转移目标位置 | `analyze/insn.rkt` |
 | 段、place、对齐、item 合法性 | `layout/layout.rkt`、`layout/forms.rkt` |
-| `li` / `la` / 远分支展开 | `../riscv-help/` |
+| `li` / `la-pcrel` / 显式分支展开 | `../riscv-help/` |
 | 指令名、宽度、位域 | `../riscv-asm/generated/` |
 | target 的 XLEN / 扩展集 | `target.rkt` |
 
 新增一种表面写法时，至少检查：
 
 1. 形状是否在 `sexp.rkt` 里有统一的判定。
-2. 它是 native 基础语法，还是便利别名？
+2. 它是后端 native 语法，还是应在进入后端前由前端预处理？
 3. 尺寸契约在哪里（`layout/forms.rkt` 或对应层）。
-4. 是否需要新增 `problems` / `requests`，不要静默兜底。
+4. 是否需要新增 `problems`，不要静默兜底。
 5. 补测试，并更新本文档和对应的 `DESIGN.md`。

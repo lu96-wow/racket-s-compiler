@@ -28,11 +28,10 @@
 | --- | --- | --- |
 | `expand-data` | rich 数据 | 核心数据 item |
 | `flatten` | `program-items` + `data-items` | 完整链的 `program-items` + `data-items` + `names` |
-| `expand-pseudo` | `program-items` | `program-items`（可选：别名 → native） |
 | `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
 | `dce` | `program` | `program` |
 | `layout` | `program` + `data-items` + `layout-spec` | `measured-layout` |
-| `relax` | 同 layout | `measured-layout` |
+| `check` | `measured-layout` | `measured-layout`（追加 problems） |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
 
@@ -43,17 +42,16 @@
 | rich 数据 | `(b8 v)` / `(b16 v)` / `(bN-array n v…)` / `(utf-string[s] "…")` |
 | 核心数据 item | `(value w v)` / `(bytes …)` / `(fill n b)` / `(pad n)` / `(align n)` / `(reserve n)` / `(label 链…)` |
 | 伪指令 | native: `(mv …)` / `(ble L …)` / `(nop)`；`ret` 这类 ABI 伪指令不进入 core |
-| 控制转移 | native: `(beq L a b)` / `(jal rd L)` / `(j L)`；远形式 `(branch-far …)` / `(branch-indirect …)` / `(jump-far …)` |
-| `(la rd [tmp] 表达式)` | 取地址；近形式 8 字节 |
+| 控制转移 | native: `(beq L a b)` / `(jal rd L)` / `(j L)`；显式形式 `(branch-jal …)` / `(branch-auipc-jalr …)` / `(jump-auipc-jalr …)` |
+| `(la-pcrel rd 表达式)` | 取地址；auipc+addi，8 字节 |
 | `(li rd 常量)` | 常量装载；尺寸由常量精确决定 |
 | `(anchor 链 段名 偏移)` | measured 的 label 位置，无绝对地址 |
 | `(symbol 链 段名 偏移 地址)` | bound 的最终符号 |
-| `(requests …)` | `needs-far` / `scratch-hole` / `la-too-far`，交给后续 pass |
-| `(problems …)` | 放置 / 段 / fallthrough / `undefined-target` / 最终宽度/容量 |
-| measured-layout | `((phase measured) (origin …) (segments …) (anchors …) (requests …) (problems …))` |
-| bound-layout | `((phase bound) (origin …) (segments …) (anchors …) (symbols …) (link …) (requests …) (problems …))` |
+| `(problems …)` | 放置 / 段 / fallthrough / `undefined-target` / `out-of-range` / `zero-scratch` / `bad-scratch` / `la-too-far` / 最终宽度/容量 |
+| measured-layout | `((phase measured) (origin …) (externs …) (segments …) (anchors …) (problems …))` |
+| bound-layout | `((phase bound) (origin …) (segments …) (anchors …) (symbols …) (link …) (provides …) (problems …))` |
 | `(link (base B) (symbol 链 地址) …)` | 对外的“名字 → 绝对地址”，`symbols` 的两列投影；输出里没有未解析项 |
-| `(la-far rd [tmp] 链)` | 远 PC 相对装载地址（relax 从 `la` 升上来）；缺 `tmp` = 空槽；尺寸是**常量上界**，短出来的补 `nop` |
+| `(la-pcrel-li-add rd tmp 链)` | 前端显式选择的远 PC 相对装载地址；`tmp` 必需；尺寸是**常量上界**，短出来的补 `nop` |
 | `(provides 链 …)` | 其中哪些名字是**对外**的（`flatten` 的导出集合；没有 `` (provide …) `` 时是全导出） |
 | `build` | `(build (link …) (provides …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |
@@ -68,7 +66,7 @@
       (symbol (lib g) #f))            ; 地址未知：现在报 unlinked-external
 ```
 
-用它的层：`flatten`（放行这些名字）、`layout`/`relax`（地址进距离判断 + 自检）。
+用它的层：`flatten`（放行这些名字）、`check`（地址进距离判断 + 自检）。
 `base` 只解析不参与算术；地址未知现在编不出来（没有 reloc 层）。
 
 ## 段 kind

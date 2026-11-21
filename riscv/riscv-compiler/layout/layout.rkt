@@ -2,14 +2,14 @@
 ;;; layout/layout.rkt
 ;;;
 ;;; 布局度量: program + data + layout 输入
-;;;   -> ((phase measured) (segments ...) (anchors ...) (requests ...) (problems ...))
+;;;   -> ((phase measured) (segments ...) (anchors ...) (problems ...))
 ;;;
 ;;; 本层只产出“位置”，不产出绝对地址:
 ;;;   anchors  = label 的身份 + 段 + 段内偏移
-;;;   requests = needs-far / scratch-hole / la-too-far（交给 relax 或寄存器层）
-;;;   problems = 放置 / 段 / fallthrough / undefined-target
+;;;   problems = 放置 / 段 / fallthrough
 ;;;
-;;; 绝对地址由 bind-labels 一次性绑定；value 宽度和段容量也在那里做最终检查。
+;;; 绝对地址由 bind-labels 一次性绑定；目标距离、显式形式是否成立、
+;;; value 宽度和段容量分别由 check / bind-labels 做最终检查。
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
@@ -37,9 +37,6 @@
 
 (require "../sexp.rkt"
          "forms.rkt"
-         (only-in "../target.rkt" target-xlen)
-         ;; la 的近形式够不够得着: 和 encode 用同一个判据
-         (only-in "../../riscv-help/main.rkt" fits-auipc-pair?)
          (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
                   block-head block-items flow-fallthrough))
 
@@ -49,7 +46,6 @@
          layout-origin
          layout-externs
          layout-problems
-         layout-requests
          layout-segments
          layout-anchors
          (struct-out run))
@@ -256,19 +252,15 @@
 ;; 度量: 段内单游标, align 补齐, 逐条累加
 ;; ---------------------------------------------------------------------------
 
-(struct measured (segment items size blocks origins) #:transparent)
+(struct measured (segment items size blocks) #:transparent)
 ;; items   : (listof (list 'offset 偏移 item))
 ;; blocks  : 代码段里块的顺序 (listof (cons 全局下标 block)), 数据段为空
-;; origins : 偏移 -> (code 块下标 项下标) | (data 游程下标 项下标)
-;;           只给"要改 item 的层"(relax)用来精确定位; encode 不关心
 
 (define (measure target seg blks runs problem!)
   (define seg-name (segment-name seg))
   (define seg-kind (segment-kind seg))
   (define cursor 0)
   (define out '())
-
-  (define origins (make-hash))
 
   ;; item 类别的合法性只有一张表(forms.rkt 的 item-kind-allowed-in?);
   ;; 这里只把"不合法"翻译成本层的问题名, 不在这里塞策略。
@@ -283,13 +275,12 @@
           `(code-data-mixed ,seg-name ,cursor ,it)]
          [else `(data-code-mixed ,seg-name ,cursor ,it)]))))
 
-  (define (emit! it sz [origin #f])
-    (when origin (hash-set! origins cursor origin))
+  (define (emit! it sz)
     (check-item-kind! it)
     (set! out (cons (list 'offset cursor it) out))
     (set! cursor (+ cursor sz)))
 
-  (define (emit-item! it origin)
+  (define (emit-item! it)
     (cond
       [(align-form? it)
        (define n (cadr it))
@@ -304,23 +295,23 @@
        ;; label / reserve, encode 不用再判"洞从哪儿开始"。
        (define pad (modulo (- n (modulo (+ (segment-start seg) cursor) n)) n))
        (emit! (if (eq? seg-kind 'hole) (list 'reserve pad) (list 'pad pad))
-              pad origin)]
-      [else (emit! it (item-size target it) origin)]))
+              pad)]
+      [else (emit! it (item-size target it))]))
 
   (for ([e (in-list blks)])
     (define b (cdr e))
     (for ([chain (in-list (block-head b))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (block-items b))] [i (in-naturals)])
-      (emit-item! it (list 'code (car e) i))))
+    (for ([it (in-list (block-items b))])
+      (emit-item! it)))
 
-  (for ([r (in-list runs)] [ri (in-naturals)])
+  (for ([r (in-list runs)])
     (for ([chain (in-list (run-labels r))])
       (emit! (cons 'label chain) 0))
-    (for ([it (in-list (run-items r))] [i (in-naturals)])
-      (emit-item! it (list 'data ri i))))
+    (for ([it (in-list (run-items r))])
+      (emit-item! it)))
 
-  (measured seg (reverse out) cursor blks origins))
+  (measured seg (reverse out) cursor blks))
 
 (define (measure-all target segs code-by-seg data-by-seg problem!)
   (for/list ([seg (in-list segs)])
@@ -367,143 +358,11 @@
     (define seg (measured-segment m))
     (list 'anchor path (segment-name seg) off)))
 
-;; measured 相内部的临时位置: 链 -> 段 start + 段内偏移。
-;; 只在本层用于 needs-far / la-too-far 的距离判断, 不写进产物。
-(define (collect-positions measured-segs anchors externs)
-  (define start-of
-    (for/hash ([m (in-list measured-segs)])
-      (values (segment-name (measured-segment m))
-              (segment-start (measured-segment m)))))
-  (define h (make-hash))
-  (for ([a (in-list anchors)])
-    (hash-set! h (cadr a) (+ (hash-ref start-of (caddr a)) (cadddr a))))
-  ;; 外部符号: 地址直接来自输入侧 link 表(绝对的, 不加任何偏移)。
-  ;; 地址未知(#f)的不进位置表 —— 引用它会在 check-control / check-chains 里
-  ;; 变成 undefined-target, 但我们先单独报 unlinked-external 说清原因。
-  (for ([row (in-list externs)])
-    (define addr (caddr row))
-    (when addr (hash-set! h (cadr row) addr)))
-  h)
-
-;; ---------------------------------------------------------------------------
-;; 校验: 只报 problems/requests, 不抛异常。
-;;   control  目标存在 / 距离够 -> undefined-target(problem) / needs-far(request)
-;;   scratch  空槽 -> scratch-hole(request)
-;;   la       8 字节的 auipc+addi 够不够得着 -> la-too-far(request)
-;;   value    数据里的地址字: 只查链存在; 宽度等 bind-labels 用最终地址查
-;; ---------------------------------------------------------------------------
-
-(struct site (seg off item here origin positions problem! request!) #:transparent)
-
-(define (problem! s p) ((site-problem! s) p))
-(define (request! s p) ((site-request! s) p))
-
-(define (check-control s)
-  (define it (site-item s))
-  (when (control-form? it)
-    (define target (normalize-path (control-target it)))
-    (define addr (and target (hash-ref (site-positions s) target #f)))
-    (cond
-      [(not addr) (problem! s `(undefined-target ,(site-seg s) ,(site-off s) ,it))]
-      [else
-       ;; range 是区间 (lo . hi); 自带偏置的远形式在表里已经移过了
-       (define d (- addr (site-here s)))
-       (define range (form-range it))
-       (when (and range (not (<= (car range) d (cdr range))))
-         (request! s `(needs-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s))))])))
-
-(define (check-scratch s)
-  (define it (site-item s))
-  (when (scratch-hole? it)
-    (request! s `(scratch-hole ,(site-seg s) ,(site-off s) ,it ,(site-origin s)))))
-
-;; 地址表达式里的链都在临时位置表里吗? 缺了就报 undefined-target（每条缺的报一次）
-(define (check-chains s expr)
-  (define ok? #t)
-  (for ([c (in-list (address-expr-chains expr))])
-    (unless (hash-ref (site-positions s) c #f)
-      (set! ok? #f)
-      (problem! s `(undefined-target ,(site-seg s) ,(site-off s) ,(site-item s)))))
-  ok?)
-
-;; 数据里的值: 本层只保证链存在; 值是否放得进宽度由 bind-labels 用最终地址查。
-(define (check-value-chains s)
-  (define it (site-item s))
-  (when (value-form? it)
-    (define v (value-payload it))
-    (when (not (exact-integer? v))
-      (check-chains s v))))
-
-;; (la rd [tmp] 地址表达式): 近形式 8 字节够不够得着?
-;; 远形式需要 scratch 寄存器, 属于未实现的那一层。
-(define (check-la target s)
-  (define it (site-item s))
-  (when (la-form? it)
-    (define expr (last it))
-    (when (check-chains s expr)
-      (define d (- (eval-address expr (lambda (c) (hash-ref (site-positions s) c #f)))
-                   (site-here s)))
-      (unless (fits-auipc-pair? d (target-xlen target))
-        (request! s `(la-too-far ,(site-seg s) ,(site-off s) ,it ,d ,(site-origin s)))))))
-
-;; 外部符号(input 侧 link 表)的自检:
-;;   - 名字不能和自己镜像里的 label 撞(撞了 symbol-row 会静默挑一个)
-;;   - 地址未知 -> unlinked-external: 没有 reloc 层, 编不出来
-;;   - 地址是奇数 -> 不能当 branch/jal/jalr 的目标(立即数忽略 bit0)
-(define (check-externs externs anchors problem!)
-  (define local (for/hash ([a (in-list anchors)]) (values (cadr a) #t)))
-  (for ([row (in-list externs)])
-    (define chain (cadr row))
-    (define addr (caddr row))
-    (when (hash-ref local chain #f)
-      (problem! `(external-conflict ,chain)))
-    (cond
-      [(not addr) (problem! `(unlinked-external ,chain))]
-      [(odd? addr) (problem! `(misaligned-external ,chain ,addr))]
-      [else (void)])))
-
-;; 未链接的外部符号(地址 #f)已经报过 unlinked-external; 引用它的 item 不再重复
-;; 报 undefined-target —— 那不是“未定义”, 是“地址还不知道”。
-(define (unlinked-chains externs)
-  (for/list ([row (in-list externs)] #:unless (caddr row)) (cadr row)))
-
-(define (item-chains it)
-  (cond
-    [(control-form? it) (filter values (list (normalize-path (control-target it))))]
-    [(la-form? it) (address-expr-chains (last it))]
-    [(and (value-form? it) (not (exact-integer? (value-payload it))))
-     (address-expr-chains (value-payload it))]
-    [else '()]))
-
-(define (drop-unlinked-targets problems externs)
-  (define unlinked (unlinked-chains externs))
-  (if (null? unlinked)
-      problems
-      (filter (lambda (p)
-                (not (and (eq? (car p) 'undefined-target)
-                          (ormap (lambda (c) (member c unlinked)) (item-chains (list-ref p 3))))))
-              problems)))
-
-(define (verify target measured-segs positions problem! request!)
-  (for ([m (in-list measured-segs)])
-    (define seg (measured-segment m))
-    (for ([entry (in-list (measured-items m))])
-      (define off (cadr entry))
-      (define it (caddr entry))
-      (define s (site (segment-name seg) off it
-                      (+ (segment-start seg) off)
-                      (hash-ref (measured-origins m) off #f)
-                      positions problem! request!))
-      (check-control s)
-      (check-scratch s)
-      (check-la target s)
-      (check-value-chains s))))
-
 ;; ---------------------------------------------------------------------------
 ;; 输出
 ;; ---------------------------------------------------------------------------
 
-(define (layout->sexp origin externs measured-segs anchors requests problems)
+(define (layout->sexp origin externs measured-segs anchors problems)
   (list (list 'phase 'measured)
         (list 'origin origin)
         (cons 'externs externs)
@@ -519,7 +378,6 @@
                       (cons 'items (measured-items m))
                       (list 'size (measured-size m)))))
         (cons 'anchors anchors)
-        (cons 'requests requests)
         (cons 'problems problems)))
 
 ;; ---------------------------------------------------------------------------
@@ -531,9 +389,7 @@
   (define segs (resolve-segment-starts (parse-segments layout-input) origin))
   (define places (parse-places layout-input))
   (define problems '())
-  (define requests '())
   (define (problem! p) (set! problems (cons p problems)))
-  (define (request! p) (set! requests (cons p requests)))
 
   (validate-segments segs problem!)
   (define by-name (for/hash ([s (in-list segs)]) (values (segment-name s) s)))
@@ -554,13 +410,9 @@
   (define measured-segs (measure-all target segs code-by-seg data-by-seg problem!))
   (check-fallthrough measured-segs flows problem!)
   (define anchors (collect-anchors measured-segs))
-  (check-externs externs anchors problem!)
-  (define positions (collect-positions measured-segs anchors externs))
-  (verify target measured-segs positions problem! request!)
 
   (layout->sexp origin externs measured-segs anchors
-                (reverse requests)
-                (drop-unlinked-targets (reverse problems) externs)))
+                (reverse problems)))
 
 ;; 产物字段的便捷访问器(测试/上层用)
 (define (layout-field layout key)
@@ -581,6 +433,5 @@
   (define hit (assoc 'externs layout))
   (and hit (cdr hit)))
 (define (layout-problems layout) (layout-field layout 'problems))
-(define (layout-requests layout) (layout-field layout 'requests))
 (define (layout-segments layout) (layout-field layout 'segments))
 (define (layout-anchors layout) (layout-field layout 'anchors))

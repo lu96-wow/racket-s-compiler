@@ -48,42 +48,14 @@
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
 
-
-
-
-
-
-
-(define (label-form? x)
-  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
-
+;; 数据 item 的形状谓词（label/bytes/align/pad/fill/value/byte?）
+;; **只在 ../sexp.rkt 定义一次**：expand-data 生产、layout 消费，两边共用同一个边界。
+;; 本层不再抄第二份。
+;;
 ;; (module 名 item...) 是**结构壳**: 名字前缀/可见性是 flatten 的事, 本层不解释它,
 ;; 只是递归进去把数据展开, 壳原样留着。它的子句 (provide …) / (require …) 同理。
 (define (module-form? x) (and (form? x) (eq? (car x) 'module)))
 (define (module-clause? x) (and (form? x) (memq (car x) '(provide require))))
-
-(define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
-
-(define (bytes-form? x)
-  (and (form? x) (eq? (car x) 'bytes) (andmap byte? (cdr x))))
-
-(define (align-form? x)
-  (and (form? x) (eq? (car x) 'align) (= 2 (length x))
-       (exact-positive-integer? (cadr x))))
-
-;; (pad n): 精确插 n 个字节（填什么由段的 kind 决定，见 target.rkt 的填充策略）。
-;; 和 (align n) 的区别: align 是"位置要对齐到 n"，补多少取决于当前地址；
-;; pad 是"就插 n 字节"，与地址无关。名字归 layout，本层只透传。
-(define (pad-item? x)
-  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
-       (exact-nonnegative-integer? (cadr x))))
-
-;; (fill 字节数 b): b 重复 字节数 次。**名字归 layout**(padding 需要它), 本层只是生产者,
-;; 所以这里的谓词不导出: 一个名字只能有一个归属。
-(define (fill-item? x)
-  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
-       (exact-nonnegative-integer? (cadr x))
-       (byte? (caddr x))))
 
 ;; ---------------------------------------------------------------------------
 ;; 宽度表
@@ -133,12 +105,7 @@
 (define (value-item w v)
   (list 'value w (check-value-shape w v)))
 
-;; (value 宽度 值) 也是核心形式: 透传(幂等)。名字归 layout(它要量宽度), 这里不导出。
-;; 和 layout/forms.rkt 的 value-form? 是同一个形状; 本层只做透传, 所以不导出。
-(define (value-form? x)
-  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
-       (memq (cadr x) '(1 2 4 8))
-       (address-expr? (caddr x))))
+;; (value 宽度 值) 也是核心形式: 透传(幂等)。形状谓词在 ../sexp.rkt。
 
 ;; ---------------------------------------------------------------------------
 ;; 字符串
@@ -217,8 +184,8 @@
                                   (expand-item sub))))))]
     [(or (module-clause? it) (label-form? it)) (list it)]
     [(bytes-form? it) (list it)]
-    [(fill-item? it) (list it)]
-    [(pad-item? it) (list it)]
+    [(fill-form? it) (list it)]
+    [(pad-form? it) (list it)]
     [(value-form? it) (list it)]
     [(align-form? it) (list it)]
     [(width-form? it) (list (value-item (width-of it) (cadr it)))]

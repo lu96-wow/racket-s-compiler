@@ -77,7 +77,7 @@
       (provide f)
       (require d)
       (label main)
-      (la t0 (table))
+      (la-pcrel t0 (table))
       (ld t1 t0 0)
       (jalr ra t1 0)
       (jalr x0 ra 0)
@@ -209,28 +209,28 @@
                 #x67 #x80 #x00 #x00))  ; jalr x0, ra, 0
 
 ;; ---------------------------------------------------------------------------
-;; 完整流里的松弛: >4KB 的普通分支升成 branch-far
+;; 完整流里的显式远形式: 前端写 branch-jal, 后端只检查 + 编码
 ;; ---------------------------------------------------------------------------
 
-(define relax-src
-  '((label main) (beq (far) a0 a0)
+(define far-src
+  '((label main) (branch-jal beq a0 a0 (far))
     (label hot) (jalr x0 ra 0)
     (label far) (jalr x0 ra 0)))
-(define relax-spec
+(define far-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
               (segment (name d) (kind code) (start #x2000) (end #x2100) (align 4)))
     (place c (main) (hot))
     (place d (far))))
 
-(define relax-out
+(define far-out
   (run-flow default-flow
             (list (cons 'rich-data '())
-                  (cons 'program-items relax-src)
-                  (cons 'layout-spec relax-spec))))
+                  (cons 'program-items far-src)
+                  (cons 'layout-spec far-spec))))
 
-(check-equal? (layout-problems (flow-value relax-out 'bound-layout)) '())
-(check-not-false (memq 'branch-far (map car (layout-item-forms (flow-value relax-out 'bound-layout) 'c))))
-(check-equal? (build-size (flow-value relax-out 'build) 'c) 12)
+(check-equal? (layout-problems (flow-value far-out 'bound-layout)) '())
+(check-not-false (memq 'branch-jal (map car (layout-item-forms (flow-value far-out 'bound-layout) 'c))))
+(check-equal? (build-size (flow-value far-out 'build) 'c) 12)
 
 ;; ---------------------------------------------------------------------------
 ;; li / la 也走完整流
@@ -239,7 +239,7 @@
 (define lit-src
   '((label main)
     (li t0 #x12345678)
-    (la t1 (d t))
+    (la-pcrel t1 (d t))
     (jalr x0 ra 0)))
 (define lit-rich
   '((label d t) (utf-stringz "x")))
@@ -278,7 +278,7 @@
 
 ;; 跳过 expand-data: hole 的 item 直接当 data-items seed 进来
 (define bss-out
-  (run-flow '(flatten expand-pseudo analyze dce relax bind-labels encode)
+  (run-flow '(flatten analyze dce layout check bind-labels encode)
             (list (cons 'program-items '((label main) (jalr x0 ra 0)))
                   (cons 'data-items bss-items)
                   (cons 'layout-spec bss-spec))))

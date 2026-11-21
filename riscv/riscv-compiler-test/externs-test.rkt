@@ -4,7 +4,7 @@
 ;;; 锁住：
 ;;;   - 形状和产物里的 (link …) 一样，可以直接拿上一份编译的结果喂进来
 ;;;   - 外部名字在 flatten 放行；没有 externs 时仍然报 undefined label
-;;;   - 地址参与距离判断 -> needs-far / la-too-far 照常工作
+;;;   - 地址参与距离判断 -> check 报 out-of-range / la-too-far；形式由前端显式选择
 ;;;   - 地址未知 -> unlinked-external（没有 reloc 层，不产出镜像）
 ;;;   - 和本地 label 撞名 -> external-conflict；奇数地址 -> misaligned-external
 ;;;   - 外部符号不进 link/provides（那不是本镜像提供的东西），但能在 encode 里解析
@@ -40,16 +40,17 @@
     (place c (lib f))))
 
 (define (measured src externs)
-  (flow-value (compile src externs '(expand-data flatten analyze dce relax))
+  (flow-value (compile src externs '(expand-data flatten analyze dce layout check))
               'measured-layout))
 
 (define (problems src externs) (cdr (assoc 'problems (measured src externs))))
-(define (requests src externs) (cdr (assoc 'requests (measured src externs))))
 (define (problem-kinds src externs) (map car (problems src externs)))
-(define (request-kinds src externs) (map car (requests src externs)))
 
-(define (uses-la) '((label main) (la x10 (lib f)) (jalr x0 ra 0)))
+(define (uses-la) '((label main) (la-pcrel x10 (lib f)) (jalr x0 ra 0)))
+(define (uses-la-pcrel-li-add) '((label main) (la-pcrel-li-add x10 x5 (lib f)) (jalr x0 ra 0)))
 (define (calls)   '((label main) (beq (lib f) a0 a1) (jalr x0 ra 0)))
+(define (calls-far)
+  '((label main) (branch-auipc-jalr x5 beq a0 a1 (lib f)) (jalr x0 ra 0)))
 
 ;; ---------------------------------------------------------------------------
 ;; 形状解析
@@ -84,7 +85,7 @@
 (check-exn exn:fail?
            (lambda () (measured (uses-la) '())))
 (check-exn exn:fail?                      ; 名字写错, 外部表里没有
-           (lambda () (measured '((label main) (la x10 (lib nope)) (jalr x0 ra 0))
+           (lambda () (measured '((label main) (la-pcrel x10 (lib nope)) (jalr x0 ra 0))
                                 '((link (symbol (lib f) #x1800))))))
 
 ;; ---------------------------------------------------------------------------
@@ -92,17 +93,16 @@
 ;; ---------------------------------------------------------------------------
 
 ;; 近: 什么都不用升
-(check-equal? (requests (uses-la) '((link (symbol (lib f) #x1800)))) '())
-;; la 到 3 GiB 外: auipc+addi 够不着 -> relax 升成 (la-far …),
-;; 升级后它还缺 tmp, 所以最终留在 requests 里的是 scratch-hole(等寄存器层)
+(check-equal? (problems (uses-la) '((link (symbol (lib f) #x1800)))) '())
+;; la 到 3 GiB 外: 近形式够不着 -> check 报 la-too-far；前端必须显式写 la-pcrel-li-add
 (define far-externs '((link (symbol (lib f) #xC0000000))))
-(check-equal? (request-kinds (uses-la) far-externs) '(scratch-hole))
-;; 升级后的 item 长这样: (la-far rd 链), 缺的 tmp 就是那个空槽
-(check-equal? (cadddr (car (requests (uses-la) far-externs)))
-              '(la-far x10 (lib f)))
-;; 条件分支到 2 MiB 外: 4 字节的 branch 够不着 -> 先升 branch-far, 再升 indirect
-(check-equal? (request-kinds (calls) '((link (symbol (lib f) #x300000))))
-              '(scratch-hole))
+(check-equal? (problem-kinds (uses-la) far-externs) '(la-too-far))
+(check-equal? (problems (uses-la-pcrel-li-add) far-externs) '())
+;; 条件分支到 3 MiB 外: 4 字节 branch 够不着 -> check 报 out-of-range
+(check-equal? (problem-kinds (calls) '((link (symbol (lib f) #x300000))))
+              '(out-of-range))
+;; 前端显式选 branch-auipc-jalr + scratch: check 通过
+(check-equal? (problems (calls-far) '((link (symbol (lib f) #x300000)))) '())
 
 ;; ---------------------------------------------------------------------------
 ;; 错误情形
@@ -151,7 +151,7 @@
 (define lib-out
   (compile '((label lib f) (jalr x0 ra 0))
            '()
-           '(expand-data flatten analyze dce relax bind-labels encode)
+           '(expand-data flatten analyze dce layout check bind-labels encode)
            lib-spec))
 (define lib-build (flow-value lib-out 'build))
 (define lib-link (findf (lambda (x) (eq? (car x) 'link)) (cdr lib-build)))

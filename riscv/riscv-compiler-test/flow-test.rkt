@@ -17,13 +17,13 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze bind-labels dce encode expand-data expand-pseudo flatten layout relax))
+              '(analyze bind-labels check dce encode expand-data flatten layout))
 
 (check-equal? (providers-of 'data-items) '(expand-data flatten))
-(check-equal? (providers-of 'program-items) '(expand-pseudo flatten))
+(check-equal? (providers-of 'program-items) '(flatten))
 (check-equal? (providers-of 'names) '(flatten))
 (check-equal? (providers-of 'program) '(analyze dce))
-(check-equal? (providers-of 'measured-layout) '(layout relax))
+(check-equal? (providers-of 'measured-layout) '(check layout))
 (check-equal? (providers-of 'bound-layout) '(bind-labels))
 (check-equal? (providers-of 'build) '(encode))
 (check-equal? (providers-of 'nope) '())
@@ -34,19 +34,13 @@
 (check-equal? (stage-requires (hash-ref stage-table 'encode)) '(bound-layout))
 (check-equal? (stage-provides (hash-ref stage-table 'encode)) '(build))
 
-;; layout / relax 是平层: 同进同出
-(check-equal? (stage-requires (hash-ref stage-table 'layout))
-              (stage-requires (hash-ref stage-table 'relax)))
-(check-equal? (stage-provides (hash-ref stage-table 'layout))
-              (stage-provides (hash-ref stage-table 'relax)))
-
 ;; stage 自带说明
 (for ([n (in-list (stage-names))])
   (check-true (string? (stage-doc (hash-ref stage-table n)))
               (format "doc for ~a" n)))
 
 (check-equal? default-flow
-              '(expand-data flatten analyze dce relax bind-labels encode))
+              '(expand-data flatten analyze dce layout check bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 简单跑一趟
@@ -93,11 +87,11 @@
 ;; 选择器 / 层组 / 单层
 ;; ---------------------------------------------------------------------------
 
-(check-equal? (group-names) '(alias all backend frontend ir))
+(check-equal? (group-names) '(all backend frontend ir))
 (check-equal? (hash-ref stage-groups 'frontend)
               '(expand-data flatten))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
-(check-equal? (hash-ref stage-groups 'backend) '(relax bind-labels encode))
+(check-equal? (hash-ref stage-groups 'backend) '(layout check bind-labels encode))
 (check-equal? (hash-ref stage-groups 'all) default-flow)
 
 (check-equal? (select-stages 'analyze) '(analyze))
@@ -159,25 +153,6 @@
              (lambda () (run-flow '(encode) '())))
 (check-error "未知层名"
              (lambda () (run-flow '(no-such-layer) '())))
-;; 伪指令展开必须发生在 flatten 之后: expand-pseudo 不进入 module 壳
-(define module-src
-  '((module m (label main) (move a0 a1) (jalr x0 ra 0))))
-(define module-spec
-  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16)))
-    (place c (m main))))
-(define module-seeds
-  (list (cons 'program-items module-src)
-        (cons 'data-items '())
-        (cons 'layout-spec module-spec)))
-(define (wrong-pseudo-order)
-  (run-flow '(expand-pseudo flatten analyze dce relax bind-labels encode) module-seeds))
-(define (right-pseudo-order)
-  (run-flow '(flatten expand-pseudo analyze dce relax bind-labels encode) module-seeds))
-(check-error "expand-pseudo 在 flatten 之前: move 留在模块里"
-             wrong-pseudo-order)
-(check-equal? (build-bytes (flow-value (right-pseudo-order) 'build) 'c)
-              '(#x33 #x85 #x05 #x00 #x67 #x80 #x00 #x00))
-
 ;; 同名层可以写两次; 后者覆盖前者, 但值相同
 (check-equal? (flow-value (run-flow '(expand-data expand-data)
                                      (list (cons 'rich-data '((b8 1)))))
@@ -218,34 +193,35 @@
 (check-equal? (build-size (flow-value without-dce 'build) 'c) 16)
 
 ;; ---------------------------------------------------------------------------
-;; 平层: layout 不松弛, relax 松弛; encode 对问题说 "不"
+;; check: 短形式超范围拒绝; 显式远形式通过; 不存在自动升级
 ;; ---------------------------------------------------------------------------
-
-(define far-src
-  '((label main) (beq (far) a0 a0)
-    (label hot) (jalr x0 ra 0)
-    (label far) (jalr x0 ra 0)))
 
 (define far-spec
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
-              (segment (name d) (kind code) (start #x2000) (end #x2100) (align 16)))
+              (segment (name d) (kind code) (start #x80000) (end #x801000) (align 16)))
     (place c (main) (hot))
     (place d (far))))
 
-(define far-seeds
+(define (far-seeds src)
   (list (cons 'rich-data '())
-        (cons 'program-items far-src)
+        (cons 'program-items src)
         (cons 'layout-spec far-spec)))
 
-;; 只 layout: 留下 needs-far, encode 拒绝
-(check-error "layout -> encode 有 needs-far"
+;; 普通 short form: check 报 out-of-range, encode 拒绝
+(check-error "短形式超范围, 不自动升级"
              (lambda ()
-               (run-flow '(expand-data flatten expand-pseudo analyze dce layout bind-labels encode)
-                         far-seeds)))
+               (run-flow default-flow
+                         (far-seeds '((label main) (beq (far) a0 a0)
+                                      (label hot) (jalr x0 ra 0)
+                                      (label far) (jalr x0 ra 0))))))
 
-;; relax: 升成 branch-far, 能编码
-(define relaxed (run-flow default-flow far-seeds))
-(check-true (pair? (build-bytes (flow-value relaxed 'build) 'c)))
+;; 显式远形式: 能编码
+(define explicit-far
+  (run-flow default-flow
+            (far-seeds '((label main) (branch-jal beq a0 a0 (far))
+                         (label hot) (jalr x0 ra 0)
+                         (label far) (jalr x0 ra 0)))))
+(check-equal? (build-size (flow-value explicit-far 'build) 'c) 12)
 
 ;; ---------------------------------------------------------------------------
 ;; flow-value

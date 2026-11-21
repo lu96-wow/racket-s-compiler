@@ -4,10 +4,10 @@
 ;;; 构建流: 用一张 stage 表 + 一个名字列表把各层串起来。
 ;;;
 ;;;   (run-flow target
-;;;             (list 'expand-data 'flatten 'analyze 'dce 'relax 'bind-labels 'encode)
+;;;             (list 'expand-data 'flatten 'analyze 'dce 'layout 'check 'bind-labels 'encode)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
-;;;   便利别名插 'expand-pseudo；默认流只跑 native。
+;;;   输入是 canonical native；没有可选别名层。
 ;;;
 ;;; 每个 stage 声明两件事:
 ;;;   requires : 跑之前"在途值"里必须有哪些名字
@@ -16,7 +16,7 @@
 ;;; 于是:
 ;;;   * 可选   = 不写进列表
 ;;;   * 顺序   = 列表顺序
-;;;   * 平层   = 两个 stage 的 requires/provides 相同（例如 layout 与 relax），
+;;;   * 平层   = 两个 stage 的 provides 相同（例如 layout 与 check 都产 measured-layout），
 ;;;              写哪个、写几次都由列表决定
 ;;;   * 依赖   = 运行到某步时按 requires 检查，缺了就报错并给出"谁能提供"
 ;;;   * target = run-flow 的显式参数，stage run 接收 (target in)
@@ -26,11 +26,10 @@
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../externs.rkt" extern-names extern-rows)
-         (only-in "../expand-pseudo/rewrite.rkt" rewrite-program)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
-         (only-in "../relax/relax.rkt" relax)
+         (only-in "../check/check.rkt" check-layout)
          (only-in "../bind-labels/bind.rkt" bind-labels)
          (only-in "../encode/encode.rkt" encode-layout))
 
@@ -56,8 +55,8 @@
 ;;   names          flatten 建的名字表（链 -> 位置）
 ;;   exports        flatten 记下的导出集合（绝对链列表，或 'all）
 ;;   program        (struct program blocks flows)
-;;   measured-layout 度量产物（segments + anchors + requests + problems）
-;;   bound-layout    绑定产物（segments + anchors + symbols + requests + problems）
+;;   measured-layout 度量/检查产物（segments + anchors + problems）
+;;   bound-layout    绑定产物（segments + anchors + symbols + problems）
 ;;   build           最终产物 (build (link …) (segment …) …)
 ;;
 ;;   外部输入（seed）：rich-data / program-items / data-items / layout-spec
@@ -93,11 +92,6 @@
                   'exports exports))
           "模块展平 + 链式查表（程序和数据共享一张名字表）；顺带记下导出集合")
 
-   'expand-pseudo
-   (stage 'expand-pseudo '(program-items) '(program-items)
-          (lambda (_target in) (hash 'program-items (rewrite-program (hash-ref in 'program-items))))
-          "可选: 便利别名 -> native 指令（按表替换）")
-
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
           (lambda (_target in)
@@ -120,19 +114,14 @@
                                   (hash-ref in 'data-items)
                                   (hash-ref in 'layout-spec)
                                   (extern-rows (hash-ref in 'externs '())))))
-          "布局度量: 放置 + 尺寸 + anchors + requests/problems（无绝对地址）")
+          "布局度量: 放置 + 尺寸 + anchors/problems（无绝对地址，不选形式）")
 
-   'relax
-   (stage 'relax '(program data-items layout-spec (optional externs))
-          '(measured-layout)
+   'check
+   (stage 'check '(measured-layout) '(measured-layout)
           (lambda (target in)
             (hash 'measured-layout
-                  (relax target
-                         (hash-ref in 'program)
-                         (hash-ref in 'data-items)
-                         (hash-ref in 'layout-spec)
-                         #:externs (extern-rows (hash-ref in 'externs '())))))
-          "分支松弛（内部反复跑 layout，直到没有 needs-far 可销）")
+                  (check-layout target (hash-ref in 'measured-layout))))
+          "显式形式检查: 目标/范围/scratch/近 la；只报 problems，不改尺寸")
 
    'bind-labels
    (stage 'bind-labels '(measured-layout (optional exports)) '(bound-layout)
@@ -146,7 +135,7 @@
    'encode
    (stage 'encode '(bound-layout) '(build)
           (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'bound-layout))))
-          "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")))
+          "编码: bound-layout -> (build …)；有 problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -160,9 +149,9 @@
           (stage-name st))
         symbol<?))
 
-;; 默认流: native only。便利别名是可选 stage。
+;; 默认流: canonical native。
 (define default-flow
-  '(expand-data flatten analyze dce relax bind-labels encode))
+  '(expand-data flatten analyze dce layout check bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 选择器: 层名 / 层组 / 任意片段
@@ -173,9 +162,8 @@
 (define stage-groups
   (hash
    'frontend '(expand-data flatten)
-   'alias    '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
-   'backend  '(relax bind-labels encode) ; layout 在 relax 内部跑
+   'backend  '(layout check bind-labels encode)
    'all      default-flow))
 
 (define (group-names)

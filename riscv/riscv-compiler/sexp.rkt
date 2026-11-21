@@ -4,8 +4,10 @@
 ;;; 跨层共享的 s-expression 工具。**这里没有任何层语义**:
 ;;; 只有"什么算一个 form / 名字 / 链"和"把旧壳剥成 item 列表"。
 ;;;
-;;; 为什么放在顶层: 这几条形状是**同一个契约**, 被 5 个层各抄过一份。
+;;; 为什么放在顶层: 这几条形状是**同一个契约**, 以前被 5 个层各抄过一份。
 ;;; 拷贝的坏处不是行数, 是分叉(有人给 name? 加一类, 别人没加)。
+;;; 数据 item 的谓词(label/bytes/align/pad/fill/value)也已经收在这里:
+;;; expand-data 生产、layout 消费，两边用同一个边界。
 ;;;
 ;;; 各层可以原样 re-provide 这里的绑定, 于是
 ;;;   (require "analyze/analyze.rkt" "layout/layout.rkt")
@@ -15,6 +17,14 @@
          name?
          path?
          normalize-path
+         ;; 数据 item 的形状（expand-data 生产、layout 消费；只在这里定义一次）
+         byte?
+         label-form?
+         bytes-form?
+         align-form?
+         pad-form?
+         fill-form?
+         value-form?
          as-items
          arith-head?
          arith-form?
@@ -41,7 +51,7 @@
 ;; 地址表达式（"值推后"）: 只有三种，就是一个很小的算术语言
 ;;
 ;;   整数                         值就是它
-;;   (链)                         链的地址（裸链 = 取地址，和 (la rd (f)) 一致）
+;;   (链)                         链的地址（裸链 = 取地址，和 (la-pcrel rd (f)) 一致）
 ;;   (+ 表达式 表达式 ...)         求和（≥2 个操作数）
 ;;   (- 表达式 表达式 ...)         第一个减后面所有（≥2 个）
 ;;
@@ -53,7 +63,7 @@
 ;;   (+ (- (d end) (d start)) 4)  差 + 4
 ;;
 ;; 求值要等 label 的地址定下来:
-;;   layout/relax 只有临时位置（anchors + 段 start）;
+;;   layout 只有临时位置（anchors + 段 start）;
 ;;   bind-labels 之后才有最终符号表（symbols）。
 ;; 所以求值本身放在这里，由调用方给出 resolver:
 ;;   measured 相传 anchor resolver，bound 相传 symbol resolver。
@@ -75,6 +85,43 @@
     [else #f]))
 
 ;; 表达式里出现的所有链（去重，保留首次出现的顺序）
+;; ---------------------------------------------------------------------------
+;; 数据 item 的形状
+;;
+;; 这些是 expand-data（生产）和 layout（消费）**共用的词汇**。
+;; 以前两边各抄一份：名字相同、边界不同，改动只改一边就会分叉。
+;; 现在只在这里定义；各层 re-provide 或直接 require。
+;; ---------------------------------------------------------------------------
+
+(define (byte? x) (and (exact-integer? x) (<= 0 x 255)))
+
+(define (label-form? x)
+  (and (form? x) (eq? (car x) 'label) (path? (cdr x))))
+
+(define (bytes-form? x)
+  (and (form? x) (eq? (car x) 'bytes) (andmap byte? (cdr x))))
+
+(define (align-form? x)
+  (and (form? x) (eq? (car x) 'align) (= 2 (length x))
+       (exact-positive-integer? (cadr x))))
+
+;; (pad n): 精确插 n 个字节，与当前地址无关（区别于 align：补多少取决于地址）。
+(define (pad-form? x)
+  (and (form? x) (eq? (car x) 'pad) (= 2 (length x))
+       (exact-nonnegative-integer? (cadr x))))
+
+;; (fill 字节数 b): b 重复 字节数 次。
+(define (fill-form? x)
+  (and (form? x) (eq? (car x) 'fill) (= 3 (length x))
+       (exact-nonnegative-integer? (cadr x))
+       (byte? (caddr x))))
+
+;; (value 宽度 值)：宽度 ∈ {1,2,4,8}，值是整数或地址表达式（值推后）。
+(define (value-form? x)
+  (and (form? x) (eq? (car x) 'value) (= 3 (length x))
+       (memq (cadr x) '(1 2 4 8))
+       (address-expr? (caddr x))))
+
 (define (address-expr-chains x)
   (remove-duplicates
    (cond
