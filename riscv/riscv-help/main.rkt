@@ -13,12 +13,18 @@
          "li.rkt"
          "la.rkt"
          "jump.rkt"
-         "branch.rkt")
+         "branch.rkt"
+         "size.rkt")
 
 (provide
  ;; 常量 / 绝对地址
  li
  li-size
+
+ ;; 指令长度
+ instruction-size
+ instructions-size
+ la-pcrel-li-add-size
 
  ;; PC 相对地址
  load-pcrel

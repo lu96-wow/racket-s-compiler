@@ -22,6 +22,7 @@
 - 跳转：`jump-*`
 - 条件分支：`branch-*`
 - 范围判别、hi/lo 拆分、寄存器名和 scratch 规则
+- 指令长度：`instruction-size` / `instructions-size`
 
 当前不覆盖：
 
@@ -49,8 +50,9 @@
 | `la.rkt` | PC 相对地址、绝对地址、GOT 占位、gp/frame 相对地址 |
 | `jump.rkt` | 跳转展开 |
 | `branch.rkt` | 条件分支展开 |
+| `size.rkt` | 统一的指令长度入口：`instruction-size` / `instructions-size` |
 | `main.rkt` | 对外唯一入口，只导出稳定公共 API |
-| `test/` | `li`、`la`、`main` 公共 API 的回归测试 |
+| `test/` | `li`、`la`、`main`、`size` 公共 API 的回归测试 |
 
 不要在 `li.rkt` / `la.rkt` 里重新维护寄存器表。
 寄存器唯一来源是 `riscv-asm/base/register.rkt`。
@@ -78,9 +80,36 @@
 约定：
 
 - `mnemonic` 是 symbol
-- `c.*` 视为 2 字节，其余视为 4 字节
+- `c.*` 视为 2 字节，其余 native 视为 4 字节
+- 显式形式 `li` / `la-pcrel` / `la-pcrel-li-add` / `branch-jal` /
+  `branch-auipc-jalr` / `jump-auipc-jalr` 统一由 `size.rkt` 计算
 - 当前 `li` / `load-pcrel` 生成的都是 4 字节非压缩指令
 - 没有 label / reloc 操作数
+
+### 3.1.1 指令长度
+
+统一入口：
+
+```racket
+(instruction-size insn #:word-size 'rv64)  ; 单条
+(instructions-size insns #:word-size 'rv64) ; 多条求和
+```
+
+例如：
+
+```racket
+(instruction-size '(add a0 a1 a2))                    ; 4
+(instruction-size '(c.addi a0 1))                     ; 2
+(instruction-size '(li a0 2048))                      ; 8
+(instruction-size '(la-pcrel a0 (x)))                 ; 8
+(instruction-size '(la-pcrel-li-add a0 t0 (x)))       ; 40 (rv64)
+(instruction-size '(branch-jal beq a0 a1 (x)))        ; 8
+(instruction-size '(branch-auipc-jalr t0 beq a0 a1 (x))) ; 12
+(instruction-size '(jump-auipc-jalr ra ra (x)))       ; 8
+```
+
+`la-pcrel-li-add` 返回固定上界：rv32 16 / rv64 40。
+编译后端和外部逻辑都应使用这个模块，不再各自维护尺寸表。
 
 ### 3.2 寄存器
 

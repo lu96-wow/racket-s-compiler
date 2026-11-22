@@ -7,15 +7,21 @@
 ## 流水线
 
 ```
-rich-data ─→ expand-data ─┐
-                          ↓
-program-items ─┬─→ flatten ─→ analyze ─→ dce ─→ layout ─→ check ─→ bind-labels ─→ encode
-data-items ────┘                                                          │        │        │            │
-                                                                          ↓        ↓        ↓            ↓
-                                                                       program  measured checked       bound        build
+rich-data + program-items
+  -> expand-struct
+  -> expand-data
+  -> flatten
+  -> analyze
+  -> dce
+  -> layout
+  -> check
+  -> bind-labels
+  -> encode
+  -> build
 ```
 
 - 输入是 canonical native；没有可选别名层。
+- `expand-struct` 是前端布局展开层：struct 定义、静态数据、字段访问。
 - `layout` 只度量位置；`check` 检查显式形式，不改尺寸。
 - `measured-layout` 只有 `anchors`，没有绝对地址。
 - `bind-labels` 把 `anchors` 落到 `symbols`，产出可编码的 `bound-layout`。
@@ -33,6 +39,7 @@ data-items ────┘                                                      
 
 | stage | 文件 | 作用 |
 | --- | --- | --- |
+| `expand-struct` | `struct/struct.rkt` | struct 布局 + 静态数据 + 字段访问展开 |
 | `expand-data` | `expand-data/expand.rkt` | rich 数据 → 核心数据 item |
 | `flatten` | `flatten/flatten.rkt` | module / provide / require 的名字解析 |
 | `analyze` | `analyze/analyze.rkt` | 切块 + 流 + root；操作数位置按 native |
@@ -46,6 +53,8 @@ data-items ────┘                                                      
 每层细节：
 
 - [`SYNTAX.md`](SYNTAX.md)
+- [`STRUCT.md`](STRUCT.md)
+- [`struct/DESIGN.md`](struct/DESIGN.md)
 - [`expand-data/DESIGN.md`](expand-data/DESIGN.md)
 - [`flatten/DESIGN.md`](flatten/DESIGN.md)
 - [`analyze/DESIGN.md`](analyze/DESIGN.md)
@@ -70,7 +79,7 @@ data-items ────┘                                                      
 | 包 | 用途 |
 | --- | --- |
 | `../riscv-asm` | 指令编码表与位域检查 |
-| `../riscv-help` | `li` / `la` / 远分支 / 远跳转展开与判据 |
+| `../riscv-help` | `li` / `la` / 显式分支跳转展开、判据、`instruction-size` |
 
 ## 文档约定
 

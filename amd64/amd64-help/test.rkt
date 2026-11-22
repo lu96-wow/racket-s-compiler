@@ -10,6 +10,14 @@
 (check-true (positive? (li-size 'rax 42)))
 (check-true (> (li-size 'rax '(data)) 0))
 
+;; Unified instruction length entry (whole s-expression -> bytes).
+(check-equal? (instruction-size '(mov rax rbx)) 3)
+(check-equal? (instruction-size '(jmp-short (done))) 2)
+(check-equal? (instruction-size '(jmp-near (done))) 5)
+(check-equal? (instruction-size '(jcc-near e (done))) 6)
+(check-equal? (instructions-size '((ret) (mov rax rbx))) 4)
+(check-exn exn:fail? (lambda () (instruction-size 'mov)))
+
 (check-equal? (canonical-cc 'jz) 'e)
 (check-equal? (canonical-cc 'jnz) 'ne)
 (check-equal? (canonical-cc 'jnc) 'ae)

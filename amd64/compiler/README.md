@@ -13,7 +13,7 @@ rich data
   -> expand-pseudo
   -> analyze
   -> dce
-  -> relax          ; 内部反复驱动 layout
+  -> layout
   -> bind-labels
   -> encode
 ```
@@ -37,8 +37,7 @@ compiler/
   expand-pseudo/      伪指令 -> 真实 form
   analyze/            基本块 + flows
   dce/                死代码消除
-  layout/             放置 + 度量 + anchors/requests/problems
-  relax/              short -> near
+  layout/             放置 + 度量 + anchors/problems
   bind-labels/        anchors -> symbols + value 宽度检查
   encode/             bound-layout -> build
   flow/               stage 表 + 选择器
@@ -51,7 +50,7 @@ s-expression 形式见 [`../SYNTAX.md`](../SYNTAX.md)。
 ## 依赖
 
 - `../amd64-asm/`：指令、寄存器、target 事实
-- `../amd64-help/`：`li` / `la` / branch / jump 展开与范围判断
+- `../amd64-help/`：`li` / `la` / branch / jump 展开、指令长度与范围判断
 - `../loko-compatibility/`：**可选**前端，不在 core flow 依赖里
 
 ## 测试
@@ -62,7 +61,6 @@ racket amd64/compiler/flatten/test.rkt
 racket amd64/compiler/expand-pseudo/test.rkt
 racket amd64/compiler/analyze/test.rkt
 racket amd64/compiler/layout/test.rkt
-racket amd64/compiler/relax/test.rkt
 racket amd64/compiler/test/end-to-end.rkt
 racket amd64/compiler/test/flow-test.rkt
 ```

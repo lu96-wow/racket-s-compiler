@@ -15,6 +15,7 @@
     "layout-test.rkt"
     "bind-labels-test.rkt"
     "check-test.rkt"
+    "struct-test.rkt"
     "la-pcrel-li-add-test.rkt"
     "encode-test.rkt"
     "link-file-test.rkt"

@@ -256,18 +256,17 @@ lower 目前还缺 spill 和 frame allocation；详细缺口见
 | `loko-compat` | `loko-source` | `program-items` `data-items` `loko-ir` |
 | `loko-lower` | `loko-ir` | `loko-ir` |
 | `loko-image` | `loko-ir` | `program-items` `data-items` `layout-spec` |
-| `expand-pseudo-near` | `program-items` | `program-items`（near-only 验证变体） |
 | `loko-elf` | `build` `bound-layout` `loko-ir` | `image` |
 
 ### 9.4 层组
 
 | 组名 | 展开 |
 | --- | --- |
-| `loko` | `loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode` |
-| `loko-manual` | `loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode` |
-| `loko-near` | `loko-compat loko-lower loko-image expand-pseudo-near analyze dce layout bind-labels encode` |
-| `elf` | `loko-compat loko-lower loko-image expand-pseudo analyze dce relax bind-labels encode loko-elf` |
-| `elf-manual` | `loko-compat loko-lower expand-pseudo analyze dce relax bind-labels encode loko-elf` |
+| `loko` | `loko-compat loko-lower loko-image expand-pseudo analyze dce layout bind-labels encode` |
+| `loko-manual` | `loko-compat loko-lower expand-pseudo analyze dce layout bind-labels encode` |
+| `loko-near` | 历史别名，与 `loko` 相同 |
+| `elf` | `loko-compat loko-lower loko-image expand-pseudo analyze dce layout bind-labels encode loko-elf` |
+| `elf-manual` | `loko-compat loko-lower expand-pseudo analyze dce layout bind-labels encode loko-elf` |
 
 ### 9.5 边界
 

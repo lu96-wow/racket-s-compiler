@@ -17,21 +17,22 @@
 ;; ---------------------------------------------------------------------------
 
 (check-equal? (stage-names)
-              '(analyze bind-labels check dce encode expand-data flatten layout))
+              '(analyze bind-labels check dce encode expand-data expand-struct flatten layout))
 
 (check-equal? (providers-of 'data-items) '(expand-data flatten))
-(check-equal? (providers-of 'program-items) '(flatten))
+(check-equal? (providers-of 'program-items) '(expand-struct flatten))
 (check-equal? (providers-of 'names) '(flatten))
 (check-equal? (providers-of 'program) '(analyze dce))
 (check-equal? (providers-of 'measured-layout) '(check layout))
 (check-equal? (providers-of 'bound-layout) '(bind-labels))
+(check-equal? (providers-of 'structs) '(expand-struct))
 (check-equal? (providers-of 'build) '(encode))
 (check-equal? (providers-of 'nope) '())
 
 (check-equal? (stage-requires (hash-ref stage-table 'analyze))
               '(program-items data-items))
 (check-equal? (stage-provides (hash-ref stage-table 'analyze)) '(program))
-(check-equal? (stage-requires (hash-ref stage-table 'encode)) '(bound-layout))
+(check-equal? (stage-requires (hash-ref stage-table 'encode)) '(bound-layout (optional structs)))
 (check-equal? (stage-provides (hash-ref stage-table 'encode)) '(build))
 
 ;; stage 自带说明
@@ -40,7 +41,7 @@
               (format "doc for ~a" n)))
 
 (check-equal? default-flow
-              '(expand-data flatten analyze dce layout check bind-labels encode))
+              '(expand-struct expand-data flatten analyze dce layout check bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 简单跑一趟
@@ -89,13 +90,13 @@
 
 (check-equal? (group-names) '(all backend frontend ir))
 (check-equal? (hash-ref stage-groups 'frontend)
-              '(expand-data flatten))
+              '(expand-struct expand-data flatten))
 (check-equal? (hash-ref stage-groups 'ir) '(analyze dce))
 (check-equal? (hash-ref stage-groups 'backend) '(layout check bind-labels encode))
 (check-equal? (hash-ref stage-groups 'all) default-flow)
 
 (check-equal? (select-stages 'analyze) '(analyze))
-(check-equal? (select-stages 'frontend) '(expand-data flatten))
+(check-equal? (select-stages 'frontend) '(expand-struct expand-data flatten))
 (check-equal? (select-stages '(frontend ir backend)) default-flow)
 (check-equal? (select-stages 'all) default-flow)
 (check-equal? (select-stages '((expand-data flatten) (analyze dce)))

@@ -10,7 +10,7 @@
 
 (require "../amd64-asm/sexp.rkt"
          "../amd64-asm/target.rkt"
-         "../amd64-asm/insn.rkt")
+         "size.rkt")
 
 (provide li->form
          li-size)
@@ -30,5 +30,4 @@
             value)]))
 
 (define (li-size dst value #:target [target target-amd64])
-  (define form (li->form dst value))
-  (instruction-size target (car form) (cdr form)))
+  (instruction-size (li->form dst value) #:target target))

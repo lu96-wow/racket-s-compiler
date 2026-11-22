@@ -7,7 +7,7 @@
 
 (require "../amd64-asm/sexp.rkt"
          "../amd64-asm/target.rkt"
-         "../amd64-asm/insn.rkt"
+         "size.rkt"
          "li.rkt")
 
 (provide la-pcrel
@@ -36,5 +36,4 @@
   (li->form dst value))
 
 (define (la-size dst value #:target [target target-amd64])
-  (define form (la-abs dst value))
-  (instruction-size target (car form) (cdr form)))
+  (instruction-size (la-abs dst value) #:target target))

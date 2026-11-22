@@ -495,7 +495,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; (jmpf (far 选择子 目标)) -> (jmp-far 选择子 目标): 偏移是绝对地址表达式,
-;; 尺寸固定 7 字节(EA + imm32 + sel16), 不参与 relax。
+;; 尺寸固定 7 字节(EA + imm32 + sel16)。
 (define far-jump
   (translate-loko-source
    '(loko-source

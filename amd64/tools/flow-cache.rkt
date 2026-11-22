@@ -18,7 +18,7 @@
 ;;;
 ;;;   1. format-version —— 这个文件格式本身变了
 ;;;   2. stage-version  —— 流水线语义变了（改编译器就得 +1，见下面注释）
-;;;   3. flow           —— 选了哪些层（loko-near 和 loko 的 build 不一样）
+;;;   3. flow           —— 选了哪些层（不同 selector 的产物可能不一样）
 ;;;   4. dump           —— 输入 dump 的绝对路径 + 大小 + mtime
 ;;;   5. 源文件指纹     —— compiler/ 等目录里 *.rkt 的 (最大 mtime, 个数)
 ;;;

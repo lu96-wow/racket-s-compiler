@@ -50,7 +50,7 @@
 (write-text! (build-path tmp "junk.rktd") "not a cache")
 (check-false (read-flow-cache (build-path tmp "junk.rktd")) "坏文件当成没有缓存")
 
-;; flow 不同：loko-near 和 loko 的 build 不是一回事
+;; flow 不同：不同 selector 的产物不能共用缓存
 (check-false (fresh? cache '(loko)) "选的是另一组层")
 (check-true (string-contains? (fresh-why cache '(loko)) "flow"))
 

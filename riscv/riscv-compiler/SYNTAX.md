@@ -320,6 +320,42 @@ native 分支的目标**不固定在最后**：
 整数的值域按宽度检查：`v ∈ [-2^(8w-1), 2^(8w))`，按补码取低 `8w` 位。
 字符串按 UTF-8 编码；`utf-stringz` 额外补一个 0 字节。
 
+### 5.3 struct
+
+`struct` 的名字和 label 一样是链，例如 `(point)` / `(m point)`；单元素链可简写成 symbol。
+`struct` 是前端布局描述，展开成 `align` / `pad` / `value` 和 native 访问指令。
+完整说明见 [`STRUCT.md`](STRUCT.md)。
+
+```scheme
+(struct (point)
+  (x b32)
+  (y b32))
+
+(label d p)
+(struct-data (point)
+  (x 1)
+  (y 2))
+
+(sizeof point)
+(offsetof point y)
+
+(struct-load t0 t1 point y)
+(struct-store t1 point y t0)
+```
+
+最终 `build` 里会带：
+
+```scheme
+(structs
+  (struct-def
+    (name (point))
+    (size 8)
+    (align 4)
+    (fields
+      (field (name x) (type b32) (offset 0) (size 4) (align 4))
+      (field (name y) (type b32) (offset 4) (size 4) (align 4)))))
+```
+
 ---
 
 ## 6. 模块、provide、require

@@ -34,7 +34,7 @@
                 (segment (name data) (kind data) (start #x300000) (size 8)
                          (bytes #"\x34\x12\x00\x00\x00\x00\x00\x00"))))
 
-;; short branch promoted by relax when the target is out of rel8 range
+;; pseudo jcc expands to near by default; out-of-rel8 distance is expected
 (define spec2
   '((segments
      (segment (name text) (kind code) (start #x200000) (end #x201000) (align 16)))
@@ -53,6 +53,21 @@
 (define text2 (cadr build2))
 (check-equal? (cadr (assq 'size (cdr text2))) 207)
 (check-equal? (subbytes (cadr (assq 'bytes (cdr text2))) 0 2) (bytes #x0f #x84))
+
+;; explicit short forms are allowed only when they actually fit
+(define bad-short
+  (with-handlers ([exn:fail? (lambda (e) 'rejected)])
+    (compile
+     target-amd64
+     (list (cons 'rich-data '())
+           (cons 'program-items
+                 '((label text)
+                   (jcc-short e (done))
+                   (pad 200)
+                   (label done)
+                   (ret)))
+           (cons 'layout-spec spec2)))))
+(check-eq? bad-short 'rejected)
 
 ;; li with a label expands to RIP-relative lea
 (define build3

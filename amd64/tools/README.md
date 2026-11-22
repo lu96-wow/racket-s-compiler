@@ -88,13 +88,12 @@ vector（Racket 的 reader 把 `#[` 当 `#(`）、`(` 和 `[` 混着写是错误
 ## 3. 流水线 + 产物缓存：`tools/loko-flow.rkt`、`tools/flow-cache.rkt`
 
 ```sh
-# pc / 裸机：loko-near = 全 near 分支 + 只 layout 一次（不跑 relax）。
-# 这个 near 变体层 expand-pseudo-near 注册在 loko-compatibility/flow.rkt 里：
-# 它是这条验证流的策略，核心流只有 expand-pseudo 一个。
+# pc / 裸机：默认流就是 near-only（只 layout 一次，不做分支松弛）。
+# loko-near 是历史别名，和 loko 等价，保留给旧脚本。
 racket tools/loko-flow.rkt /tmp/pc.sexp /tmp/pcflow loko-near
 # -> /tmp/pcflow/encode.rktd    （encode 的 build：各段字节）
 
-# linux / ELF（elf：short 起步 + relax + writer）
+# linux / ELF（elf：near-only + writer）
 racket tools/loko-flow.rkt /tmp/prog.sexp /tmp/elfcache elf
 # -> /tmp/elfcache/loko-elf.rktd（loko-elf 的 image：ELF 字节 + 入口）
 
@@ -121,7 +120,7 @@ bind 76 MB→24 s、lower 66 MB→22 s、image 57 MB→19 s……）；而流水
 | --- | --- |
 | 缓存文件格式 | `format-version` 整数 |
 | 流水线语义 | `stage-version` 整数（改编译器就 +1） |
-| 选了哪些层 | `loko-near` 和 `loko` 的 `build` 不是一回事，必须进 key |
+| 选了哪些层 | 不同 selector 可能产出不同结果，必须进 key |
 | 输入 dump | 绝对路径 + 大小 + mtime |
 | 流水线源码 | `compiler/` 等目录里 `*.rkt` 的 (最大 mtime, 个数) |
 
@@ -298,7 +297,7 @@ qemu-system-x86_64 -enable-kvm -m 2048 -M q35 -vga std -display none \
 | 镜像 | ELF（我们生成头/段表） | 平铺（`write-flat-image`） |
 | 结果 | `/tmp/prog.elf` 直接跑 | 装进 `loko-hdd.img` 里由 syslinux 的 `mboot.c32` 加载 |
 
-### 耗时（1.6M item 的 pc-repl 镜像，`loko-near`）
+### 耗时（1.6M item 的 pc-repl 镜像，near-only）
 
 早期这条流水线要 **~50 分钟**，现在**冷跑 ~24 秒、命中缓存 1.7 秒**。都是同一
 类 bug：把"对所有元素扫一遍"的操作放进逐 item 循环里。
@@ -335,7 +334,7 @@ Loko 的 `syscall-hlt` 是 `(sti) (hlt) (cli) (xor eax eax) (swapgs) (sysretq)`�
 
 ## 7. 注意
 
-- `loko-near` 只用于正确性验证，不替代发布路径的 short+relax。
+- 不要指望后端把 short 自动升成 near：现在默认就是 near，short 只能显式写。
 - dump 由 Loko 的 `sexp` / `sexp-pc` target 产出（源码在 Loko 仓库
   `arch/amd64/sexp-asm.sls`）；`sexp-read.rkt` 只有 `loko-compatibility` 用，
   `compiler/` 不认识 dump 文本。

@@ -22,7 +22,7 @@
 | `integer->bytes width value` | 整数 -> width 个小端字节 |
 | `padding-bytes target kind n` | code 用 `0x90` NOP，data 用 0 |
 | `target-64? target` | 当前编码器只接受 64 位 mode |
-| `layout-program` / `relax` / `encode-layout` | 显式接收 target |
+| `layout-program` / `encode-layout` | 显式接收 target |
 | `instruction-plan` / `instruction-size` / `encode-instruction` | 显式接收 target，当前只接受 mode=64 |
 | `bind-labels` | 不需要 target |
 

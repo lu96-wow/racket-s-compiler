@@ -183,7 +183,8 @@ debug:   dr0 ... dr7
 (call (target))
 ```
 
-`expand-pseudo` 会把它们规范化成明确的 size form。
+`expand-pseudo` 会把它们规范化成明确的 size form：`jmp` / `jcc` 默认是 near。
+需要 short 时直接在源码里写 `jmp-short` / `jcc-short`；后端不会按距离改形式。
 
 ### 5.2 规范化形式
 
@@ -381,13 +382,14 @@ adc sbb
 | 短分支 | `jmp-short`, `jcc-short` | 2 |
 | 近分支 | `jmp-near`, `jcc-near`, `call-near` | 固定 |
 
-只有短分支允许在 `relax` 中升级为近分支。
+short/near 是前端显式选择的 form；超出范围在 `layout` 报 `out-of-range`，
+不会自动升级，也不会自动缩回。
 
 ## 8. normalize 规则
 
 `expand-pseudo` 或 `normalize` 阶段负责：
 
-1. `jmp` / `jcc` 选择 short 或 near；
+1. `jmp` / `jcc` 默认选 near；显式写 `jmp-short` / `jcc-short` 才用 short；
 2. `call` 选择 `call-near`；
 3. `z` / `nz` 等条件码别名转成规范名；
 4. `memXX` 的常量 displacement 选择 disp8 / disp32；
@@ -423,19 +425,20 @@ normalize 之后，`layout` 和 `encode` 不再改变 form。
  (ret))
 ```
 
-规范化后可能是：
+规范化后：
 
 ```scheme
 ((label loop)
  (cmp rax 0)
- (jcc-short e (done))
+ (jcc-near e (done))
  (dec rax)
- (jmp-short (loop))
+ (jmp-near (loop))
  (label done)
  (ret))
 ```
 
-`relax` 如果发现距离超出 rel8，会把对应短分支升级成 `jcc-near` / `jmp-near`。
+如果确定距离在 rel8 内，可以自己写成 `(jcc-short e (done))` /
+`(jmp-short (loop))`；写错了只是 `layout` 的 `out-of-range` problem。
 
 ### 9.3 内存
 
@@ -467,7 +470,7 @@ mov rax, [rip + counter]
 | --- | --- | --- |
 | 指令宽度 | 固定 4/2 | 1..15，必须精确 size |
 | 内存操作数 | 平铺 `(lwu rd base imm)` | 命名字段 `(b64 (base ...) (index ...) (scale ...) (disp ...) (seg ...))` |
-| 分支 | `bge/jal` + relax | `jmp/jcc-short/near` |
+| 分支 | 显式短/远形式，无松弛 | 显式 `jmp/jcc-short/near`，无松弛 |
 | 立即数 | `li` 精确尺寸 | `li` 精确尺寸；ALU 立即数显式 imm8/imm32 |
 | 地址 | `la` / auipc+addi | RIP-relative / `li` + 寄存器 |
 | 远跳 | `branch-far` / `jump-far` | 预留 `jmp-far` / `jcc-far` |

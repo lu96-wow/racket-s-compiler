@@ -10,11 +10,12 @@
 (require "../../amd64-asm/sexp.rkt"
          "../../amd64-asm/target.rkt"
          "../item.rkt"
-         "../../amd64-asm/insn.rkt"
+         (except-in "../../amd64-asm/insn.rkt" instruction-size)
+         (only-in "../../amd64-help/size.rkt" instruction-size)
          (only-in "../item.rkt" pad-size bytes-content fill-size fill-byte)
          (only-in "../layout/forms.rkt"
                   layout-phase layout-segments layout-symbols
-                  layout-requests layout-problems
+                  layout-problems
                   layout-segment? layout-segment-name layout-segment-kind
                   layout-segment-start layout-segment-size layout-segment-items
                   offset? offset-position offset-item)
@@ -86,7 +87,7 @@
      (define inner (cadr operands))
      ;; The prefix byte shifts the inner instruction by one byte, so
      ;; RIP-relative operands inside it use here+1 and the inner size.
-     (define inner-size (instruction-size target (car inner) (cdr inner)))
+     (define inner-size (instruction-size inner #:target target))
      (define prepared (choose-symbolic-immediate-widths (car inner) (cdr inner)))
      (define inner* (cons (car inner)
                           (map (lambda (op) (resolve-operand op (+ here 1) inner-size symbol-table))
@@ -95,7 +96,7 @@
 
     [(control-transfer-name? name)
      (let* ([target-operand (last operands)]
-            [size (instruction-size target name operands)]
+            [size (instruction-size (cons name operands) #:target target)]
             [address (resolve-symbol symbol-table target-operand)]
             [offset (- address (+ here size))]
             [ops (append (drop-right operands 1) (list offset))])
@@ -103,7 +104,7 @@
 
     [else
      (let* ([prepared (choose-symbolic-immediate-widths name operands)]
-            [size (instruction-size target name operands)]
+            [size (instruction-size (cons name operands) #:target target)]
             [ops (map (lambda (op) (resolve-operand op here size symbol-table))
                       prepared)])
        (encode-instruction target name ops))]))
@@ -176,7 +177,7 @@
         [(value-form? it)
          (emit! (value->bytes (value-width it) (value-payload it) symbol-table here))]
         [else
-         (define expect (instruction-size target (car it) (cdr it)))
+         (define expect (instruction-size it #:target target))
          (define bs (encode-code target (car it) (cdr it) here symbol-table))
          (unless (= expect (bytes-length bs))
            (error 'encode
@@ -201,9 +202,6 @@
   (unless (eq? (layout-phase layout) 'bound)
     (error 'encode-layout "expected bound-layout, got phase ~e"
            (layout-phase layout)))
-  (define requests (layout-requests layout))
-  (unless (null? requests)
-    (error 'encode-layout "layout still has requests: ~e" requests))
   (define problems (layout-problems layout))
   (unless (null? problems)
     (error 'encode-layout "layout still has problems: ~e" problems))

@@ -4,7 +4,7 @@
 ;;; 形式表: 每条 item 的字节数、类别、可达距离、必需操作数。
 ;;; 只放数据 + 查询; 布局计算本身在 layout.rkt。
 ;;;
-;;; 不在表里的助记符: 一律 4 字节; c.* 是显式判定的 2 字节。
+;;; 指令长度统一交给 riscv-help/size.rkt；本层只处理数据 item 和对齐。
 ;;; (真指令名单不在本层维护; 编不出来是后面编码层的事)
 
 (require "../sexp.rkt"
@@ -12,9 +12,10 @@
                   branch-instruction? jump-instruction?
                   jump-target jump-target-position)
          (only-in "../target.rkt" target-xlen)
-         ;; li 的尺寸由展开器的主人给: 常量就在 item 里, 所以这是**精确值**,
-         ;; 不是上界。展开长度和 XLEN 有关, 所以用调用方传进来的 target。
-         (only-in "../../riscv-help/main.rkt" li-size))
+         ;; 指令长度统一在 riscv-help/size.rkt 计算；本层只把 target 转成 word-size。
+         (only-in "../../riscv-help/size.rkt"
+                  [instruction-size instruction-size*]
+                  [la-pcrel-li-add-size shared-la-pcrel-li-add-size]))
 
 (provide form? name? path? normalize-path
          label-form? align-form? pad-form? bytes-form? fill-form? value-form? compressed-form?
@@ -127,19 +128,10 @@
     [(fill-form? x) (cadr x)]         ; 字节数 = 重复次数
     [(reserve-form? x) (reserve-size x)] ; 只占位置: 尺寸照样要算进游标
     [(value-form? x) (value-width x)] ; 尺寸 = 宽度, 值等 encode
-    [(compressed-form? x) 2]          ; c.* 必须先于 branch/jump 判, 也是 2 字节
-    [(branch-form? x)
-     (case (car x)
-       [(branch-jal) 8]               ; 反向分支 + jal
-       [(branch-auipc-jalr) 12]       ; 反向分支 + auipc+jalr
-       [else 4])]
-    [(jump-form? x)
-     (case (car x)
-       [(jump-auipc-jalr) 8]          ; auipc + jalr
-       [else 4])]
-    [(eq? (car x) 'li) (li-size (cadr x) (caddr x) #:word-size (target-xlen target))]  ; 常量决定尺寸: 4 / 8 / 12 / 16 / … / 32
-    [(eq? (car x) 'la-pcrel) 8]       ; auipc + addi
-    [(eq? (car x) 'la-pcrel-li-add) (la-pcrel-li-add-size target)] ; auipc + li + add; 短出来的补 nop
+    ;; 指令 / 显式展开形式统一交给 riscv-help/size.rkt。
+    ;; 不认识的 code item 由它按 4 字节兜底，和 encode 的不透明代码一致。
+    [(and (form? x) (symbol? (car x)))
+     (instruction-size* x #:word-size (target-xlen target))]
     [else 4]))
 
 ;; ---------------------------------------------------------------------------
@@ -194,12 +186,9 @@
 (define (la-pcrel-li-add-tmp x)
   (and (la-pcrel-li-add-form? x) (caddr x)))
 
-;; 4 (auipc) + li 最坏 + 4 (add)
-;;   rv64: li 最坏 32B (general64 最坏 8 条) -> 40
-;;   rv32: li 最坏  8B (lui+addi)            -> 16
-;; rv32 实际上永远走不到这里(32 位下 auipc+addi 覆盖全部 delta), 尺寸照样给对。
+;; 转成 target -> word-size；真正的尺寸在 riscv-help/size.rkt。
 (define (la-pcrel-li-add-size target)
-  (+ 8 (if (eq? (target-xlen target) 'rv32) 8 32)))
+  (shared-la-pcrel-li-add-size #:word-size (target-xlen target)))
 
 ;; branch-auipc-jalr: (branch-auipc-jalr tmp cond rs1 rs2 target)
 (define (branch-auipc-jalr-scratch x)

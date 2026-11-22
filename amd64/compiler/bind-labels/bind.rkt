@@ -16,7 +16,7 @@
                   anchor? anchor-chain anchor-segment anchor-position
                   offset? offset-position offset-item
                   layout-phase layout-segments layout-anchors
-                  layout-requests layout-problems
+                  layout-problems
                   layout-segment? layout-segment-name layout-segment-start
                   layout-segment-items
                   make-bound-layout make-problem)
@@ -81,5 +81,4 @@
   (define table (symbols->addresses symbols))
   (define extra (check-value-widths segments table))
   (make-bound-layout segments anchors symbols
-                     (layout-requests measured)
                      (append (layout-problems measured) extra)))

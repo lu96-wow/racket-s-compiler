@@ -9,7 +9,7 @@
 ;;;
 ;;; 选项要写在位置参数前面（racket/cmdline 的 `. rest` 之后不再解析选项）。
 ;;;
-;;; 默认层组是 loko-near（全 near 分支，只 layout 一次）。产物是最后一层的输出：
+;;; 默认层组是 loko-near（历史别名；现在默认就是 near-only）。产物是最后一层的输出：
 ;;;   encode   -> build（各个段的字节）      缓存文件 <cache-dir>/encode.rktd
 ;;;   loko-elf -> image（ELF 字节 + 入口）   缓存文件 <cache-dir>/loko-elf.rktd
 ;;; 其它层组（停在中途的调试用）不缓存。

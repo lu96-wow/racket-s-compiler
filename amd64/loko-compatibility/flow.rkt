@@ -8,8 +8,6 @@
 ;;; 这里的 flow 是 (extend-flow core-flow …), 只多出自己的层和层组。
 
 (require (prefix-in core: "../compiler/flow/core.rkt")
-         (only-in "../compiler/expand-pseudo/rewrite.rkt"
-                  rewrite-program pseudo-leftover?)
          (only-in "translate.rkt" translate-loko-source)
          (only-in "ir.rkt" make-loko-ir ir-list)
          (only-in "lower/ir.rkt" lower-loko-ir)
@@ -96,40 +94,26 @@
                        (write-elf (hash-ref in 'build) symbols #:plan plan)))
                "build + symbols + image-plan -> ELF64 image")))
 
-;; 只属于 loko-near 的层: expand-pseudo 的 near 版本(所有分支直接取 near,
-;; 布局一次即可, 不跑 relax)。它是这条验证流的策略, 所以放在这里而不是 core。
-(define expand-pseudo-near-stage
-  (core:stage 'expand-pseudo-near '(program-items) '(program-items)
-              (lambda (_target in)
-                (define items
-                  (rewrite-program (hash-ref in 'program-items)
-                                   #:short-transfers? #f))
-                (when (pseudo-leftover? items)
-                  (error 'expand-pseudo-near
-                         "pseudo instruction survived expansion: ~e" items))
-                (hash 'program-items items))
-              "伪指令 -> 真指令（全部 near，用于快速验证；布局一次即可）"))
-
 (define loko-flow
   (core:extend-flow
    core:core-flow 'loko
-   (hash-set loko-stage-table 'expand-pseudo-near expand-pseudo-near-stage)
+   loko-stage-table
    (hash
     'loko '(loko-compat loko-lower loko-image
-                        expand-pseudo analyze dce relax
+                        expand-pseudo analyze dce layout
                         bind-labels encode)
     'loko-manual '(loko-compat loko-lower
-                              expand-pseudo analyze dce relax
+                              expand-pseudo analyze dce layout
                               bind-labels encode)
-    ;; near 验证流: 全 near + 只 layout 一次(不跑 relax)
+    ;; 历史名字: 现在默认流就是 near，和 `loko` 等价；保留给旧脚本。
     'loko-near '(loko-compat loko-lower loko-image
-                             expand-pseudo-near analyze dce layout
+                             expand-pseudo analyze dce layout
                              bind-labels encode)
     'elf '(loko-compat loko-lower loko-image
-                       expand-pseudo analyze dce relax
+                       expand-pseudo analyze dce layout
                        bind-labels encode loko-elf)
     'elf-manual '(loko-compat loko-lower
-                             expand-pseudo analyze dce relax
+                             expand-pseudo analyze dce layout
                              bind-labels encode loko-elf))))
 
 (define stage-table (core:flow-stages loko-flow))

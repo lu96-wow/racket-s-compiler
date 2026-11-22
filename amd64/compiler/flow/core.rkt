@@ -13,8 +13,7 @@
 ;;; 于是: 每层只认自己的 s-expression, 引擎不知道也不关心是谁的流。
 ;;;
 ;;; 层契约只有 requires/provides 两个字段: 跑之前"在途值"里必须有什么,
-;;; 跑完写入什么。可选 = 不写进列表, 顺序 = 列表顺序, 平层 = 两个层
-;;; requires/provides 相同（layout 和 relax 就是这样）。
+;;; 跑完写入什么。可选 = 不写进列表, 顺序 = 列表顺序。
 
 (require (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
@@ -22,7 +21,6 @@
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
-         (only-in "../relax/relax.rkt" relax)
          (only-in "../bind-labels/bind.rkt" bind-labels)
          (only-in "../encode/encode.rkt" encode-layout))
 
@@ -70,11 +68,11 @@
           (lambda (_target in)
             (define items
               (rewrite-program (hash-ref in 'program-items)
-                               #:short-transfers? #t))
+                               #:short-transfers? #f))
             (when (pseudo-leftover? items)
               (error 'expand-pseudo "pseudo instruction survived expansion: ~e" items))
             (hash 'program-items items))
-          "伪指令 -> 真指令（短分支起步，交 relax 升级）")
+          "伪指令 -> 真指令（默认 near；short 只能由前端显式写）")
 
    'analyze
    (stage 'analyze '(program-items data-items) '(program)
@@ -97,17 +95,7 @@
                                   (hash-ref in 'program)
                                   (hash-ref in 'data-items)
                                   (hash-ref in 'layout-spec))))
-          "布局度量: 放置 + 尺寸 + anchors + requests/problems")
-
-   'relax
-   (stage 'relax '(program data-items layout-spec) '(measured-layout)
-          (lambda (target in)
-            (hash 'measured-layout
-                  (relax target
-                         (hash-ref in 'program)
-                         (hash-ref in 'data-items)
-                         (hash-ref in 'layout-spec))))
-          "分支松弛: short -> near，只增不减")
+          "布局度量: 放置 + 尺寸 + anchors + problems")
 
    'bind-labels
    (stage 'bind-labels '(measured-layout) '(bound-layout)
@@ -120,16 +108,16 @@
    (stage 'encode '(bound-layout) '(build)
           (lambda (target in)
             (hash 'build (encode-layout target (hash-ref in 'bound-layout))))
-          "编码: bound-layout -> (build …)；有 request/problem 就拒绝出产物")))
+          "编码: bound-layout -> (build …)；有 problem 就拒绝出产物")))
 
 (define core-stage-groups
   (hash
    'frontend '(expand-data flatten expand-pseudo)
    'ir       '(analyze dce)
-   'backend  '(relax bind-labels encode)
-   'all      '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)))
+   'backend  '(layout bind-labels encode)
+   'all      '(expand-data flatten expand-pseudo analyze dce layout bind-labels encode)))
 
-(define default-flow '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode))
+(define default-flow '(expand-data flatten expand-pseudo analyze dce layout bind-labels encode))
 
 (define (make-flow name stages groups [default default-flow])
   ;; 组名不能盖住层名; 组里每一项都必须是已有的层; 默认流也一样。

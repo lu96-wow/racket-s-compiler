@@ -61,6 +61,9 @@
 
 ```text
 frontend / lower
+  -> expand-struct          ; struct 布局 + 静态数据 + 字段访问展开
+  -> expand-data
+  -> flatten
   -> analyze
   -> dce
   -> layout              ; 位置 + 尺寸 + anchors；不选形式

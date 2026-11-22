@@ -43,8 +43,13 @@ amd64-asm/
 
 ```racket
 (require "amd64-asm/insn.rkt")
-(instruction-size 'mov '(rax rbx))
+(instruction-size target-amd64 'mov '(rax rbx))
 (encode-instruction target-amd64 'mov '(rax rbx))
+
+;; 需要“整条 s-expression -> 字节数”的公共入口时，用 help 层
+;; （和上面的 asm 入口同名，同一模块里 require 时加前缀）：
+(require (prefix-in help: "amd64-help/size.rkt"))
+(help:instruction-size '(mov rax rbx))
 ```
 
 ## 不负责

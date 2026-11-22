@@ -138,7 +138,7 @@ item 是 `loko-compat` / `expand-pseudo` 之后的普通程序 item。伪寄存�
 Loko 的 codegen 在 `%comment save-live-registers` / `restore-live-registers`
 里标注调用点要保存哪些伪寄存器。本后端**不**消费这些注记：Loko 导出的是
 `pass-optimize` 之后的代码，保存/恢复的 `mov` 已经在指令流里了。要处理
-原始 codegen 输入时，这会是一个改变尺寸的 pass（在 relax 之前），见 `GAPS.md`。
+原始 codegen 输入时，这会是一个改变尺寸的 pass（必须在 layout 之前），见 `GAPS.md`。
 
 ### 3.5 `allocate.rkt`
 
@@ -193,7 +193,7 @@ loko-source
   -> expand-pseudo
   -> analyze
   -> dce
-  -> relax
+  -> layout
   -> bind-labels
   -> encode
 ```

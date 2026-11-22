@@ -4,7 +4,7 @@
 ;;; 构建流: 用一张 stage 表 + 一个名字列表把各层串起来。
 ;;;
 ;;;   (run-flow target
-;;;             (list 'expand-data 'flatten 'analyze 'dce 'layout 'check 'bind-labels 'encode)
+;;;             (list 'expand-struct 'expand-data 'flatten 'analyze 'dce 'layout 'check 'bind-labels 'encode)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
 ;;;   输入是 canonical native；没有可选别名层。
@@ -23,7 +23,8 @@
 ;;;
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
-(require (only-in "../expand-data/expand.rkt" expand-data)
+(require (only-in "../struct/struct.rkt" expand-struct-inputs)
+         (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../externs.rkt" extern-names extern-rows)
          (only-in "../analyze/analyze.rkt" analyze)
@@ -49,7 +50,8 @@
 ;; ---------------------------------------------------------------------------
 ;; 在途值（名字就是契约）
 ;;
-;;   rich-data      人写的 rich 数据（expand-data 的输入）
+;;   rich-data      人写的 rich 数据（expand-struct / expand-data 的输入）
+;;   structs        结构体定义 + 布局信息（expand-struct 的输出）
 ;;   data-items     核心数据 item（label / bytes / fill / value / align / pad）
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
 ;;   names          flatten 建的名字表（链 -> 位置）
@@ -57,7 +59,7 @@
 ;;   program        (struct program blocks flows)
 ;;   measured-layout 度量/检查产物（segments + anchors + problems）
 ;;   bound-layout    绑定产物（segments + anchors + symbols + problems）
-;;   build           最终产物 (build (link …) (segment …) …)
+;;   build           最终产物 (build (link …) (provides …) (structs …) (segment …) …)
 ;;
 ;;   外部输入（seed）：rich-data / program-items / data-items / layout-spec
 ;; ---------------------------------------------------------------------------
@@ -72,6 +74,19 @@
 
 (define stage-table
   (hash
+   'expand-struct
+   (stage 'expand-struct '(program-items rich-data)
+          '(program-items rich-data structs)
+          (lambda (target in)
+            (define-values (program rich structs)
+              (expand-struct-inputs target
+                                    (hash-ref in 'program-items)
+                                    (hash-ref in 'rich-data)))
+            (hash 'program-items program
+                  'rich-data rich
+                  'structs structs))
+          "结构体: 布局 + 静态数据 + 字段访问展开（前端层，不依赖 layout）")
+
    'expand-data
    (stage 'expand-data '(rich-data) '(data-items)
           (lambda (_target in) (hash 'data-items (expand-data (hash-ref in 'rich-data))))
@@ -133,8 +148,12 @@
           "地址绑定: anchors -> symbols（偏移 -> 绝对地址）+ link/provides + 宽度/容量检查")
 
    'encode
-   (stage 'encode '(bound-layout) '(build)
-          (lambda (target in) (hash 'build (encode-layout target (hash-ref in 'bound-layout))))
+   (stage 'encode '(bound-layout (optional structs)) '(build)
+          (lambda (target in)
+            (hash 'build
+                  (encode-layout target
+                                 (hash-ref in 'bound-layout)
+                                 #:structs (hash-ref in 'structs '()))))
           "编码: bound-layout -> (build …)；有 problem 就拒绝出产物")))
 
 ;; ---------------------------------------------------------------------------
@@ -151,7 +170,7 @@
 
 ;; 默认流: canonical native。
 (define default-flow
-  '(expand-data flatten analyze dce layout check bind-labels encode))
+  '(expand-struct expand-data flatten analyze dce layout check bind-labels encode))
 
 ;; ---------------------------------------------------------------------------
 ;; 选择器: 层名 / 层组 / 任意片段
@@ -161,7 +180,7 @@
 ;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
 (define stage-groups
   (hash
-   'frontend '(expand-data flatten)
+   'frontend '(expand-struct expand-data flatten)
    'ir       '(analyze dce)
    'backend  '(layout check bind-labels encode)
    'all      default-flow))

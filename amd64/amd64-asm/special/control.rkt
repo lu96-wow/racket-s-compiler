@@ -38,7 +38,7 @@
     [_ (error 'plan-jmp-near "jmp-near takes one offset: ~e" operands)]))
 
 ;; 远跳: (far 选择子 偏移) -> EA + 偏移(32) + 选择子(16)。
-;; 偏移是**绝对**地址表达式（不是相对位移），所以这里不做 relax，只是等
+;; 偏移是**绝对**地址表达式（不是相对位移），所以这里不做距离处理，只是等
 ;; encode 把符号解析成整数。尺寸固定 7 字节：多引导头的 32 位引导代码用它
 ;; 切到长模式选择子，之后才是 64 位代码。
 (define (plan-jmp-far operands)

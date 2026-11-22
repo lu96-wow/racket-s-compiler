@@ -5,8 +5,9 @@
 
 ## 作用
 
-用 stage 表 + 选择器把核心 amd64 各层串起来。默认流包含 relax：
-`expand-pseudo` 先产生 short branch，`relax` 再按需要升成 near。
+用 stage 表 + 选择器把核心 amd64 各层串起来。默认流不做分支松弛：
+`expand-pseudo` 默认产生 near branch，short 只能由前端显式写；
+`layout` 一次度量，超范围就是 problem。
 
 ## 相关 s-exp / 在途值
 
@@ -18,7 +19,7 @@
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
 | `layout-spec` | `(segments …) (place …)` | seed |
-| `measured-layout` | segments + anchors + requests + problems | `layout` / `relax` |
+| `measured-layout` | segments + anchors + problems | `layout` |
 | `bound-layout` | measured + symbols | `bind-labels` |
 | `build` | 每段字节 | `encode` |
 
@@ -32,7 +33,6 @@
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
 | `layout` | `program` `data-items` `layout-spec` | `measured-layout` |
-| `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
 
@@ -41,16 +41,16 @@
 - 默认流：
 
   ```racket
-  '(expand-data flatten expand-pseudo analyze dce relax bind-labels encode)
+  '(expand-data flatten expand-pseudo analyze dce layout bind-labels encode)
   ```
 
 - 核心层组：`frontend` / `ir` / `backend` / `all`。
-- `layout` 与 `relax` 平层：`relax` 自己反复驱动 `layout`。
 - `layout` 直接消费 `program` 的 blocks + flows 和 data runs。
 - `layout-flat-items` 只是扁平 item 的兼容入口，不消费 flows。
 - `measured-layout` 只有 anchors，没有绝对地址。
 - `bind-labels` 才产生 symbols / 绝对地址。
-- `encode` 只吃 bound-layout；有 requests/problems 就拒绝。
+- `encode` 只吃 bound-layout；有 problems 就拒绝。
+- 没有 requests：显式 short 超范围、near 超范围都由 `layout` 报 `out-of-range`。
 - stage 名字是契约；目录名不是流的一部分。
 - 选择器支持单层、层组和任意片段；组只是预定义列表，没有额外语义。
 

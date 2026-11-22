@@ -2,11 +2,12 @@
 ;;; amd64/compiler/layout/forms.rkt
 ;;;
 ;;; item 分类、尺寸和对齐。item 形状来自 amd64/item.rkt，
-;;; 真实指令尺寸来自 amd64/insn.rkt。layout 不依赖 encode。
+;;; 真实指令尺寸来自 amd64-help/size.rkt（底层仍是 amd64-asm 的 plan）。
+;;; layout 不依赖 encode。
 
 (require "../item.rkt"
          "../problem.rkt"
-         "../../amd64-asm/insn.rkt"
+         (only-in "../../amd64-help/size.rkt" instruction-size)
          (only-in "../../amd64-help/branch.rkt"
                   control-transfer-form? short-control-transfer-form?
                   near-control-transfer-form? control-transfer-target
@@ -20,10 +21,6 @@
          make-segment-form parse-segment-decl
          make-offset offset? offset-position offset-item
          make-anchor anchor? anchor-chain anchor-segment anchor-position
-         make-request request? request-kind request-payload
-         request-origin request-origin-kind request-origin-block
-         request-origin-index request-segment request-offset request-item
-         request-distance
          make-problem problem? problem-kind problem-detail
 
          make-layout-segment layout-segment?
@@ -31,7 +28,7 @@
          layout-segment-end layout-segment-items layout-segment-size
          make-measured-layout make-bound-layout
          layout-phase layout-segments layout-anchors layout-symbols
-         layout-requests layout-problems
+         layout-problems
 
          make-place place? place-segment place-chains
          make-layout-spec layout-spec? layout-spec-segments layout-spec-places
@@ -147,27 +144,6 @@
 (define (anchor-segment x) (caddr x))
 (define (anchor-position x) (cadddr x))
 
-(define (make-request kind . payload)
-  (unless (symbol? kind)
-    (error 'make-request "request kind must be a symbol: ~e" kind))
-  (cons kind payload))
-(define (request? x)
-  (and (form? x) (symbol? (car x)) #t))
-(define (request-kind x) (car x))
-(define (request-payload x) (cdr x))
-
-;; 控制转移请求(needs-near/needs-far)的 payload 形状是这一层的私事:
-;;   (origin segment offset item distance)
-;;   origin = (code 块下标 项下标) —— 谁产生的、改哪一条
-;; 下游(relax)只通过下面这些访问器读, 不自己数 list 位置。
-(define (request-origin r) (car (request-payload r)))
-(define (request-origin-kind r) (car (request-origin r)))
-(define (request-origin-block r) (cadr (request-origin r)))
-(define (request-origin-index r) (caddr (request-origin r)))
-(define (request-segment r) (cadr (request-payload r)))
-(define (request-offset r) (caddr (request-payload r)))
-(define (request-item r) (cadddr (request-payload r)))
-(define (request-distance r) (car (cddddr (request-payload r))))
 
 ;; problem 的形状和构造器在 compiler/problem.rkt; 这里只转发,
 ;; 让 layout 的消费者(以及 image/lower)用同一个入口。
@@ -207,26 +183,23 @@
         [else '()]))
 (define (layout-segment-size x) (layout-field 'size x))
 
-(define (make-measured-layout segments anchors requests problems)
+(define (make-measured-layout segments anchors problems)
   (list (list 'phase 'measured)
         (cons 'segments segments)
         (cons 'anchors anchors)
-        (cons 'requests requests)
         (cons 'problems problems)))
 
-(define (make-bound-layout segments anchors symbols requests problems)
+(define (make-bound-layout segments anchors symbols problems)
   (list (list 'phase 'bound)
         (cons 'segments segments)
         (cons 'anchors anchors)
         (cons 'symbols symbols)
-        (cons 'requests requests)
         (cons 'problems problems)))
 
 (define (layout-phase x) (cadr (or (assq 'phase x) '(phase #f))))
 (define (layout-segments x) (cdr (or (assq 'segments x) '(segments))))
 (define (layout-anchors x) (cdr (or (assq 'anchors x) '(anchors))))
 (define (layout-symbols x) (cdr (or (assq 'symbols x) '(symbols))))
-(define (layout-requests x) (cdr (or (assq 'requests x) '(requests))))
 (define (layout-problems x) (cdr (or (assq 'problems x) '(problems))))
 
 
@@ -270,7 +243,7 @@
     [(fill-form? x) (fill-size x)]
     [(reserve-form? x) (reserve-size x)]
     [(value-form? x) (value-width x)]
-    [else (instruction-size target (car x) (cdr x))]))
+    [else (instruction-size x #:target target)]))
 
 (define (align-pad absolute-address alignment)
   (modulo (- alignment (modulo absolute-address alignment)) alignment))

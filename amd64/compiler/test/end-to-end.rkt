@@ -56,7 +56,6 @@
     (label data)
     (value 8 #x1234)))
 (define sym-measured (layout-flat-items target-amd64 sym-items spec))
-(check-equal? (cdr (assq 'requests sym-measured)) '())
 (check-equal? (cdr (assq 'problems sym-measured)) '())
 (define sym-bound (bind-labels sym-measured))
 (define sym-build (encode-layout target-amd64 sym-bound))
@@ -191,7 +190,6 @@
                           (list 'size 4))))
         (cons 'anchors '())
         (cons 'symbols '())
-        (cons 'requests '())
         (cons 'problems '())))
 
 (check-exn exn:fail? (lambda () (encode-layout target-amd64 bad-hole-layout)))

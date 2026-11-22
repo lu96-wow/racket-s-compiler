@@ -64,7 +64,7 @@ legacy prefixes
    - high-byte 寄存器不能和任何 REX 同时出现。
 7. **control transfer**：
    - short/near 是 form，不是编码器临时选择；
-   - 只有 short -> near 允许 relax；
+   - 后端不做分支松弛；超范围由前端负责或由 layout 报错；
    - far/trampoline 需要 scratch，属于更高层策略。
 8. **symbolic operands**：
    - 符号 displacement / immediate 在 layout 前必须已经确定宽度；
@@ -199,8 +199,9 @@ wait prefix + segment prefix + mandatory prefixes + REX
 (instruction-arity name)
 ```
 
-上层 layout 应该逐步从 `instruction-size` 迁移到 `instruction-plan` +
-`plan-size`，这样布局阶段拿到的不只是数字，还能看到 form/prefix/REX 决策。
+`amd64-help/size.rkt` 的整条 instruction 入口最终也调用这里的
+`instruction-size`；layout 通过 help 层使用它。若布局阶段需要看到
+form/prefix/REX 决策，可以直接使用 `instruction-plan` + `plan-size`。
 
 ## 3. 约束归属
 
@@ -219,7 +220,7 @@ wait prefix + segment prefix + mandatory prefixes + REX
 | branch short/near | `special/control.rkt` / `amd64-help` | form 不是 encoder 临时选 |
 | symbolic width | `amd64-help` / plan | layout 前固定 |
 | 最终字节 | `encode.rkt` | 纯拼接 |
-| layout/relax/binding | `compiler` | amd64-asm 不知道 |
+| layout/binding | `compiler` | amd64-asm 不知道 |
 
 ## 4. 现有代码的迁移映射
 
@@ -278,7 +279,7 @@ wait prefix + segment prefix + mandatory prefixes + REX
 `amd64-asm` 不负责：
 
 - 段/放置/标签；
-- branch relaxation；
+- branch relaxation（后端没有这个 pass）；
 - 地址绑定；
 - 寄存器分配/scratch；
 - ABI/调用约定；

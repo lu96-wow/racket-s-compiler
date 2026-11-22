@@ -1,7 +1,7 @@
 # amd64 layout
 
 > program blocks + data runs + layout-spec -> measured-layout。
-> 本层只做放置、度量、anchors、requests、problems；不选远形式、不绑绝对地址。
+> 本层只做放置、度量、anchors、problems；不选形式、不绑绝对地址。
 
 ## 输入
 
@@ -72,7 +72,8 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 
 - `align` 按**绝对地址** `start + cursor` 换算成事实；产物写事实，不写请求。
   补出来的是 `(pad n)` 还是 `(reserve n)` 由段 kind 定（见下）。
-- item 尺寸来自 `layout/forms.rkt` -> `instruction-size target`；target 由 layout 显式传入。
+- item 尺寸来自 `layout/forms.rkt` -> `amd64-help/size.rkt` 的
+  `instruction-size`；target 由 layout 显式传入。
 - 段起始对齐、段重叠、段容量都在本层检查；空段允许 `start == end`
   （自动布局会产出没内容的 data section）。
 
@@ -89,9 +90,10 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
 
 ## 校验
 
-- 控制转移目标必须存在；距离超出 form 的 range：
-  - short -> `needs-near` request
-  - near -> `needs-far` request
+- 控制转移目标必须存在；距离超出显式形式自己的 range：
+  - short 超出 rel8 -> `out-of-range` problem
+  - near 超出 rel32 -> `out-of-range` problem
+  - 没有“升形式”的 request：前端要么写 near，要么自己保证 short 够得着。
 - 符号内存 displacement：
   - RIP-relative 目标必须在 rel32 范围
   - 绝对 disp32 必须在可编码范围
@@ -106,22 +108,15 @@ flows : (flow (succ ...) (fallthrough id|#f) (root? bool))
  (segments (segment (name ...) (kind ...) (start ...) (end ...)
                     (items (offset k item) ...) (size n)) ...)
  (anchors (anchor 链 段名 偏移) ...)
- (requests ...)
  (problems ...))
 ```
 
-requests 里的 `origin` 是：
-
-```text
-(code 块下标 项下标)
-(data run下标 项下标)
-(flat unit下标 项下标)      ; layout-flat-items 兼容入口
-```
-
-relax 只消费 `needs-near` 的 `(code ...)` origin。
+`origin`（`(code 块下标 项下标)` / `(data run下标 项下标)` /
+`(flat unit下标 项下标)`）只用于报 problem 时定位，不交给后续层改 item。
 
 ## 已知限制
 
 - `place` 没有 region 语法；region 是通过“块跟随当前段”实现的。
-- 还没有 far form / trampoline / scratch-fill。
+- 还没有 far form / trampoline / scratch-fill；near 也够不着时只报
+  `out-of-range`。
 - `layout-flat-items` 是兼容入口，不消费 flows，不做 fallthrough 检查。

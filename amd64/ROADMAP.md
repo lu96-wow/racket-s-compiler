@@ -11,7 +11,7 @@
 1. 明确的 amd64 s-expression 汇编形式。
 2. 表驱动的指令编码器，尺寸和编码共用同一张表。
 3. 精确的 item 尺寸，`layout` 不再把代码当固定 4 字节。
-4. 分支只做 `short -> near` 的只增松弛；不收缩。
+4. 控制转移形式由前端显式选择（默认 near）；后端不做分支松弛。
 5. 不追求第一版覆盖全部 x86，只覆盖编译器实际会生成的整数/控制流/基本内存指令。
 
 暂不处理：
@@ -36,8 +36,8 @@
 - [x] `bind-labels`
 - [x] `encode-layout` 端到端字节输出
 - [x] `analyze` / `dce`（amd64 控制流分类）
-- [x] `flow`（默认流含 relax）
-- [x] `relax`（short -> near 只增）
+- [x] `flow`（默认流 near-only，不含松弛）
+- [x] 显式 `jmp-short`/`jcc-short`（超范围报 `out-of-range`）
 - [x] 符号 memory displacement（归一化为固定 disp32，encode 时解析）
 - [x] 基本整数指令扩展（test/inc/dec/neg/not/shift/imul/div/idiv/movzx/movsx/setcc/cqo/cdq）
 - [x] 结构清理：`compiler/item.rkt` / `amd64-asm/insn.rkt` 共享事实；layout 不再依赖 encode；target 显式传参；flow 检查伪指令残留
@@ -65,7 +65,7 @@
 - [x] 8 位内存 mov 使用 8A/88；REX.B 只由 base、REX.X 只由 index 决定
 - [x] Loko Linux 真实输出验证：tiny 运行通过；t2 的 near/full 结果与 Loko 一致
 - [x] dump 读取器 `loko-compatibility/sexp-read.rkt`（44 MB：12 s -> 2.4 s，与 `read` 逐 item 相等）
-- [x] `loko-near` 验证流 + 产物缓存 `tools/loko-flow.rkt` / `flow-cache.rkt` / `write-cached-elf.rkt`
+- [x] near-only 流（`loko-near` 历史别名）+ 产物缓存 `tools/loko-flow.rkt` / `flow-cache.rkt` / `write-cached-elf.rkt`
 - [ ] lower 的跨调用值 spill / frame allocation（Loko 实际输入已由 Loko optimizer 分配）
 - [x] `adc/sbb`、更多双精度/packed SSE（NASM 生成表）
 - [x] NASM `insns.dat` -> generated instruction table，替换手写扩展模式
@@ -81,7 +81,7 @@
 - [x] special 剩余自定义立即数/寄存器 bytes 分支改为显式 plan
 - [x] `sexp.rkt` 拆成 `shape.rkt` + `memory.rkt` facade；target 增加 mode
 - [x] `compiler/item.rkt` 增加 `make-*` 构造函数；expand-data/layout 开始使用
-- [x] layout IR 的 segment/offset/anchor/request/problem 构造与 accessor
+- [x] layout IR 的 segment/offset/anchor/problem 构造与 accessor
 - [x] measured/bound 外层构造与 symbol accessor 化
 - [x] `place` / layout-spec 的显式构造与 accessor
 - [x] item 的 align/pad/bytes/fill accessor；layout/encode 不再裸拆 item
@@ -92,8 +92,7 @@
 - [ ] 通用 `%call` 的声明式替代
 - [x] block-aware layout：place/region/wildcard、data runs、fallthrough
 - [x] 段起始对齐/重叠、代码数据混放、RIP/绝对 disp32 范围检查
-- [x] relax 按 `(code 块下标 项下标)` origin 精确升级
-- [ ] `needs-far` / far form / trampoline / scratch
+- [ ] far form / trampoline / scratch
 - [ ] 外部 reloc
 
 ## 2. 总体流水线
@@ -107,8 +106,7 @@ rich data
   -> expand-pseudo
   -> analyze
   -> dce
-  -> layout          ; amd64 精确尺寸
-  -> relax           ; jmp/jcc short -> near
+  -> layout          ; amd64 精确尺寸 + 显式形式范围检查
   -> bind-labels
   -> encode
 ```
@@ -116,14 +114,15 @@ rich data
 关键区别：
 
 - `layout` 的代码尺寸必须来自 amd64 的编码表，而不是固定 4 字节。
-- `relax` 只升级控制转移 form，其他尺寸在 layout 前固定。
+- 所有尺寸（含 short/near）在 layout 前固定；layout 只度量一次。
+- 显式 short 超范围、near 超范围都是 `out-of-range` problem，不是重新布局的信号。
 - `encode` 与 `layout` 共用同一张 `insn-size` / `insn-encode` 表，避免尺寸和字节不一致。
 
 ## 3. 尺寸策略
 
-### 3.1 第一版：固定 long form
+### 3.1 默认 near，short 显式
 
-为了先得到正确闭环，第一版可以让 `expand-pseudo` 统一生成：
+`expand-pseudo` 把伪 `jmp` / `jcc` 展开成：
 
 ```text
 jmp-near   5
@@ -131,36 +130,12 @@ jcc-near   6
 call-near  5
 ```
 
-这样：
+需要 short 时，前端直接写 `jmp-short` / `jcc-short`（2 字节）。规则：
 
-- 不需要 relax；
-- 不需要 NOP 补缩；
-- `layout` 直接按固定尺寸；
-- 先验证编码器、标签、相对位移、对齐和段布局。
-
-### 3.2 第二版：short 起步，只增不减
-
-确认 long form 闭环后，再让 `expand-pseudo` 生成：
-
-```text
-jmp-short  2
-jcc-short  2
-```
-
-`relax` 只做：
-
-```text
-jmp-short -> jmp-near
-jcc-short -> jcc-near
-```
-
-规则：
-
-- 只升级，不降级；
-- 不生成新 label；
-- 不拆块；
-- 对齐 padding 可以变小，但不要求 padding 单调；
-- 其他尺寸（imm8/imm32、disp8/disp32、REX）在 layout 前固定。
+- 后端不做 fixed point，不 re-layout，不升级/缩回形式；
+- short 超出 rel8、near 超出 rel32 都由 layout 报 `out-of-range`；
+- 没有 `needs-near` / `needs-far` 这类跨层 request；
+- 对齐 padding 和其他尺寸都在 layout 前固定。
 
 ### 3.3 远形式
 
@@ -176,7 +151,7 @@ call-indirect
 
 ## 4. 尺寸固定的规则
 
-`layout` 要精确，所以所有非控制流尺寸在进入 layout 前必须确定：
+`layout` 要精确，所以所有尺寸（含控制转移形式）在进入 layout 前必须确定：
 
 | 项目 | 规则 |
 | --- | --- |
@@ -186,10 +161,11 @@ call-indirect
 | `disp8` / `disp32` | 常量位移在 layout 前选；符号位移一律 disp32 |
 | `imm8` / `imm32` / `imm64` | 常量在 layout 前选；符号立即数只允许出现在 `li` 等明确形式 |
 | `li` | 由常量精确决定尺寸 |
-| 分支 | `jmp/jcc` 的 short/near 是 form，不是 encoder 临时决定 |
+| 分支 | `jmp/jcc` 的 short/near 是前端显式选择的 form，不是 encoder 临时决定 |
 | `align` | 由 layout 根据绝对/相对地址计算 |
 
-编码器不允许在 layout 之后偷偷把 `disp32` 改成 `disp8`，也不允许把 `near` 改成 `short`。
+编码器不允许在 layout 之后偷偷把 `disp32` 改成 `disp8`，也不允许把 `near` 改成 `short`；
+后端也没有任何 pass 会在 layout 之后改 item 尺寸。
 
 ## 5. 文件计划
 
@@ -218,7 +194,6 @@ amd64/
     analyze/
     dce/
     layout/
-    relax/
     bind-labels/
     encode/
     flow/
@@ -249,8 +224,7 @@ amd64/
 | `compiler/expand-pseudo` | `jmp/jcc/call`、`ret`、`nop`、`li`、常见 mov/算术别名 |
 | `compiler/analyze` | amd64 的分支/跳转/终止指令分类、CFG |
 | `compiler/dce` | 与 RISC-V 同构 |
-| `compiler/layout` | 精确 item 尺寸、对齐、anchor、范围请求 |
-| `compiler/relax` | `short -> near` 单调升级 |
+| `compiler/layout` | 精确 item 尺寸、对齐、anchor、范围 problem |
 | `compiler/bind-labels` | anchor -> symbol / 绝对地址 |
 | `compiler/encode` | 表驱动编码，输出每段字节 |
 | `compiler/flow` | stage 表和选择器 |
@@ -320,14 +294,13 @@ SSE/SSE2 legacy 形式已由 NASM 生成表覆盖；AVX/VEX/EVEX 先不做。
 - `expand-data` / `flatten`
 - `analyze` / `dce`
 - 最小完整程序
-- `relax` 先 no-op，保持 long form
+- near-only 闭环（不跑松弛）
 
 ### Phase 4：short branch
 
 - `jmp-short` / `jcc-short`
-- `relax` 只增
+- 前端显式选择 + `out-of-range` problem
 - 边界测试 `-128/127`
-- 对齐和级联升级测试
 
 ### Phase 5：后端接入
 
@@ -350,12 +323,11 @@ SSE/SSE2 legacy 形式已由 NASM 生成表覆盖；AVX/VEX/EVEX 先不做。
 - `align` 填充
 - `layout` 的 `(offset k item)` 断言
 - 未知 label / 未定义目标
-- `relax` 单调收敛
+- 显式 short/near 越界报 `out-of-range`
 - 代码段 NOP padding 任意长度
 
 ## 9. 待确认
 
-1. 第一版是否直接 short 起步，还是先 near-only？
 2. `call` 在 `analyze` 中按普通指令还是块终止处理？
 3. `li` 是否允许所有 64 位常量，还是只允许编译器实际用到的范围？
 4. 是否现在就把 `amd64` 的公共层与 RISC-V 抽到 `common/`，还是先复制保持独立？

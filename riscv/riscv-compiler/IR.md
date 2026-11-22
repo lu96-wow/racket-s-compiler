@@ -26,6 +26,7 @@
 
 | 层 | 输入 | 输出 |
 | --- | --- | --- |
+| `expand-struct` | `program-items` + `rich-data` | 展开后的 `program-items` + `rich-data` + `structs` |
 | `expand-data` | rich 数据 | 核心数据 item |
 | `flatten` | `program-items` + `data-items` | 完整链的 `program-items` + `data-items` + `names` |
 | `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
@@ -45,6 +46,9 @@
 | 控制转移 | native: `(beq L a b)` / `(jal rd L)` / `(j L)`；显式形式 `(branch-jal …)` / `(branch-auipc-jalr …)` / `(jump-auipc-jalr …)` |
 | `(la-pcrel rd 表达式)` | 取地址；auipc+addi，8 字节 |
 | `(li rd 常量)` | 常量装载；尺寸由常量精确决定 |
+| `(struct name (field type) …)` | 前端布局定义；展开后消失 |
+| `(struct-data name (field value …) …)` | 静态数据实例；展开成 align/pad/value |
+| `(sizeof name)` / `(offsetof name field)` | 编译期整数 |
 | `(anchor 链 段名 偏移)` | measured 的 label 位置，无绝对地址 |
 | `(symbol 链 段名 偏移 地址)` | bound 的最终符号 |
 | `(problems …)` | 放置 / 段 / fallthrough / `undefined-target` / `out-of-range` / `zero-scratch` / `bad-scratch` / `la-too-far` / 最终宽度/容量 |
@@ -53,7 +57,8 @@
 | `(link (base B) (symbol 链 地址) …)` | 对外的“名字 → 绝对地址”，`symbols` 的两列投影；输出里没有未解析项 |
 | `(la-pcrel-li-add rd tmp 链)` | 前端显式选择的远 PC 相对装载地址；`tmp` 必需；尺寸是**常量上界**，短出来的补 `nop` |
 | `(provides 链 …)` | 其中哪些名字是**对外**的（`flatten` 的导出集合；没有 `` (provide …) `` 时是全导出） |
-| `build` | `(build (link …) (provides …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
+| `structs` | `(struct-def (name 链) (size n) (align n) (fields (field (name f) (type t) (offset n) (size n) (align n)) …) (padding (align (n n) (offset n) (size n)) (pad (n n) (offset n) (size n)) …)) …)` |
+| `build` | `(build (link …) (provides …) (structs …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |
 
 ## 输入侧：外部符号

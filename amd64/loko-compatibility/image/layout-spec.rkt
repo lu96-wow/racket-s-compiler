@@ -20,7 +20,7 @@
 ;;; 这一层只做“section 顺序 -> 地址顺序”的粗布局：
 ;;;   - 以 origin 为起点，按 section 顺序累加；
 ;;;   - 用近分支（near）测量 code 段，得到安全上界；
-;;;   - 真正的 short/near 选择仍由 compiler 的 expand-pseudo + relax 完成；
+;;;   - 真正的 short/near 选择由 compiler 的 expand-pseudo 完成（默认 near）；
 ;;;   - 每个 section 开头补一个内部 label，保证 block/data run 能命中 place。
 ;;;
 ;;; 因此 code section 的实际大小可能小于这里测得的 size；后续段起点会保留
@@ -78,8 +78,8 @@
      (cons (make-label label) items)]))
 
 (define (near-measurement-item item)
-  ;; Explicit short forms can still be relaxed later; measure their near
-  ;; upper bound.
+  ;; Explicit short forms are smaller than this upper bound; measuring them
+  ;; as near only makes the section capacity conservative.
   (cond
     [(and (form? item) (eq? (car item) 'jmp-short))
      (list 'jmp-near (cadr item))]
@@ -161,7 +161,7 @@
       [else
        (define measured-items
          (if (eq? kind 'code)
-             ;; Near forms are an upper bound; actual relax only shrinks.
+             ;; Near forms are an upper bound: explicit short items are smaller.
              (map near-measurement-item
                   (rewrite-program items #:short-transfers? #f))
              items))

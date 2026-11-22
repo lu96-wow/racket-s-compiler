@@ -25,7 +25,6 @@ for test in \
   compiler/expand-pseudo/test.rkt \
   compiler/analyze/test.rkt \
   compiler/layout/test.rkt \
-  compiler/relax/test.rkt \
   compiler/test/item-test.rkt \
   compiler/test/end-to-end.rkt \
   compiler/test/flow-test.rkt \

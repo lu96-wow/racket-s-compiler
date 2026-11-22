@@ -11,6 +11,7 @@
          "cc.rkt"
          "branch.rkt"
          "jump.rkt"
+         "size.rkt"
          "scratch.rkt")
 
 (provide
@@ -21,6 +22,10 @@
  la-frame
  la-abs
  la-size
+
+ ;; 指令长度
+ instruction-size
+ instructions-size
 
  ;; call / indirect / far placeholders
  call-form

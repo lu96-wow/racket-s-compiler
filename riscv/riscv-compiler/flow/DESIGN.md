@@ -9,19 +9,21 @@
 
 | 名字 | 形状 | 谁产 |
 | --- | --- | --- |
-| `rich-data` | rich 数据 | seed |
+| `rich-data` | rich 数据 | seed / `expand-struct` |
+| `structs` | struct 定义 + 布局 | `expand-struct` |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
-| `program-items` | 扁平程序 item（native） | seed / `flatten` |
+| `program-items` | 扁平程序 item（native） | seed / `expand-struct` / `flatten` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
 | `measured-layout` | segments + anchors + problems | `layout` / `check` |
 | `bound-layout` | measured + symbols | `bind-labels` |
-| `build` | 每段字节 | `encode` |
+| `build` | link + provides + structs + 每段字节 | `encode` |
 
 ## stage 表
 
 | stage | requires | provides |
 | --- | --- | --- |
+| `expand-struct` | `program-items` `rich-data` | `program-items` `rich-data` `structs` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` (`optional externs`) | `program-items` `data-items` `names` `exports` |
 | `analyze` | `program-items` `data-items` | `program` |
@@ -29,13 +31,13 @@
 | `layout` | `program` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout` |
 | `bind-labels` | `measured-layout` (`optional exports`) | `bound-layout` |
-| `encode` | `bound-layout` | `build` |
+| `encode` | `bound-layout` (`optional structs`) | `build` |
 
 ## 层组
 
 | 组名 | 展开 |
 | --- | --- |
-| `frontend` | `expand-data flatten` |
+| `frontend` | `expand-struct expand-data flatten` |
 | `ir` | `analyze dce` |
 | `backend` | `layout check bind-labels encode` |
 | `all` | `default-flow` |
@@ -43,7 +45,7 @@
 默认流：
 
 ```racket
-'(expand-data flatten analyze dce layout check bind-labels encode)
+'(expand-struct expand-data flatten analyze dce layout check bind-labels encode)
 ```
 
 ## 硬边界
@@ -62,3 +64,4 @@
 10. **谁产生 item，谁负责尺寸**；中间层不替 encode 做指令合法性检查。
 11. **native 是唯一编码方言**：`encode` 只认 `instruction-info-operands` 顺序。
 12. **形式选择也在前端**：后端不根据距离挑短/长形式。
+13. **`expand-struct` 在 `layout` 之前**：struct 展开会改数据尺寸并生成 code item；它不依赖最终地址。

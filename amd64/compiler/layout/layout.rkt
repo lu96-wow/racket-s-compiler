@@ -7,10 +7,11 @@
 ;;;   - 按 place 把代码块/数据 run 放进段
 ;;;   - 按块内/run 内顺序累加尺寸
 ;;;   - align 换成 pad / reserve 事实（看段 kind）
-;;;   - 记录 anchors、requests、problems
+;;;   - 记录 anchors、problems
 ;;;
-;;; 不改程序、不选远形式、不填 scratch、不生成绝对符号。
+;;; 不改程序、不选形式、不填 scratch、不生成绝对符号。
 ;;; 绝对地址由 bind-labels 统一产生。
+;;; 显式 short/near 形式超范围是 problem, 不是交给后续 pass 的 request。
 
 (require "../../amd64-asm/sexp.rkt"
          (only-in "../item.rkt" make-pad make-reserve align-value)
@@ -295,12 +296,13 @@
             (+ (hash-ref start-of (anchor-segment a))
                (anchor-position a)))))
 
-(define (check-control-transfer entry positions problem! request!)
+;; 显式形式超范围只记 problem: layout 不产生 request, 也没有后续 pass
+;; 会自动升形式。前端要么选 near, 要么自己保证 short 够得着。
+(define (check-control-transfer entry positions problem!)
   (define seg (entry-segment entry))
   (define offset (entry-offset entry))
   (define item (entry-item entry))
   (define size (entry-size entry))
-  (define origin (entry-origin entry))
   (when (control-transfer-form? item)
     (define target (normalize-path (control-transfer-target item)))
     (cond
@@ -315,9 +317,11 @@
           (define here (+ (segment-start seg) offset))
           (define disp (- addr (+ here size)))
           (unless (control-transfer-fits? item disp)
-            (request! (if (short-control-transfer-form? item)
-                          (make-request 'needs-near origin (segment-name seg) offset item disp)
-                          (make-request 'needs-far origin (segment-name seg) offset item disp))))])])))
+            (problem! (make-problem 'out-of-range
+                                    (segment-name seg) offset item disp
+                                    (if (short-control-transfer-form? item)
+                                        'rel8
+                                        'rel32))))])])))
 
 (define (item-memory-sites item here size)
   (cond
@@ -425,16 +429,14 @@
   (define anchors (append* (map measured-segment-anchors measured)))
   (define entries (append* (map measured-segment-entries measured)))
   (define positions (anchor-positions anchors measured))
-  (define requests '())
-  (define (request! r) (set! requests (cons r requests)))
   (for ([e (in-list entries)])
-    (check-control-transfer e positions problem! request!)
+    (check-control-transfer e positions problem!)
     (check-memory-range e positions problem!)
     (check-value-chains e positions problem!))
   (check-segment-overflow measured problem!)
   (when (and code-by-seg flows)
     (check-fallthrough code-by-seg flows problem!))
-  (values measured anchors (reverse requests)))
+  (values measured anchors))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口
@@ -454,11 +456,11 @@
                                #:merge-aliases? #f)
                  rules wildcard problem! #:unplaced 'unplaced-data))
   (define units-by-seg (units-by-segment segments code-by-seg data-by-seg))
-  (define-values (measured anchors requests)
+  (define-values (measured anchors)
     (build-layout target segments units-by-seg code-by-seg (program-flows prog) problem!))
   (make-measured-layout
    (for/list ([m (in-list measured)]) (segment->sexp m))
-   anchors requests (reverse problems)))
+   anchors (reverse problems)))
 
 (define (layout-flat-items target items spec)
   (define problems '())
@@ -470,8 +472,8 @@
                   'flat))
   (define by-seg (place-units units rules wildcard problem! #:unplaced 'unplaced))
   (define units-by-seg (units-by-segment segments (make-hash) by-seg))
-  (define-values (measured anchors requests)
+  (define-values (measured anchors)
     (build-layout target segments units-by-seg #f #f problem!))
   (make-measured-layout
    (for/list ([m (in-list measured)]) (segment->sexp m))
-   anchors requests (reverse problems)))
+   anchors (reverse problems)))

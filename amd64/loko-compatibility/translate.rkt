@@ -694,7 +694,7 @@
          [else '()]))]
 
     ;; 远跳 (jmpf (far 选择子 目标)) -> (jmp-far 选择子 目标)。目标是**绝对**
-    ;; 地址表达式, encode 时解析; 尺寸固定 7 字节, 不参与 relax。
+    ;; 地址表达式, encode 时解析; 尺寸固定 7 字节。
     [(eq? h 'jmpf)
      (match (cdr item)
        [(list (list 'far sel target))

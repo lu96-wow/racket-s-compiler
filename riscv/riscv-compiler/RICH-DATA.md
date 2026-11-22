@@ -212,6 +212,8 @@ v ∈ [-2^(8w-1), 2^(8w))
 `hole` 段；需要时直接把 `(reserve n)` 作为 `data-items` 输入，而不是放进
 `rich-data`。
 
+> 结构体语法（`struct` / `struct-data` / `struct-load`）见 [`STRUCT.md`](STRUCT.md)。
+
 ## 5. module 壳
 
 `expand-data` 会递归展开 `module` 里的数据，但保留 `module` 壳：

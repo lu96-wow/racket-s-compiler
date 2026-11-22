@@ -100,7 +100,7 @@ owner：
 
 `program` / `block` / `flow` 保留为 struct，而不是 s-expression。理由：
 
-- 它只存在于 `analyze` / `dce` / `layout` / `relax` 的内部边界；
+- 它只存在于 `analyze` / `dce` / `layout` 的内部边界；
 - 没有序列化、跨进程或外部工具格式要求；
 - 字段固定且由 `compiler/analyze/analyze.rkt` 提供 accessor；
 - 其 `items` 仍然是 canonical program item s-expression。
@@ -120,7 +120,6 @@ owner：
   (phase measured)
   (segments (segment ...) ...)
   (anchors (anchor 链 段名 偏移) ...)
-  (requests (needs-near origin ...) ...)
   (problems (problem kind ...) ...))
 
 (bound-layout
@@ -128,7 +127,6 @@ owner：
   (segments ...)
   (anchors ...)
   (symbols (symbol 链 段名 偏移 地址) ...)
-  (requests ...)
   (problems ...))
 ```
 
@@ -205,8 +203,7 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 | `expand-pseudo` | program-items | program-items | 伪指令/条件码/分支 form 规范化 |
 | `analyze` | program-items + data-items | program | 切块 + 构建 flow |
 | `dce` | program | program | 删除不可达块 |
-| `layout` | program + data-items + layout-spec | measured-layout | 放置 + 度量 + anchors/requests/problems |
-| `relax` | program + data-items + layout-spec | measured-layout | short -> near 单调升级 |
+| `layout` | program + data-items + layout-spec | measured-layout | 放置 + 度量 + anchors/problems |
 | `bind-labels` | measured-layout | bound-layout | anchors -> symbols + 宽度检查 |
 | `encode` | bound-layout | build | 解析符号/相对偏移 + 落字节 |
 
@@ -230,7 +227,7 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 | 数据/位置 item | `compiler/item.rkt` |
 | 指令 form / plan / bytes | `amd64-asm/` |
 | 条件码/branch/jump 策略 | `amd64-help/` |
-| segment/place/offset/anchor/request/problem | `compiler/layout/forms.rkt` |
+| segment/place/offset/anchor/problem | `compiler/layout/forms.rkt` |
 | symbol / bound layout | `compiler/bind-labels/` |
 | build segment | `compiler/encode/` |
 
@@ -246,7 +243,6 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 ### 5.3 局部状态
 
 - `layout` 的 cursor、anchors、problems 是函数内部状态。
-- `relax` 的轮次和 edits 是函数内部状态。
 - `flatten` 的模块/名字表是本次调用局部状态。
 - `encode` 的段游标是本次调用局部状态。
 
@@ -255,9 +251,9 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 1. `expand-pseudo` 之后没有伪指令。
 2. 所有 symbolic immediate / displacement 在 layout 前有固定宽度。
 3. short/near 是 form，不是 encoder 临时选择。
-4. `jmp-short` / `jcc-short` 只允许被 relax 升级为 near。
+4. `jmp-short` / `jcc-short` 是前端显式选择的 form；超范围只报 `out-of-range`，不升级。
 5. `li` / `la` 的 size 与展开使用同一个选择函数。
-6. `instruction-size target` 与 `encode-instruction target` 使用同一个 plan。
+6. `amd64-help/size.rkt` 的 `instruction-size` 与 `encode-instruction` 使用同一个 plan。
 7. measured layout 不含绝对地址。
 8. bound layout 的 symbol 是 encode 唯一地址来源。
 9. `hole` 段只含位置 item，不产生文件字节。
@@ -275,8 +271,8 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
   constructor + accessor，`layout` / `encode` 不再直接拆这些 item；
 - `expand-data` 和 `layout` 的产物使用 item 构造函数；
 - `layout/forms.rkt` 已提供 `segment` / `offset` / `anchor` /
-  `request` / `problem` / `measured-layout` / `bound-layout` 的构造与 accessor；
-- `layout` / `relax` / `bind-labels` / `encode` 已使用这些 accessor；
+  `problem` / `measured-layout` / `bound-layout` 的构造与 accessor；
+- `layout` / `bind-labels` / `encode` 已使用这些 accessor；
 - `bind-labels/forms.rkt` 提供 symbol 的显式构造与 accessor；
 - `loko-compatibility` 的 item/label/align/segment/place 构造已改用
   owner 构造函数；
@@ -290,7 +286,7 @@ parse-<kind>     从外部/原始 shape 解析（必要时）
 1. `compiler/item.rkt` 的 item 构造函数/accessor。
 2. `program` / `block` / `flow` 明确保留为唯一 struct IR，其余跨阶段数据为
    显式 s-expression。
-3. layout IR 的 segment/offset/anchor/request/problem/measured/bound/place
+3. layout IR 的 segment/offset/anchor/problem/measured/bound/place
    构造与 accessor。
 4. `encode` 已使用 bound-layout / segment / offset / symbol accessor。
 5. `loko-compatibility` 的 item/label/segment/place 构造已改用 owner 构造。

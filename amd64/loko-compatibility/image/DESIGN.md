@@ -42,8 +42,8 @@ problems
 ### 设计
 
 - 以 `origin` 为起点，按 `sections` 源顺序累加地址。
-- code section 用**near 分支**测量，得到安全上界；真正 short/near 选择仍由
-  compiler 的 `expand-pseudo` + `relax` 完成。
+- code section 用**near 分支**测量，得到安全上界；真正 short/near 选择由
+  compiler 的 `expand-pseudo` 完成（默认 near）。
 - 每个 section 如果开头不是 label，就补一个内部 label：
   `loko-image-start-<section>`。
 - 每个 section 生成一个 segment，**只给约束，不给地址**：
@@ -53,7 +53,7 @@ problems
   `(align …)` 取较大者。页边界就是这样进入地址分配的：默认 Loko Linux 计划
   给 text/data/bss 三个 load 各声明 `(align 4096)`，于是三个 section 落在不同的
   4K 页上（同一页 + 不同权限 = 内核后映射的页会覆盖前面的，实测直接 SIGSEGV）。
-- `(size ...)` 是段内 item 的尺寸上界（code 段用 near 分支量，relax 只会更小）。
+- `(size ...)` 是段内 item 的尺寸上界（code 段用 near 分支量，显式 short 只会更小）。
 - 计划在 `loko-image` 阶段就解析（`choose-loko-linux-image-plan`），因为约束必须
   早于地址分配；`loko-elf` 用同一个纯函数再解析一次，结果一致。
 - 该 section 的所有 label 生成一条 `place`。

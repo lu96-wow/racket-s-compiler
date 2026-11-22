@@ -36,6 +36,7 @@ amd64-help/
   la.rkt        地址装载策略（RIP-relative / absolute / future far）
   branch.rkt    条件分支形式选择 + 反转 + 范围
   jump.rkt      直接/间接跳转、调用、far/trampoline 预留
+  size.rkt      指令长度统一入口（整条 s-exp -> 字节数）
 ```
 
 ### 2.1 `main.rkt`
@@ -63,7 +64,23 @@ fits-uimm32?
 fits-imm64?
 ```
 
-### 2.3 `li.rkt`
+### 2.3 `size.rkt`
+
+`size.rkt` 是**指令长度**的唯一 help 层入口：
+
+```racket
+(instruction-size insn #:target target-amd64)   ; 一条
+(instructions-size insns #:target target-amd64) ; 多条求和
+```
+
+- 输入是完整的 instruction s-expression，例如 `(mov rax rbx)`。
+- 实现仍由 `../amd64-asm/insn.rkt` 的 `resolved-plan` 决定，和 encode 共用
+  同一个 plan；help 层不再维护第二张尺寸表。
+- `label` / `align` / `pad` / `bytes` / `fill` / `value` / `reserve` 是 item，
+  不是指令；它们的尺寸仍由 `compiler/layout/forms.rkt` 的 `item-size` 负责。
+- `li-size` / `la-size` 也走这个入口，因此展开策略和尺寸计算不会分叉。
+
+### 2.4 `li.rkt`
 
 `li` 的输入是目标寄存器 + 常量/地址表达式，输出是规范 form 列表/plan，
 并同时提供 `li-size`。选择规则必须只有一份：
@@ -77,7 +94,7 @@ fits-imm64?
 | 强制宽度 | `(imm8 ...)` / `(imm32 ...)` / `(imm64 ...)` | 由 form 决定 |
 
 `li-size` / `la-size` 接受可选 `#:target`，默认 `target-amd64`；底层
-`instruction-size` 必须显式收到 target。
+`size.rkt` 的 `instruction-size` 必须显式收到 target。
 
 要求：
 
@@ -86,7 +103,7 @@ fits-imm64?
 - 超过 RIP-relative disp32 的地址不在 `li` 里猜 far，而是交给 `la`/layout 报错或后续 far 策略；
 - 不直接 require `compiler/layout`。
 
-### 2.4 `la.rkt`
+### 2.5 `la.rkt`
 
 地址装载是独立策略：
 
@@ -100,7 +117,7 @@ la-frame   -> lea rd, [base+disp]         ; 栈帧辅助
 `li` 可以复用 `la` 的 RIP-relative 分支，但 `la` 不应该偷偷改 `li` 的常量策略。
 近/远判断只返回 form 和范围信息，不解析 label。
 
-### 2.5 `cc.rkt` + `branch.rkt`
+### 2.6 `cc.rkt` + `branch.rkt`
 
 `cc.rkt`：
 
@@ -120,11 +137,11 @@ branch-range / jump-range
 规则：
 
 - short/near 是展开层显式选择的 form，不是 encoder 临时决定；
-- `relax` 只消费 `jcc-short`/`jmp-short` 的 `needs-near` request；
+- 后端不做分支松弛：short 超范围由 layout 报 `out-of-range`，不会自动升 near；
 - long branch 只负责“反条件 + 跳转序列”的形状，不负责 scratch 填充；
 - 不解析 label，只返回带链 target 的 form。
 
-### 2.6 `jump.rkt`
+### 2.7 `jump.rkt`
 
 ```text
 call-near / call-indirect
@@ -142,7 +159,7 @@ far/trampoline 需要 scratch 时，`scratch.rkt` 只负责校验，不提供默
 - 没有 scratch 必须报错，不能生成半成品；
 - 不把 scratch 泄漏给调用者之外。
 
-### 2.7 `expand-pseudo` 的关系
+### 2.8 `expand-pseudo` 的关系
 
 `compiler/expand-pseudo` 只做“遍历 + 调用 help 的公共 API”：
 
@@ -164,7 +181,7 @@ amd64-asm (facts / form / plan / encode)
 amd64-help (expansion policy / ranges / scratch)
       ^
       |
-compiler (pipeline / layout / relax / bind / encode driver)
+compiler (pipeline / layout / bind / encode driver)
 
 loko-compatibility  ----optional---->  compiler + amd64-help
 amd64-elf           ----optional---->  build + symbols + image plan
@@ -182,7 +199,7 @@ amd64-elf           ----optional---->  build + symbols + image plan
 2. branch/jump 的 size 由选择的 form 决定，不由编码器猜。
 3. 所有 symbolic immediate/displacement 在 help 层决定宽度或明确报错。
 4. help 返回的 form 必须已经是 `amd64-asm` 能直接 plan 的规范 form。
-5. help 不生成 label，不做地址绑定，不做 relax。
+5. help 不生成 label，不做地址绑定，不做分支松弛。
 6. 新增 form 时同时更新：范围判断、选择函数、size、测试、本文件。
 
 ## 5. 当前实现与迁移
@@ -219,7 +236,7 @@ test.rkt     叶子函数/API 测试
 - 字节编码；
 - 布局/段/地址绑定；
 - label 解析；
-- branch relaxation；
+- branch relaxation（后端没有这个 pass：形式由前端显式选择）；
 - 寄存器分配；
 - ABI/调用约定；
 - ELF/loader。

@@ -25,14 +25,16 @@
 | `amd64-asm/insn-generic.rkt` | NASM 生成表的约束检查/选 form -> generic plan -> 纯字节生成 |
 | `amd64-asm/insn-core.rkt` | 共享 ModR/M/SIB/REX/立即数范围事实 |
 | `amd64-asm/ranges.rkt` | 共享整数/立即数/disp/rel 范围谓词；help 层转发 |
+| `amd64-help/size.rkt` | 指令长度 help 入口：整条 instruction s-exp -> 字节数；底层走 `amd64-asm` plan |
 | `amd64-asm/control-flow.rkt` | 每个 form 的控制流事实（`sequential/jump/branch/call/*-indirect/stop`），由 `special/table.rkt` 逐 form 声明；`falls-through?` 的唯一来源 |
 | `amd64-asm/generated/` | 从 NASM `insns.dat` 生成的指令数据；详见 [`amd64-asm/NASM.md`](amd64-asm/NASM.md) |
 | `amd64-asm/registers.rkt` | 寄存器 class、名字、宽度、编号、REX 属性；详见 [`amd64-asm/REGISTERS.md`](amd64-asm/REGISTERS.md) |
 | `amd64-asm/target.rkt` | `target-amd64`、端序字节、填充策略；详见 [`amd64-asm/TARGET.md`](amd64-asm/TARGET.md) |
 
-`amd64-asm/insn.rkt` 同时服务 layout 和 encode，避免两边各自维护尺寸。
-真实指令的通用 legacy/SSE form 来自 NASM 数据表；`insn.rkt` 只保留
-无法一比一映射为 NASM row 的公共 form 和选择策略。
+`amd64-asm/insn.rkt` 和 `amd64-help/size.rkt` 共同服务 layout 和 encode，
+避免两边各自维护尺寸：help 提供“整条形式”的公共入口，实际尺寸仍由
+`amd64-asm` 的 resolved-plan 决定。真实指令的通用 legacy/SSE form 来自
+NASM 数据表；`insn.rkt` 只保留无法一比一映射为 NASM row 的公共 form 和选择策略。
 
 ### 1.1 core 与可选层
 
@@ -56,7 +58,7 @@ loko      -> compiler + amd64-elf + loko-compatibility
 ```text
 rich data -> expand-data -> flatten -> program-items / data-items
   -> expand-pseudo -> analyze -> dce
-  -> relax (内部反复 layout) -> bind-labels -> encode -> build
+  -> layout -> bind-labels -> encode -> build
 
 loko-source -> loko-compat -> loko-ir
   -> loko-lower (可选)
@@ -93,17 +95,14 @@ loko-source -> loko-compat -> loko-ir
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` | `program-items` `data-items` `names` |
 | `expand-pseudo` | `program-items` | `program-items` |
-| `expand-pseudo-near`（仅 `loko-near`） | `program-items` | `program-items` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
 | `layout` | `program` `data-items` `layout-spec` | `measured-layout`（含地址求解） |
-| `relax` | `program` `data-items` `layout-spec` | `measured-layout` |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` | `build` |
 
-层的归属：`compiler/flow/core.rkt` 只注册上面 9 个核心层；`expand-pseudo-near`
-是一个**只为 `loko-near` 验证流存在**的变体（全 near，不跑 relax），它注册在
-`loko-compatibility/flow.rkt` 里 —— 谁需要变体，谁定义变体。
+层的归属：`compiler/flow/core.rkt` 只注册上面 8 个核心层。`loko-near` 是
+历史名字，现在默认流就是 near，等价于 `loko`；它不定义额外的层。
 
 ### 3.1 流本身也是一个值
 
@@ -126,7 +125,6 @@ loko-source -> loko-compat -> loko-ir
 - `dce -> analyze`：消费 `program` struct。
 - `loko-compat -> sexp/item/registers`：只消费共享形状和寄存器事实。
 - `layout -> analyze`：消费 `program` struct。
-- `relax -> layout`：驱动布局。
 - `flow -> 所有 stage`：组合根。
 
 不允许：
@@ -159,13 +157,13 @@ flow 在 `expand-pseudo` 后调用 `pseudo-leftover?`，有残留就报错。
 
 ## 5. measured / bound 边界
 
-`layout` / `relax` 只产生：
+`layout` 只产生：
 
 ```text
-segments + anchors + requests + problems
+segments + anchors + problems
 ```
 
-没有绝对地址。
+没有绝对地址，也没有交给后续层的 request。
 
 `bind-labels` 才把 anchor 变成：
 
@@ -173,30 +171,31 @@ segments + anchors + requests + problems
 symbols: (symbol chain segment offset address)
 ```
 
-`encode` 只接受 bound-layout；有 requests 或 problems 就拒绝出产物。
+`encode` 只接受 bound-layout；有 problems 就拒绝出产物。
 
-## 6. 尺寸与 relax
+## 6. 尺寸与分支形式
 
-- 所有非控制流尺寸在 layout 前固定：
+- 所有尺寸在 layout 前固定：
   - 立即数宽度；
   - 常量 displacement；
   - REX / ModR/M / SIB；
-  - `li` 展开形式。
+  - `li` 展开形式；
+  - 控制转移的 short/near 形式。
 - 符号内存 displacement 固定为 disp32。
-- 只有 `jmp-short` / `jcc-short` 允许被 relax 升成 near。
-- relax 只增不减，所以收敛。
-- `near` 超出 rel32 范围目前只报 `needs-far` problem。
+- 伪 `jmp` / `jcc` 默认展开成 near；short 只能由前端显式写
+  `jmp-short` / `jcc-short`。
+- 后端不做分支松弛：没有 re-layout 固定点，也没有 `needs-near` / `needs-far`。
+- 显式短形式超出 rel8、或 near 超出 rel32，都在 layout 报 `out-of-range`；
+  错误不会自动升形式。
 
 ## 7. 错误模型
 
 | 名字 | 阶段 | 含义 |
 | --- | --- | --- |
-| `requests` | layout | 交给 relax 或未来寄存器层 |
-| `needs-near` | layout | short 越界，relax 可消费 |
 | `problems` | layout / bind / encode | 不能继续出产物 |
 | `loko-problems` | loko-compat | 旧写法不能纯变换（如 `%call`、符号运算等） |
 | `undefined-target` | layout | 分支目标找不到 |
-| `needs-far` | layout | near 也放不下，far form 未实现（request，由 encode 拒绝） |
+| `out-of-range` | layout | 显式 short/near 形式超出自己的 rel 范围 |
 | `pseudo-leftover` | flow | 伪指令漏到 layout 前 |
 | `unallocated-pseudo` | lower | 伪寄存器没有分配，仍留在 item 里 |
 | `uncolored-pseudo` | lower | 干涉图着色时没有可用物理寄存器 |
@@ -222,7 +221,6 @@ symbols: (symbol chain segment offset address)
 | --- | --- | --- |
 | `program`（blocks + flows） | `compiler/analyze/analyze.rkt` | `program?` / `program-of`（收 program 或 item 列表）/ `program->items`（反过来） |
 | `problem` = `(种类 细节 ...)` | `compiler/problem.rkt` | layout / image / lower / loko-compat 都吐这一种；入口层决定报错还是继续 |
-| `request` = `(种类 origin 段 偏移 item 距离)` | `compiler/layout/forms.rkt` | 访问器 `request-origin-block` / `request-item` …；消费方不要数 `list-ref` |
 | 条件码拼写 | `amd64-asm/cc.rkt` | 规范码 + 编码顺序 + 别名 + j 前缀都在那一张表；`amd64-help/cc.rkt` 只是转发 |
 | 符号表项 `(symbol 链 段 偏移 地址)` | `compiler/bind-labels/forms.rkt` | `amd64-elf/writer.rkt` 也用它，不另定义访问器 |
 | 段填充 | `amd64-asm/target.rkt` 的 `padding-bytes` | code=`0x90`，data=`0`；与目标位数无关 |
@@ -245,7 +243,7 @@ symbols: (symbol chain segment offset address)
 - 不使用动态参数或全局 current-target。
 - `loko-compat` 的标签/别名索引是本次调用的局部状态，不跨调用。
 - `flow` 的 hash context 是组合层局部状态。
-- `layout` / `relax` 不修改输入的 program/data/spec。
+- `layout` 不修改输入的 program/data/spec。
 
 ## 9. 当前入口
 

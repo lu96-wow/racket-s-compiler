@@ -238,7 +238,7 @@
                   far-data-spec))
 (check-true (has-problem? abs-out 'absolute-out-of-range))
 
-;; near branch overflow becomes a request, not a silent byte truncation
+;; near branch overflow is a problem, not a silent byte truncation or a request
 (define far-branch-prog
   (analyze '((label text)
              (jmp-near (data)))
@@ -247,9 +247,18 @@
   (layout-program target-amd64 far-branch-prog
                   '((label data) (value 8 0))
                   far-data-spec))
-(check-true
- (for/or ([r (in-list (cdr (assq 'requests far-branch-out)))])
-   (eq? (car r) 'needs-far)))
+(check-true (has-problem? far-branch-out 'out-of-range))
+
+;; explicit short form too far is also a problem: nobody upgrades it later
+(define far-short-prog
+  (analyze '((label text)
+             (jmp-short (data)))
+           '()))
+(define far-short-out
+  (layout-program target-amd64 far-short-prog
+                  '((label data) (value 8 0))
+                  far-data-spec))
+(check-true (has-problem? far-short-out 'out-of-range))
 
 ;; Layout IR explicit constructors/accessors.
 (define seg (make-segment 'text 'code 0 16 4))
@@ -308,11 +317,6 @@
 (check-equal? (anchor-segment anc) 'text)
 (check-equal? (anchor-position anc) 3)
 
-(define req (make-request 'needs-near '(code 0 1) 'text 3 '(jmp-short (x)) -20))
-(check-true (request? req))
-(check-equal? (request-kind req) 'needs-near)
-(check-equal? (length (request-payload req)) 5)
-
 (define prob (make-problem 'undefined-target 'text 3 '(jmp-near (x))))
 (check-true (problem? prob))
 (check-equal? (problem-kind prob) 'undefined-target)
@@ -322,21 +326,18 @@
 (define mlayout
   (make-measured-layout (list (make-layout-segment 'text 'code 0 16 '() 0))
                         (list (make-anchor '(text) 'text 0))
-                        '()
                         '()))
 (check-equal? (layout-phase mlayout) 'measured)
 (check-equal? (length (layout-segments mlayout)) 1)
 (check-equal? (layout-segment-name (car (layout-segments mlayout))) 'text)
 (check-equal? (layout-anchors mlayout) (list (make-anchor '(text) 'text 0)))
 (check-equal? (layout-symbols mlayout) '())
-(check-equal? (layout-requests mlayout) '())
 (check-equal? (layout-problems mlayout) '())
 
 (define blayout
   (make-bound-layout (layout-segments mlayout)
                      (layout-anchors mlayout)
                      (list (make-symbol '(text) 'text 0 0))
-                     '()
                      '()))
 (check-equal? (layout-phase blayout) 'bound)
 (check-equal? (length (layout-symbols blayout)) 1)

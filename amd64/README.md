@@ -6,7 +6,7 @@ amd64 后端拆成五个子项目：
 amd64/
   amd64-asm/           二进制编码：寄存器、target、指令编码
   compiler/            S-expression 汇编编译器：展开、分析、布局、编码
-  amd64-help/          x64 辅助函数：li 展开、范围判断
+  amd64-help/          x64 辅助函数：li 展开、指令长度、范围判断
   amd64-elf/           build + symbols -> ELF64 image
   loko-compatibility/  Loko 旧汇编写法 -> 核心 item / loko-ir
 ```
@@ -20,7 +20,7 @@ rich data
   -> expand-pseudo
   -> analyze
   -> dce
-  -> relax          ; 内部反复驱动 layout
+  -> layout
   -> bind-labels
   -> encode
 ```
@@ -63,7 +63,7 @@ S-expression 汇编编译器，负责 item、控制流、布局、松弛、绑�
 
 ### `amd64-help`
 
-`li` 展开和整数范围判断等辅助函数；不编码、不布局。
+`li` 展开、指令长度统一入口和整数范围判断等辅助函数；不编码、不布局。
 
 ### `amd64-elf`
 
@@ -97,7 +97,7 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - NASM `insns.dat` 驱动的指令表生成（`insn-generic.rkt` + `generated/`）
 - `prefix` 与字符串指令
 - block-aware 布局、place/region/wildcard、fallthrough 检查
-- short -> near relax
+- 显式 short/near 分支形式（后端不做松弛）
 - bind-labels + value 宽度检查
 - encode 最终尺寸断言
 - Loko 旧汇编写法兼容层（`$`、符号位运算）
@@ -111,14 +111,14 @@ Loko 旧汇编写法到核心 item + `loko-ir` 的纯变换；不生成最终 im
 - `%elf` / `image-plan`：canonical region/load/symbol；content/perm 派生 ELF 元数据
 
 已实现：Loko Linux 默认 `%elf` 计划（text/data/bss/stack0/heap0，多 PT_LOAD、
-plan-only reserved region）、loko-near 验证流、Loko 输出缓存工具。
+plan-only reserved region）、near-only 默认流、Loko 输出缓存工具。
 
 未实现：
 
 - 原始 codegen 输出的完整 lower：跨调用 spill、frame allocation；当前 Loko
   验证路径使用 Loko `pass-optimize` 之后的已分配代码
 - `%call` 的通用声明式替代（Loko Linux 路径用 `image/plan.rkt`）
-- `needs-far` / far form / trampoline / scratch 寄存器
+- far form / trampoline / scratch 寄存器
 - 外部符号 / loader、reloc/dynamic linking
 - `jmpf`/`far`、16/32 位模式
 - x87/MMX、AVX/VEX/EVEX、far form、16/32 位模式
@@ -145,8 +145,8 @@ racket amd64/compiler/test/end-to-end.rkt
 
 ## Loko 验证：dump -> 流水线 -> 镜像
 
-完整 `analyze -> dce -> relax -> encode` 对 Loko 运行时约 15 分钟（pc-repl 的
-裸机镜像 1.6M 个 item，`loko-near` 约 24 s）。验证编码/镜像时不要每次重跑：
+完整 `analyze -> dce -> layout -> encode` 对 Loko 运行时约 24 s（pc-repl 的
+裸机镜像 1.6M 个 item）。验证编码/镜像时不要每次重跑：
 
 ```sh
 # 1. 从 Loko 仓库导出程序（Loko 树里装了 sexp target，见 tools/README.md 第 1 节）
@@ -165,5 +165,5 @@ racket tools/write-cached-elf.rkt /tmp/cache/loko-elf.rktd /tmp/prog.elf
 dump 解析也不再走 `read`：`loko-compatibility/sexp-read.rkt` 直接扫字节
 （44 MB：12 s -> 2.4 s，结果与 `read` 逐 item 相等）。
 
-`loko-near` 只用于正确性验证：它不跑 `relax`，分支全部是 near，代码更大但
-语义相同。发布路径仍应使用 `loko`（short 起步，relax 只增）。
+默认流是 near-only：`jmp` / `jcc` 展开成 near，short 只能由前端显式写
+`jmp-short` / `jcc-short`。`loko-near` 保留为历史别名，和 `loko` 等价。

@@ -28,6 +28,22 @@
 (check-equal? (branch-c 'c.beqz 'a0 8) '((c.beqz a0 8)))
 (check-equal? (branch-b 'beq 'a0 'a1 8) '((beq a0 a1 8)))
 
+
+;; 指令长度统一入口
+(check-equal? (instruction-size '(add a0 a1 a2)) 4)
+(check-equal? (instruction-size '(c.addi a0 1)) 2)
+(check-equal? (instruction-size '(li a0 5)) 4)
+(check-equal? (instruction-size '(li a0 2048)) 8)
+(check-equal? (instruction-size '(li a0 2048) #:word-size 'rv32) 8)
+(check-equal? (instruction-size '(li a0 5) #:word-size 'rv32) 4)
+(check-equal? (instruction-size '(la-pcrel a0 (x))) 8)
+(check-equal? (instruction-size '(la-pcrel-li-add a0 t0 (x))) 40)
+(check-equal? (instruction-size '(la-pcrel-li-add a0 t0 (x)) #:word-size 'rv32) 16)
+(check-equal? (instruction-size '(branch-jal beq a0 a1 (x))) 8)
+(check-equal? (instruction-size '(branch-auipc-jalr t0 beq a0 a1 (x))) 12)
+(check-equal? (instruction-size '(jump-auipc-jalr ra ra (x))) 8)
+(check-equal? (instructions-size '((add a0 a1 a2) (c.addi a0 1))) 6)
+
 ;; 分支 / 跳转 / gp 选择需要的范围判断
 (check-true (fits-s12? 2047))
 (check-false (fits-s12? 2048))

@@ -156,7 +156,7 @@
     [(branch-jal)        (emit-all! (encode-branch-jal it here symbols))]
     [(branch-auipc-jalr) (emit-all! (encode-branch-auipc-jalr it here symbols))]
     [(jump-auipc-jalr)   (emit-all! (encode-jump-auipc-jalr it here symbols))]
-    ;; (li rd 常量): 尺寸由 layout 用 li-size 精确算过, 这里用同一个展开器
+    ;; (li rd 常量): 尺寸由 layout 用 instruction-size 精确算过, 这里用同一个展开器
     [(li) (emit-all! (li (cadr it) (caddr it) #:word-size (target-xlen target)))]
     ;; (la-pcrel rd expr): auipc + addi, 8 字节; layout/check 已经保证够得着
     [(la-pcrel) (define d (- (eval-symbol-address (caddr it) symbols) here))
@@ -246,7 +246,7 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (encode-layout target layout)
+(define (encode-layout target layout #:structs [structs '()])
   (unless (eq? (layout-phase layout) 'bound)
     (error 'encode
            "需要 bind-labels 之后的 bound-layout；先跑 bind-labels（当前 phase: ~e）"
@@ -269,5 +269,6 @@
   (list* 'build
          (cons 'link link)
          (cons 'provides provides)
+         (cons 'structs structs)
          (for/list ([seg (in-list (layout-segments layout))])
            (encode-segment target seg symbols))))

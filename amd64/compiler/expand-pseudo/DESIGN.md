@@ -24,8 +24,8 @@
 
 - 只做拼写规范化和分支形式选择。
 - 操作数是值，不递归改写。
-- `jmp`/`jcc` 的 short/near 选择由参数决定；默认 near-only，flow 里用 short 起步，
-  交给 relax 升级。
+- `jmp`/`jcc` 的 short/near 选择由参数决定；默认 near-only，核心 flow 用 near。
+  short 只能由前端显式写 `jmp-short` / `jcc-short`，后端不会升级。
 - 条件码别名、`li`、`jmp/jcc`、`call` 的 form 策略来自
   `../../amd64-help/main.rkt`；本层只做遍历和调用，不复制策略表。
 - `li` 的地址表达式统一变成 RIP-relative `lea`；是否可达由 layout 检查。
@@ -33,6 +33,6 @@
 
 ## 边界
 
-- 不解析标签、不判断指令合法性、不算尺寸。
+- 不解析标签、不判断指令合法性、不算尺寸、不做分支松弛。
 - 不处理段/地址/编码。
 - 不处理 Loko 旧写法；那属于 `loko-compat`。
