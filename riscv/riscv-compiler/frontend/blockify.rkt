@@ -29,7 +29,7 @@
 
 (define (blockify items)
   (define items* (as-items items))
-  (define targets (referenced-labels items*))
+  (define target? (for/hash ([p (in-list (referenced-labels items*))]) (values p #t)))
   (define collected '())
   (define cur-labels '())
   (define cur-insns '())
@@ -49,7 +49,7 @@
          ;; 块开头(还没放 item): 归块头的多个名字
          [(null? cur-insns) (set! cur-labels (cons path cur-labels))]
          ;; 目标是 leader: 另起一块
-         [(member path targets) (flush!) (set! cur-labels (list path))]
+         [(hash-ref target? path #f) (flush!) (set! cur-labels (list path))]
          ;; 非目标 label: 位置标记, 留在块里
          [else (set! cur-insns (cons it cur-insns))])]
       [else

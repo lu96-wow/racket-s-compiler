@@ -21,7 +21,8 @@
                   layout-problems layout-anchors layout-phase)
          (only-in "../riscv-compiler/check/check.rkt" check-layout)
          (only-in "../riscv-compiler/target.rkt"
-                  target-rv64-base target-rv32-all))
+                  target-rv64-base target-rv32-all)
+         (only-in "../riscv-compiler/code.rkt" sexp->code))
 
 (define test-target target-rv64-base)
 (define (item-size x) (item-size* test-target x))
@@ -30,10 +31,13 @@
 (define (check-lay prog data spec)
   (check-layout test-target (lay prog data spec)))
 
+(define (code-of-blocks blocks falls)
+  (sexp->code (list (cons 'blocks blocks) (cons 'falls falls))))
+
 (define (one-block items)
-  (program-of
-   (list (list 'blocks (cons 'block (cons '((main)) items)))
-         (list 'flows '(flow (succ) (fallthrough #f) (root? #t))))))
+  (code-of-blocks
+   (list (cons 'block (cons '((main)) items)))
+   '()))
 
 (define (plain-spec)
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16)))
@@ -112,15 +116,12 @@
 ;; ---------------------------------------------------------------------------
 
 (define prog
-  (program-of
-   '((blocks
-      (block ((main))
-             (addi a0 a0 1)
-             (beq (done) a0 a0))
-      (block ((done)) (jalr x0 ra 0)))
-     (flows
-      (flow (succ 1) (fallthrough 1) (root? #t))
-      (flow (succ) (fallthrough #f) (root? #f))))))
+  (code-of-blocks
+   '((block ((main))
+            (addi a0 a0 1)
+            (beq (done) a0 a0))
+     (block ((done)) (jalr x0 ra 0)))
+   '((fall 0 1))))
 
 (define data
   '((label d tbl)
@@ -392,11 +393,10 @@
 
 ;; 顺序后继被段剪断
 (define p-broken
-  (program-of
-   '((blocks (block ((main)) (addi a0 a0 1) (beq (next) a0 a0))
-             (block ((next)) (jalr x0 ra 0)))
-     (flows (flow (succ 1) (fallthrough 1) (root? #t))
-            (flow (succ) (fallthrough #f) (root? #f))))))
+  (code-of-blocks
+   '((block ((main)) (addi a0 a0 1) (beq (next) a0 a0))
+     (block ((next)) (jalr x0 ra 0)))
+   '((fall 0 1))))
 (check-problem
  (lay p-broken '()
       '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
@@ -416,11 +416,10 @@
 
 ;; 够不着的普通分支: check 报 problem, 不自动升级
 (check-problem
- (check-lay (program-of
-             '((blocks (block ((main)) (beq (far) a0 a0))
-                       (block ((far)) (jalr x0 ra 0)))
-               (flows (flow (succ 1) (fallthrough #f) (root? #t))
-                      (flow (succ) (fallthrough #f) (root? #f)))))
+ (check-lay (code-of-blocks
+             '((block ((main)) (beq (far) a0 a0))
+               (block ((far)) (jalr x0 ra 0)))
+             '())
             '()
             '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
                         (segment (name d) (kind code) (start #x200000) (end #x201000) (align 16)))
@@ -448,11 +447,10 @@
 
 ;; 近形式 la 够不着
 (check-problem
- (check-lay (program-of
-             '((blocks (block ((main)) (la-pcrel t0 (far)) (jalr x0 ra 0))
-                       (block ((far)) (jalr x0 ra 0)))
-               (flows (flow (succ) (fallthrough #f) (root? #t))
-                      (flow (succ) (fallthrough #f) (root? #f)))))
+ (check-lay (code-of-blocks
+             '((block ((main)) (la-pcrel t0 (far)) (jalr x0 ra 0))
+               (block ((far)) (jalr x0 ra 0)))
+             '())
             '()
             '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
                         (segment (name d) (kind code) (start #x90000000) (end #x90001000) (align 16)))

@@ -19,8 +19,7 @@
 ;;;
 ;;; 没有 succ / root? / CFG。可达性、DCE、块顺序都由前端决定。
 
-(require "sexp.rkt"
-         "meta.rkt")
+(require "sexp.rkt")
 
 (provide code?
          code-blocks
@@ -40,13 +39,14 @@
 ;; ---------------------------------------------------------------------------
 
 (define (code? x)
-  (and (tagged-form? x 'code)
-       (tagged-form? (ag 'blocks x) 'blocks)
-       (tagged-form? (ag 'falls x) 'falls)))
+  (and (form? x)
+       (eq? (car x) 'code)
+       (row? 'blocks x)
+       (row? 'falls x)))
 
-(define (ag key x)
+(define (row? key x)
   (define row (and (form? x) (assq key (cdr x))))
-  (and row (cons key (cdr row))))
+  (and row (list? (cdr row))))
 
 (define (code-blocks c)
   (unless (code? c) (error 'code "expected code: ~e" c))
@@ -83,37 +83,15 @@
 ;; 收:
 ;;   (code (blocks ...) (falls ...))
 ;;   ((blocks ...) (falls ...))
-;;   ((blocks ...) (flows ...))      ; 兼容旧的 blocks+flows 字面量: 只取 fallthrough
-;;
-;; 旧 flows 里的 succ / root? 不进入 code。
 (define (sexp->code datum)
   (define fields
     (cond
       [(and (form? datum) (eq? (car datum) 'code)) (cdr datum)]
-      [(and (form? datum) (eq? (car datum) 'program)) (cdr datum)]
       [(list? datum) datum]
-      [else (error 'code "expected code / ((blocks ...) ...): ~e" datum)]))
+      [else (error 'code "expected code / ((blocks ...) (falls ...)): ~e" datum)]))
   (define blocks-row (assoc 'blocks fields))
-  (define falls-row (assoc 'falls fields))
-  (define flows-row (assoc 'flows fields))
   (unless blocks-row
     (error 'code "code is missing (blocks ...): ~e" datum))
-  (define blocks (cdr blocks-row))
-  (define falls
-    (cond
-      [falls-row (cdr falls-row)]
-      [flows-row (flows->falls (cdr flows-row))]
-      [else '()]))
-  (make-code blocks falls))
-
-;; 旧 flow: (flow (succ ...) (fallthrough id|#f) (root? bool))
-(define (flows->falls flows)
-  (for/list ([f (in-list flows)]
-             [i (in-naturals)]
-             #:do [(define ft (flow-fallthrough f))]
-             #:when ft)
-    (make-fall i ft)))
-
-(define (flow-fallthrough f)
-  (define row (and (form? f) (assq 'fallthrough (cdr f))))
-  (and row (cadr row)))
+  (define falls-row (assoc 'falls fields))
+  (make-code (cdr blocks-row)
+             (if falls-row (cdr falls-row) '())))

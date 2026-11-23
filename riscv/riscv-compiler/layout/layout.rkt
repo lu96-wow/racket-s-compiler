@@ -159,7 +159,7 @@
 ;; 代码: 前端产出的 code(s-exp)
 (define (code-parts c)
   (unless (code? c)
-    (error 'layout "program must be code (blocks + falls); got: ~e" c))
+    (error 'layout "expected code (blocks + falls); got: ~e" c))
   (values (code-blocks c) (code-falls c)))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item
@@ -323,28 +323,23 @@
 ;; ---------------------------------------------------------------------------
 
 (define (check-fallthrough measured-segs falls problem!)
-  (define where (make-hash))                    ; 块下标 -> (cons 段名 段内序号)
+  (define pos (make-hash))                      ; 块下标 -> (cons 段名 段内序号)
   (define labels-of (make-hash))                ; 块下标 -> 块头 labels
-  (define next-of (make-hash))                  ; 块下标 -> 同段物理下一块下标
   (for ([m (in-list measured-segs)])
-    (define blks (measured-blocks m))
-    (for ([e (in-list blks)] [i (in-naturals)])
-      (hash-set! where (car e) (cons (segment-name (measured-segment m)) i))
-      (hash-set! labels-of (car e) (block-head (cdr e)))
-      (when (< (add1 i) (length blks))
-        (hash-set! next-of (car e) (car (list-ref blks (add1 i)))))))
+    (for ([e (in-list (measured-blocks m))] [i (in-naturals)])
+      (hash-set! pos (car e) (cons (segment-name (measured-segment m)) i))
+      (hash-set! labels-of (car e) (block-head (cdr e)))))
   (for ([f (in-list falls)])
-    (define idx (fall-from f))
-    (define ft (fall-to f))
-    (define nxt (hash-ref next-of idx #f))
-    (unless (and nxt
-                 (= nxt ft)
-                 (equal? (hash-ref where ft #f)
-                         (let ([w (hash-ref where idx #f)])
-                           (and w (cons (car w) (add1 (cdr w)))))))
-      (problem! `(broken-fallthrough ,idx ,ft
-                                     ,(hash-ref labels-of idx '())
-                                     ,(hash-ref labels-of ft '()))))))
+    (define from (fall-from f))
+    (define to (fall-to f))
+    (define p (hash-ref pos from #f))
+    (define q (hash-ref pos to #f))
+    (unless (and p q
+                 (equal? (car p) (car q))
+                 (= (cdr q) (add1 (cdr p))))
+      (problem! `(broken-fallthrough ,from ,to
+                                     ,(hash-ref labels-of from '())
+                                     ,(hash-ref labels-of to '()))))))
 
 ;; ---------------------------------------------------------------------------
 ;; anchors / 临时位置

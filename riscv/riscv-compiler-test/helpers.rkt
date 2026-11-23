@@ -5,7 +5,6 @@
 ;;; code-of 只是测试/示例入口，不是 backend 的 CFG 分析。
 
 (require rackunit
-         (only-in "../riscv-compiler/code.rkt" sexp->code)
          (only-in "../riscv-compiler/frontend/blockify.rkt" blockify))
 
 (provide (all-defined-out))
@@ -21,9 +20,6 @@
 ;; ---------------------------------------------------------------------------
 ;; program / layout / build 的读取
 ;; ---------------------------------------------------------------------------
-
-(define (program-of blocks+flows)
-  (sexp->code blocks+flows))
 
 ;; 测试用前端: 扁平 item -> code(blocks + falls)。
 (define (code-of items)

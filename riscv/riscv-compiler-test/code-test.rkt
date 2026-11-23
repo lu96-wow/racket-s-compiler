@@ -44,7 +44,7 @@
 (check-equal? (map block-head (code-blocks c-target)) '(((a)) ((b))))
 
 ;; ---------------------------------------------------------------------------
-;; 手工 code / 兼容旧 ((blocks ...) (flows ...))
+;; 手工 code / 字面量
 ;; ---------------------------------------------------------------------------
 
 (define manual
@@ -58,15 +58,14 @@
 (check-equal? (fall-to (car (code-falls manual))) 1)
 (check-equal? (sexp->code (code->sexp manual)) manual)
 
-;; 旧 blocks+flows 字面量: 只保留 fallthrough
-(define old-fields
+;; 字段表字面量
+(define fields
   '((blocks
      (block ((main)) (addi a0 a0 1) (beq (done) a0 a1))
      (block ((done)) (jalr x0 ra 0)))
-    (flows
-     (flow (succ 1) (fallthrough 1) (root? #t))
-     (flow (succ) (fallthrough #f) (root? #f)))))
-(check-equal? (sexp->code old-fields) manual)
+    (falls
+     (fall 0 1))))
+(check-equal? (sexp->code fields) manual)
 
 ;; ---------------------------------------------------------------------------
 ;; validate

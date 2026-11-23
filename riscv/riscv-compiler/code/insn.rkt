@@ -5,15 +5,19 @@
 ;;; 布局/编码需要知道“哪条是分支/跳转、目标在哪”；这里不建 CFG。
 ;;;
 ;;; 操作数顺序是 riscv-opcodes native 顺序:
-;;;   - 分支        (beq L a b) / (c.beqz a L)   两条边: 目标 + 顺序
-;;;   - 直接跳转    (jal x0 L) / (c.j L)          一条边: 目标(无顺序边)
-;;;   - 调用        (jal x1 L) / (c.jal L)        两条边: 目标 + 顺序
+;;;   - 分支        (beq L a b) / (c.beqz a L)
+;;;   - 直接跳转    (jal x0 L) / (c.j L)
+;;;   - 调用        (jal x1 L) / (c.jal L)
 ;;;   - 间接跳转    (jalr ...) / (c.jr r) / (c.jalr r)
-;;;                 目标不可知: c.jr 无顺序边, c.jalr/jalr 有; 图记为"有间接跳转"
-;;;   - 陷阱        (ecall) 可能返回 -> 顺序边; (ebreak) / (c.ebreak) 停住 -> 无边
+;;;   - 陷阱        (ecall) / (ebreak) / (c.ebreak)
 ;;;
-;;; 目标位置不再写死为 last: 普通分支的 bimm12 在 native 顺序里通常在前面。
-;;; 不认识的指令一律当普通指令: 不进分析, 原样保留。
+;;; 分类用来回答三件事:
+;;;   1. 目标操作数在哪 (jump-target-position)
+;;;   2. 执行会不会落到物理下一条 (falls-through?)
+;;;   3. 这条指令之后要不要开新块 (ends-block?)
+;;;
+;;; 目标位置不写死为 last: 普通分支的 bimm12 在 native 顺序里通常在前面。
+;;; 不认识的指令一律当普通指令。
 
 (require "../sexp.rkt"
          ;; 寄存器身份只有一个来源(整数 / x 名 / 别名都指向同一个寄存器)
@@ -27,18 +31,6 @@
          unconditional-jump? jump-target jump-target-position jump-register
          check-transfer-arity!
          zero-register?)
-
-;; 真列表(代码形状)
-
-
-;; 名字: label 的链上一节(可以是 symbol / string / number)
-
-
-;; 链: 非空名字列表, 例如 (a g)。label 与跳转目标都用它做身份。
-
-
-;; 裸原子当单节链看: g 与 (g) 等价
-
 
 ;; ---------------------------------------------------------------------------
 ;; 分类表(唯一的名单, 改这里)
