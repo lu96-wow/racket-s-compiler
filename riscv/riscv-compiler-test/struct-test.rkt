@@ -14,7 +14,11 @@
 
 (define (expand prog data [tgt target])
   (call-with-values (lambda () (expand-struct-inputs tgt prog data))
-    (lambda (p d s) (list p d s))))
+    (lambda (p d s _sp) (list p d s))))
+
+(define (expand-all prog data [tgt target] [extern-structs '()])
+  (call-with-values (lambda () (expand-struct-inputs tgt prog data extern-structs))
+    (lambda (p d s sp) (list p d s sp))))
 
 (define (structs-of-build build)
   (cdr (assoc 'structs (cdr build))))
@@ -294,6 +298,304 @@
 (check-equal? (build-size build 'd) 8)
 (check-equal? (build-bytes build 'd) '(7 0 0 0 8 0 0 0))
 
+;; ---------------------------------------------------------------------------
+;; 跨模块 struct：provide / require / prefix-in / rename-in / re-export
+;; ---------------------------------------------------------------------------
+
+(define cross-src
+  '((module a
+      (provide point)
+      (struct point (x b32) (y b32)))
+    (module b
+      (require a)
+      (struct rect (p point) (w b32))
+      (label main)
+      (li t0 (sizeof point))
+      (struct-load t1 t2 point y)
+      (jalr x0 ra 0))))
+
+(define-values (cross-p _cross-d cross-s cross-sp)
+  (apply values (expand-all cross-src '())))
+
+(check-equal? cross-p
+              '((module a (provide point))
+                (module b
+                  (require a)
+                  (label main)
+                  (li t0 8)
+                  (lwu t1 t2 4)
+                  (jalr x0 ra 0))))
+(check-equal? (map sdef-name cross-s) '((a point) (b rect)))
+(check-equal? (map sdef-size cross-s) '(8 12))
+(check-equal? (field-type (car (sdef-fields (cadr cross-s))))
+              '(struct-ref (a point)))
+(check-equal? cross-sp
+              '((module (a) (provide (point) (a point)))
+                (module (b))))
+
+;; prefix-in 和 rename-in 只改本地名，不改绝对名。
+(define rename-src
+  '((module a
+      (provide point)
+      (struct point (x b32) (y b32)))
+    (module b
+      (require (prefix-in a: a))
+      (struct p1 (p a:point)))
+    (module c
+      (require (rename-in a (point apt)))
+      (struct p2 (p apt)))))
+
+(define-values (_rename-p _rename-d rename-s _rename-sp)
+  (apply values (expand-all rename-src '())))
+
+(check-equal? (map sdef-name rename-s) '((a point) (b p1) (c p2)))
+(check-equal? (map (lambda (d) (field-type (car (sdef-fields d))))
+                   (cdr rename-s))
+              '((struct-ref (a point)) (struct-ref (a point))))
+
+;; re-export：b 把 require 进来的 struct 再 provide 出去。
+(define reexport-src
+  '((module a
+      (provide point)
+      (struct point (x b32) (y b32)))
+    (module b
+      (provide point)
+      (require a))
+    (module c
+      (require b)
+      (struct p (x point)))))
+
+(define-values (_reexport-p _reexport-d reexport-s _reexport-sp)
+  (apply values (expand-all reexport-src '())))
+
+(check-equal? (map sdef-name reexport-s) '((a point) (c p)))
+(check-equal? (field-type (car (sdef-fields (cadr reexport-s))))
+              '(struct-ref (a point)))
+
+;; 没 require 时短名不可见（完整链仍然是兼容路径）。
+(check-exn exn:fail?
+           (lambda ()
+             (expand '((module a
+                         (provide point)
+                         (struct point (x b32)))
+                       (module b
+                         (struct rect (p point))))
+                     '())))
+
+;; 只有 struct provide 的模块不能让 flatten 误报“provide 未定义”。
+(define cross-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4))
+              (segment (name d) (kind data) (start #x2000) (end #x2100) (align 8)))
+    (place c (b main))
+    (place d (d p))))
+
+(define cross-build
+  (flow-value
+   (run-flow target default-flow
+             (list (cons 'program-items
+                         '((module a
+                             (provide point)
+                             (struct point (x b32) (y b32)))
+                           (module b
+                             (require a)
+                             (label main)
+                             (la-pcrel t0 (d p))
+                             (struct-load t1 t0 point y)
+                             (jalr x0 ra 0))))
+                   (cons 'rich-data
+                         '((label d p)
+                           (struct-data (a point) (x 7) (y 8))))
+                   (cons 'layout-spec cross-spec)))
+   'build))
+
+(check-equal? (map sdef-name (structs-of-build cross-build)) '((a point)))
+(check-equal? (build-size cross-build 'd) 8)
+(check-equal? (build-bytes cross-build 'd) '(7 0 0 0 8 0 0 0))
+
+;; ---------------------------------------------------------------------------
+;; 跨编译单元：上一份 build 的 (structs ...) 直接作为 extern-structs 输入
+;; ---------------------------------------------------------------------------
+
+(define extern-point (structs-of-build cross-build))
+
+(define-values (extern-p _extern-d extern-s _extern-sp)
+  (apply values
+         (expand-all
+          '((label main)
+            (li t0 (sizeof (a point)))
+            (li t1 (offsetof (a point) y))
+            (struct-load t2 t3 (a point) y)
+            (jalr x0 ra 0))
+          '() target extern-point)))
+
+(check-equal? extern-p
+              '((label main)
+                (li t0 8)
+                (li t1 4)
+                (lwu t2 t3 4)
+                (jalr x0 ra 0)))
+(check-equal? (map sdef-name extern-s) '())
+
+;; extern-structs 也可以直接给整份 build。
+(check-equal? (map sdef-name
+                   (list-ref (expand-all '((label main) (jalr x0 ra 0))
+                                          '() target cross-build)
+                             2))
+              '())
+
+;; 外部元数据里的嵌套 struct 可以直接初始化。
+(define nested-extern (structs-of-build build))
+(define-values (_nested-ext-p nested-ext-d _nested-ext-s _nested-ext-sp)
+  (apply values
+         (expand-all
+          '((label main) (jalr x0 ra 0))
+          '((label d r)
+            (struct-data (m rect)
+              (p (x 1) (y 2))
+              (w 3)))
+          target nested-extern)))
+
+(check-equal? nested-ext-d
+              '((label d r)
+                (align 4)
+                (align 4)
+                (value 4 1)
+                (value 4 2)
+                (value 4 3)))
+
+;; 外部元数据里的显式 align / pad 也要能在 struct-data 里还原。
+(define extern-aligned
+  '((struct-def
+      (name (a aligned))
+      (size 24)
+      (align 8)
+      (fields
+        (field (name a) (type b8) (offset 0) (size 1) (align 1))
+        (field (name b) (type b32) (offset 8) (size 4) (align 4))
+        (field (name c) (type b16) (offset 16) (size 2) (align 2)))
+      (padding
+        (align (n 8) (offset 1) (size 7))
+        (pad (n 3) (offset 12) (size 3))))))
+
+(define-values (_align-ext-p align-ext-d _align-ext-s _align-ext-sp)
+  (apply values
+         (expand-all
+          '((label main) (jalr x0 ra 0))
+          '((label d a)
+            (struct-data (a aligned) (a 1) (b 2) (c 3)))
+          target extern-aligned)))
+
+(check-equal? align-ext-d
+              '((label d a)
+                (align 8)
+                (value 1 1)
+                (pad 7)
+                (value 4 2)
+                (pad 3)
+                (pad 1)
+                (value 2 3)
+                (pad 6)))
+
+;; 同一个外部 struct 重复出现（例如两份 build 都带上了 A 的元数据）可以合并。
+(check-equal? (map sdef-name
+                   (list-ref (expand-all '((label main) (jalr x0 ra 0))
+                                          '() target
+                                          (append extern-point extern-point))
+                             2))
+              '())
+
+;; 本单元自己定义同名 struct 时不能和外部定义同时存在。
+(check-exn exn:fail?
+           (lambda ()
+             (expand-all '((struct (a point) (z b8)))
+                         '() target extern-point)))
+
+;; 完整 flow：B 不定义 point，只用 A 的元数据。
+(define unit-b-program
+  '((module b
+      (label main)
+      (li t0 (sizeof (a point)))
+      (la-pcrel t1 (d p))
+      (struct-load t2 t1 (a point) y)
+      (jalr x0 ra 0))))
+
+(define unit-b-rich
+  '((label d p)
+    (struct-data (a point) (x 7) (y 8))))
+
+(define unit-b-spec
+  '((segments (segment (name c) (kind code) (start #x3000) (end #x3100) (align 4))
+              (segment (name d) (kind data) (start #x4000) (end #x4100) (align 8)))
+    (place c (b main))
+    (place d (d p))))
+
+(define unit-b-build
+  (flow-value
+   (run-flow target default-flow
+             (list (cons 'extern-structs extern-point)
+                   (cons 'program-items unit-b-program)
+                   (cons 'rich-data unit-b-rich)
+                   (cons 'layout-spec unit-b-spec)))
+   'build))
+
+(check-equal? (map sdef-name (structs-of-build unit-b-build)) '())
+(check-equal? (build-size unit-b-build 'd) 8)
+(check-equal? (build-bytes unit-b-build 'd) '(7 0 0 0 8 0 0 0))
+
+;; 跨编译单元也可以用 require：把上一份的 struct-provides 一起传进来。
+(define unit-c-program
+  '((module c
+      (require a)
+      (label main)
+      (li t0 (sizeof point))
+      (la-pcrel t1 (d p))
+      (struct-load t2 t1 point y)
+      (jalr x0 ra 0))))
+
+(define unit-c-spec
+  '((segments (segment (name c) (kind code) (start #x5000) (end #x5100) (align 4))
+              (segment (name d) (kind data) (start #x6000) (end #x6100) (align 8)))
+    (place c (c main))
+    (place d (d p))))
+
+(define unit-c-build
+  (flow-value
+   (run-flow target default-flow
+             (list (cons 'extern-structs extern-point)
+                   (cons 'extern-struct-provides
+                         (cdr (build-struct-provides cross-build)))
+                   (cons 'extern-label-provides '((module (a))))
+                   (cons 'program-items unit-c-program)
+                   (cons 'rich-data unit-b-rich)
+                   (cons 'layout-spec unit-c-spec)))
+   'build))
+
+(check-equal? (map sdef-name (structs-of-build unit-c-build)) '())
+(check-equal? (build-size unit-c-build 'd) 8)
+(check-equal? (build-bytes unit-c-build 'd) '(7 0 0 0 8 0 0 0))
+
+;; 只给 extern-units：struct 声明按当前 target 重新布局，provide 表也从 unit 取。
+(define unit-d-build
+  (flow-value
+   (run-flow target default-flow
+             (list (cons 'extern-units (list (build-unit cross-build)))
+                   (cons 'program-items unit-c-program)
+                   (cons 'rich-data unit-b-rich)
+                   (cons 'layout-spec unit-c-spec)))
+   'build))
+
+(check-equal? (map sdef-name (structs-of-build unit-d-build)) '())
+(check-equal? (build-size unit-d-build 'd) 8)
+(check-equal? (build-bytes unit-d-build 'd) '(7 0 0 0 8 0 0 0))
+
+
+;; 根模块的 provide 也要能写进元数据（scope 是空链）。
+(define-values (_root-p _root-d _root-s root-sp)
+  (apply values
+         (expand-all '((provide point) (struct point (x b32)))
+                     '())))
+(check-equal? root-sp
+              '((module () (provide (point) (point)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 链式名字 + module 遮蔽

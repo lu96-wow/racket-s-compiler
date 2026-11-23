@@ -29,6 +29,14 @@
   `exports` 是各模块 `(provide …)` 的并集（**绝对链**，已去重排序），
   或 `'all`（全单元没有 provide 子句 = 平铺镜像语义，全导出）。
   它一路传到 `bind-labels`，最后成为产物的 `(provides 链 …)` 和 link 文件。
+- 模块树、provide/require、prefix-in/rename-in/rename-out、re-export 的
+  通用不动点在 [`../modules.rkt`](../modules.rkt)；本层只提供 label 声明表。
+- `struct-provides` 是可选输入：struct 有独立名字空间；这里只跳过 struct-only
+  provide，不让 label 层误报。
+- `extern-label-provides` 提供上一份编译单元的模块导出表，使跨编译单元的
+  `require` 也能绑定；地址仍然来自 `externs`。
+- 产物多一个按模块的 `label-provides`，下一份编译可以把它当
+  `extern-label-provides`。
 
 ## 边界
 

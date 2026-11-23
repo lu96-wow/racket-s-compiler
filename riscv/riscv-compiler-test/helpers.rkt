@@ -37,6 +37,18 @@
   (or (findf (lambda (x) (eq? (car x) 'provides)) (cdr build))
       (error 'build-provides "no provides in ~e" build)))
 
+(define (build-label-provides build)
+  (or (findf (lambda (x) (eq? (car x) 'label-provides)) (cdr build))
+      (error 'build-label-provides "no label-provides in ~e" build)))
+
+(define (build-struct-provides build)
+  (or (findf (lambda (x) (eq? (car x) 'struct-provides)) (cdr build))
+      (error 'build-struct-provides "no struct-provides in ~e" build)))
+
+(define (build-unit build)
+  (or (findf (lambda (x) (eq? (car x) 'unit)) (cdr build))
+      (error 'build-unit "no unit in ~e" build)))
+
 (define (build-segment build name)
   (or (findf (lambda (seg)
                (equal? (cadr (assoc 'name (cdr seg))) name))

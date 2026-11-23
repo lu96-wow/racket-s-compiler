@@ -10,28 +10,39 @@
 | 名字 | 形状 | 谁产 |
 | --- | --- | --- |
 | `rich-data` | rich 数据 | seed / `expand-struct` |
+| `extern-units` | 上一份 build 的 unit（布局前接口） | seed |
 | `structs` | struct 定义 + 布局 | `expand-struct` |
+| `extern-structs` | 上一份 build / structs 元数据（跨编译单元输入） | seed |
+| `extern-struct-provides` | 上一份 build 的 struct-provides | seed |
+| `struct-provides` | 按模块的 struct provide 表 | `expand-struct` |
+| `extern-label-provides` | 上一份 build 的 label-provides | seed |
+| `label-provides` | 按模块的 label provide 表 | `flatten` |
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
 | `program-items` | 扁平程序 item（native） | seed / `expand-struct` / `flatten` |
 | `names` | 完整链 → 位置 | `flatten` |
 | `program` | `(struct program blocks flows)` | `analyze` / `dce` |
+| `unit` | 布局前接口：模块 provide + label kind + struct 声明 | `emit-unit` |
 | `measured-layout` | segments + anchors + problems | `layout` / `check` |
 | `bound-layout` | measured + symbols | `bind-labels` |
-| `build` | link + provides + structs + 每段字节 | `encode` |
+| `build` | link + provides + structs + label/struct provides + unit + 每段字节 | `encode` |
+| `program` | `(program (internal …) (external …))`；根 module 带 base，addresses 是相对地址 | `emit-program` |
 
 ## stage 表
 
 | stage | requires | provides |
 | --- | --- | --- |
-| `expand-struct` | `program-items` `rich-data` | `program-items` `rich-data` `structs` |
+| `load-units` | (`optional extern-units`)（+ 旧外部元数据） | `extern-structs` `extern-struct-provides` `extern-label-provides` |
+| `expand-struct` | `program-items` `rich-data` (`optional extern-structs`) (`optional extern-struct-provides`) | `program-items` `rich-data` `structs` `struct-provides` |
 | `expand-data` | `rich-data` | `data-items` |
-| `flatten` | `program-items` `data-items` (`optional externs`) | `program-items` `data-items` `names` `exports` |
+| `flatten` | `program-items` `data-items` (`optional externs`) (`optional struct-provides`) (`optional extern-label-provides`) | `program-items` `data-items` `names` `exports` `label-provides` `module-requires` |
 | `analyze` | `program-items` `data-items` | `program` |
 | `dce` | `program` | `program` |
+| `emit-unit` | `program` `data-items` (`optional structs`) (`optional label-provides`) (`optional struct-provides`) (`optional module-requires`) | `unit` |
 | `layout` | `program` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout` |
 | `bind-labels` | `measured-layout` (`optional exports`) | `bound-layout` |
-| `encode` | `bound-layout` (`optional structs`) | `build` |
+| `encode` | `bound-layout` (`optional structs`) (`optional label-provides`) (`optional struct-provides`) (`optional unit`) | `build` |
+| `emit-program` | `build` `program` `data-items` (`optional unit`) (`optional extern-units`) (`optional externs`) | `program` |
 
 ## 层组
 

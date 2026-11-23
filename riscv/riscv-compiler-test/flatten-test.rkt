@@ -119,7 +119,7 @@
 ;; 多输入共享名字表
 ;; ---------------------------------------------------------------------------
 
-(define-values (outs names exports)
+(define-values (outs names exports _provides _requires)
   (flatten-inputs
    (list '((module a (provide f) (label f)))
          '((module b (require a) (la-pcrel t0 (f)))
@@ -136,7 +136,7 @@
 ;; 跨输入直接引用根 label
 (check-equal? (flatten-program '((label shared)))
               '((label shared)))
-(define-values (outs2 _ _exports2)
+(define-values (outs2 _ _exports2 _provides2 _requires2)
   (flatten-inputs (list '((label shared))
                         '((la-pcrel t0 (shared))))))
 (check-equal? outs2 '(((label shared)) ((la-pcrel t0 (shared)))))
@@ -215,7 +215,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (exports-of inputs)
-  (let-values ([(outs names exports) (flatten-inputs inputs)])
+  (let-values ([(outs names exports _provides _requires) (flatten-inputs inputs)])
     (list outs names exports)))
 
 ;; 裸程序(没有 module/provide): 全导出

@@ -32,10 +32,12 @@ racket integration-test.rkt
 | `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems、`hole` 段（`align` → `reserve`） |
 | `bind-labels-test.rkt` | anchors → symbols、phase、绝对地址、最终宽度/容量、problems 保留 |
 | `check-test.rkt` | 显式短/远形式、范围边界、`zero-scratch` / `bad-scratch`、`la-too-far`、check 不改布局 |
-| `struct-test.rkt` | struct 布局、内部 align/pad、sizeof/offsetof、静态数据、字段访问 short/far、模块作用域、build 导出 |
+| `struct-test.rkt` | struct 布局、内部 align/pad、sizeof/offsetof、静态数据、字段访问 short/far、模块作用域、`require` 导入、跨编译单元 `extern-structs` / `extern-struct-provides`、build 导出 |
 | `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la-pcrel`/显式形式、`hole` 段（`size` 保留 + `bytes` 为空）、断言 |
 | `flow-test.rkt` | stage 表、依赖检查、`layout`/`check`、`bind-labels`、层组/选择器、`run-stage`、context 续跑 |
-| `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、显式远形式、错误 |
+| `unit-test.rkt` | 布局前接口：模块 provide、label kind、struct 声明；确认没有地址/offset |
+| `program-test.rkt` | 最终 `(program (internal …) (external …))`：modules / rich-data / functions / addresses |
+| `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、显式远形式、跨编译单元 label `require`、错误 |
 
 ## 测试里刻意锁住的 s-exp 形状
 
@@ -57,11 +59,16 @@ bind-labels : ((phase bound) (origin 基址) (segments ...) (anchors ...)
 build       : (build (link (base 基址) (symbol 链 地址) ...)
                      (provides 链 ...)
                      (structs (struct-def ...) ...)
+                     (label-provides ...)
+                     (struct-provides ...)
+                     (unit ...)
                      (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) ...)
 link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.rkt，形状同 link）
 
 输入侧（可省）: externs = 上一份的 link 表
               (link (base B) (symbol 链 地址) ...)        ; 地址已知
+              extern-label-provides = 上一份的 label-provides
+              extern-structs / extern-struct-provides = 上一份的 structs / struct-provides
               (link (base B) (symbol 链 #f) ...)          ; 地址未知 -> unlinked-external
 ```
 

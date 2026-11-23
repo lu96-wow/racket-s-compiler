@@ -13,6 +13,7 @@
 
 (define test-target target-rv64-base)
 (define (run-flow selector [seeds '()]) (run-flow* test-target selector seeds))
+(define pre-emit-flow (remove 'emit-program default-flow))
 
 ;; ---------------------------------------------------------------------------
 ;; ARCHITECTURE.md §6 的规范例子: 逐字节对照
@@ -61,7 +62,8 @@
                 (label hot) (addi a0 a0 1) (jalr x0 ra 0)
                 (label end) (ld t0 sp 8)))
 
-(define doc-program (flow-value doc-out 'program))
+(define doc-program
+  (flow-value (run-flow pre-emit-flow doc-seeds) 'program))
 (check-equal? (length (program-blocks doc-program)) 4)
 (check-true (flow-root? (car (program-flows doc-program))))
 (check-false (flow-root? (cadr (program-flows doc-program))))
@@ -126,7 +128,15 @@
                       (list #x67 #x80 #x00 #x00)))    ; jalr x0, ra, 0
 
 ;; 数据侧的 root: 有间接跳转时, 数据里存了 (p f) 的地址, 所以 f 是 root
-(check-true (flow-root? (last (program-flows (flow-value mod-out 'program)))))
+(check-true
+ (flow-root?
+  (last (program-flows
+         (flow-value
+          (run-flow pre-emit-flow
+                    (list (cons 'rich-data mod-rich)
+                          (cons 'program-items mod-prog)
+                          (cons 'layout-spec mod-spec)))
+          'program)))))
 
 ;; ---------------------------------------------------------------------------
 ;; rich 数据全链路: 端序 / 字符串 / 数组压缩
@@ -296,6 +306,62 @@
                 (symbol (bss) b 0 #x2000)
                 (symbol (buf) b 16 #x2010)
                 (symbol (bss-end) b 32 #x2020)))
+
+;; ---------------------------------------------------------------------------
+;; 跨编译单元: label-provides + externs 让 require 也能用
+;; ---------------------------------------------------------------------------
+
+(define xproj-a-spec
+  '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4)))
+    (place c (a f))))
+
+(define xproj-a
+  (flow-value
+   (run-flow default-flow
+             (list (cons 'program-items
+                         '((module a (provide f) (label f) (jalr x0 ra 0))))
+                   (cons 'rich-data '())
+                   (cons 'layout-spec xproj-a-spec)))
+   'build))
+
+(define xproj-b-spec
+  '((segments (segment (name c) (kind code) (start #x2000) (end #x2100) (align 4)))
+    (place c (b main))))
+
+(define xproj-b
+  (flow-value
+   (run-flow default-flow
+             (list (cons 'externs (list (build-link xproj-a)))
+                   (cons 'extern-label-provides
+                         (cdr (build-label-provides xproj-a)))
+                   (cons 'program-items
+                         '((module b (require a) (label main) (jal x0 (f)))))
+                   (cons 'rich-data '())
+                   (cons 'layout-spec xproj-b-spec)))
+   'build))
+
+(check-equal? (build-bytes xproj-b 'c)
+              '(111 240 15 128))       ; jal x0, (a f): 0x2000 -> 0x1000
+(check-equal? (build-provides xproj-b) '(provides (b main)))
+(check-equal? (build-label-provides xproj-b)
+              '(label-provides
+                (module (b))))
+
+;; 用 extern-units 走同一个例子：不再单独传 extern-label-provides。
+(define xproj-b-unit
+  (flow-value
+   (run-flow default-flow
+             (list (cons 'extern-units (list (build-unit xproj-a)))
+                   (cons 'externs (list (build-link xproj-a)))
+                   (cons 'program-items
+                         '((module b (require a) (label main) (jal x0 (f)))))
+                   (cons 'rich-data '())
+                   (cons 'layout-spec xproj-b-spec)))
+   'build))
+
+(check-equal? (build-bytes xproj-b-unit 'c) '(111 240 15 128))
+(check-equal? (build-label-provides xproj-b-unit)
+              (build-label-provides xproj-b))
 
 ;; ---------------------------------------------------------------------------
 ;; 错误: 未定义目标 / 空槽 不允许出产物

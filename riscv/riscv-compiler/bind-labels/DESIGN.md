@@ -72,7 +72,7 @@
 它取 spec 的 `(origin …)` 而不是 `min(段 start)` —— 后者在有 hole 段时会给出
 没有意义的数（例如 bss 在 `0x80000000`、代码在 `0x1000`）。
 
-`encode` 把它**原样搬进产物**（`(build (link …) (provides …) (segment …) …)`），不重算地址。
+`encode` 把它**原样搬进产物**（`(build (link …) (provides …) (structs …) (label-provides …) (struct-provides …) (segment …) …)`），不重算地址。
 
 ## provides 表：对外承诺哪些名字
 

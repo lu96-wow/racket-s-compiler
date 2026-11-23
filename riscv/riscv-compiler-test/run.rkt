@@ -20,6 +20,8 @@
     "encode-test.rkt"
     "link-file-test.rkt"
     "flow-test.rkt"
+    "unit-test.rkt"
+    "program-test.rkt"
     "integration-test.rkt"))
 
 (define here

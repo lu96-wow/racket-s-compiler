@@ -26,15 +26,18 @@
 
 | 层 | 输入 | 输出 |
 | --- | --- | --- |
-| `expand-struct` | `program-items` + `rich-data` | 展开后的 `program-items` + `rich-data` + `structs` |
+| `load-units` | 可选 `extern-units`（+ 旧的外部元数据） | `extern-structs` + `extern-struct-provides` + `extern-label-provides` |
+| `expand-struct` | `program-items` + `rich-data` (+ optional `extern-structs` / `extern-struct-provides`) | 展开后的 `program-items` + `rich-data` + `structs` + `struct-provides` |
 | `expand-data` | rich 数据 | 核心数据 item |
-| `flatten` | `program-items` + `data-items` | 完整链的 `program-items` + `data-items` + `names` |
+| `flatten` | `program-items` + `data-items` (+ optional `externs` / `extern-label-provides`) | 完整链的 `program-items` + `data-items` + `names` + `exports` + `label-provides` + `module-requires` |
 | `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
 | `dce` | `program` | `program` |
+| `emit-unit` | `program` + `data-items` (+ optional `structs` / `label-provides` / `struct-provides` / `module-requires`) | 布局前 `unit` |
 | `layout` | `program` + `data-items` + `layout-spec` | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout`（追加 problems） |
 | `bind-labels` | `measured-layout` | `bound-layout` |
-| `encode` | `bound-layout` | `build` |
+| `encode` | `bound-layout` (+ optional `structs` / `label-provides` / `struct-provides` / `unit`) | `build`（布局镜像） |
+| `emit-program` | `build` + `program` + `data-items` (+ optional `unit` / `extern-units` / `externs`) | `program`（最终 s-exp） |
 
 ## 关键类型
 
@@ -58,7 +61,11 @@
 | `(la-pcrel-li-add rd tmp 链)` | 前端显式选择的远 PC 相对装载地址；`tmp` 必需；尺寸是**常量上界**，短出来的补 `nop` |
 | `(provides 链 …)` | 其中哪些名字是**对外**的（`flatten` 的导出集合；没有 `` (provide …) `` 时是全导出） |
 | `structs` | `(struct-def (name 链) (size n) (align n) (fields (field (name f) (type t) (offset n) (size n) (align n)) …) (padding (align (n n) (offset n) (size n)) (pad (n n) (offset n) (size n)) …)) …)` |
-| `build` | `(build (link …) (provides …) (structs …) (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)` |
+| `label-provides` | `(label-provides (module (a) (provide 外部链 绝对链) …) …)`；按模块的 label 导出表 |
+| `struct-provides` | 同上，只是 struct 名字空间 |
+| `unit` | `(unit (format 1) (target …) (modules …) (declarations …))`；布局前接口 |
+| `program` | `(program (internal …) (external …))`；根 module 带 `(base B)`，addresses 存相对 base 的偏移 |
+| `build` | `(build (link …) (provides …) (structs …) (label-provides …) (struct-provides …) (unit …) (segment …) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |
 
 ## 输入侧：外部符号
@@ -73,6 +80,45 @@
 
 用它的层：`flatten`（放行这些名字）、`check`（地址进距离判断 + 自检）。
 `base` 只解析不参与算术；地址未知现在编不出来（没有 reloc 层）。
+
+## 输入侧：unit
+
+```scheme
+(extern-units
+  (unit ...))
+```
+
+`load-units` 把它转成现有的外部元数据；struct 声明在这里重新布局。
+旧的 `extern-structs` / `extern-struct-provides` / `extern-label-provides` 仍然可用。
+
+## 输入侧：外部 struct
+
+`extern-structs` 是一个可选 seed。值可以是上一份 `(build …)`、它的
+`(structs …)` 字段，或 `(struct-def …)` 列表：
+
+```scheme
+(extern-structs
+  (structs
+    (struct-def (name (lib point)) (size 8) (align 4)
+                (fields …) (padding …))))
+```
+
+外部定义直接作为已算好的布局使用；本单元可以用完整链 `(lib point)` 引用，
+也可以把上一份的 `struct-provides` 作为 `extern-struct-provides` 输入后用
+`(require lib)` / `prefix-in` / `rename-in`。
+
+## 输入侧：外部 label provides
+
+`extern-label-provides` 接受上一份 build 的 `(label-provides …)` 字段，
+让 `require` 能绑定到别的编译单元：
+
+```scheme
+(extern-label-provides
+  (label-provides
+    (module (lib) (provide (f) (lib f)))))
+```
+
+地址仍由 `externs` 提供；`extern-label-provides` 只补模块/别名信息。
 
 ## 段 kind
 

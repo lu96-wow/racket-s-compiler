@@ -28,7 +28,8 @@
 (provide parse-externs
          extern-rows
          extern-bases
-         extern-names)
+         extern-names
+         extern-link-tables)
 
 ;; ---------------------------------------------------------------------------
 ;; 形状
@@ -91,6 +92,12 @@
 
 (define (extern-bases datum)
   (let-values ([(bases rows) (parse-externs datum)]) bases))
+
+;; 每份 link 表保留自己的 base: (listof (cons base rows))
+(define (extern-link-tables datum)
+  (for/list ([t (in-list (extern-tables datum))])
+    (define-values (b rows) (parse-link-table t))
+    (cons b rows)))
 
 ;; 外部符号的名字(链)，不管地址知不知道 —— flatten 只要名字。
 (define (extern-names datum)

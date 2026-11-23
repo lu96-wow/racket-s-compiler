@@ -90,11 +90,23 @@ Struct 内部可以写字段和布局指令：
   (struct-load t2 t3 (point) y))   ; 也解析到 (m point)
 ```
 
-模块外访问需要写完整链：
+模块外可以用 `require` 后写本地名，也可以直接写完整链：
 
 ```scheme
-(struct-load t0 t1 (m point) x)
+(module a
+  (provide point)
+  (struct point (x b32) (y b32)))
+
+(module b
+  (require a)
+  (struct rect (p point) (w b32)))   ; point -> (a point)
+
+(struct-load t0 t1 (a point) x)     ; 完整链仍然可用
 ```
+
+`require` 支持 `prefix-in` / `rename-in`；`provide` 支持 `rename-out` 和
+re-export。struct 名字和 label 共用同一套模块子句，但各自是独立名字空间：
+只 provide struct 不会把同名 label 也导出去。
 
 根作用域也可以定义同名 struct，模块内会遮蔽它：
 
@@ -401,7 +413,7 @@ padding:
 
 ## 8. 模块作用域
 
-struct 名字按模块词法作用域解析：
+struct 名字按模块解析：
 
 ```scheme
 (module m
@@ -416,13 +428,64 @@ struct 名字按模块词法作用域解析：
 (name (m point))
 ```
 
-模块外引用需要写完整链：
+如果没有 `require`，模块外仍然可以写完整链：
 
 ```scheme
 (struct-data (m point) (x 1) (y 2))
 ```
 
-v1 不支持通过 `require` 导入其他模块的 struct 定义。
+也可以按 label 的模块规则导入：
+
+```scheme
+(module a
+  (provide point)
+  (struct point (x b32) (y b32)))
+
+(module b
+  (require a)
+  (struct rect (p point) (w b32)))
+```
+
+- `(provide point)` 导出本模块的 struct `(a point)`。
+- `(provide *)` 导出本模块直接声明的 label 和 struct。
+- `require` / `prefix-in` / `rename-in` / `rename-out` / re-export 与 label 规则一致。
+- 同一个短名从两个 `require` 来，或 require 的名字和本地 struct 撞名，会报错。
+- struct 和 label 是独立名字空间；`provide` 同时包含两者时两边各自导出。
+
+跨**编译单元**（分离编译）时，把上一份 build 的 `structs` 和
+`struct-provides` 分别作为 `extern-structs` / `extern-struct-provides` 输入。
+之后既可以用完整链，也可以 `require`。
+
+```scheme
+;; A 编译出来的 build
+(structs
+  (struct-def (name (a point)) (size 8) (align 4) ...))
+
+;; B 的输入（flow seed）
+(extern-structs (structs
+  (struct-def (name (a point)) (size 8) (align 4) ...)))
+
+;; B 里直接用绝对名
+(struct-load t0 t1 (a point) y)
+
+;; 或者用 require / prefix-in / rename-in
+(module b
+  (require a)
+  (struct-load t0 t1 point y))
+```
+
+`extern-structs` 接受：
+
+- 上一份 `(build ...)`
+- `(structs (struct-def ...) ...)`
+- `(struct-def ...)` 列表
+
+外部定义直接作为已算好的布局使用，不再重算 offset/size/align；相同的重复定义
+会合并，同一个名字的两份不同定义或本单元与外部同名会报错。
+
+`extern-struct-provides` 接受上一份 build 的 `(struct-provides ...)` 字段；
+它让跨编译单元的 `require` / `prefix-in` / `rename-in` 和本单元内一样工作。
+`label` 名字空间也有对称的 `label-provides` / `extern-label-provides`。
 
 ## 9. 最终导出
 
@@ -442,6 +505,9 @@ v1 不支持通过 `require` 导入其他模块的 struct 定义。
         (field (name y) (type b32) (offset 4) (size 4) (align 4)))
       (padding))
     ...)
+  (struct-provides
+    (module ()
+      (provide (point) (point))))
   (segment ...)
   ...)
 ```
@@ -463,6 +529,10 @@ v1 不支持通过 `require` 导入其他模块的 struct 定义。
 - 嵌套 struct：`(struct-ref (m point))`
 
 `structs` 按完整名字排序，保证产物稳定。
+
+`struct-provides` 按模块记录“外部名 -> 绝对名”。下一份编译把它作为
+`extern-struct-provides`，就能继续用 `require` / `prefix-in` / `rename-in`
+绑定这些 struct。
 
 ## 10. 和原始数据定义的关系
 
@@ -491,7 +561,6 @@ lw / lwu / ld / sw / sd / li / add / addi
 - packed / 显式字段 offset
 - 动态数组下标
 - 多层 `offsetof` 路径
-- 跨模块 `require` 导入 struct
 - 自动给裸 `b64` / `b32` 数据加自然对齐
 - 自动把超范围 load/store 变成 far 形式
 - `(reserve n)` 这种真正的地址洞；struct 里的 `(pad n)` 是零填充的 data 空洞

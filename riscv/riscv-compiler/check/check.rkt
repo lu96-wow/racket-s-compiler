@@ -23,6 +23,7 @@
 
 (require racket/list
          "../sexp.rkt"
+         "../meta.rkt"
          (only-in "../layout/layout.rkt"
                   layout-phase layout-segments layout-anchors
                   layout-problems layout-externs)
@@ -38,8 +39,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (segment-field seg key)
-  (define hit (assoc key (cdr seg)))
-  (and hit (cadr hit)))
+  (tag-ref* 'check seg key #f))
 
 (define (segment-items seg)
   (cdr (assoc 'items (cdr seg))))

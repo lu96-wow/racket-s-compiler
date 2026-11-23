@@ -36,6 +36,7 @@
 ;;;   - 放完检查 fallthrough: 顺序后继必须紧挨在后面, 否则 broken-fallthrough
 
 (require "../sexp.rkt"
+         "../meta.rkt"
          "forms.rkt"
          (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
                   block-head block-items flow-fallthrough))
@@ -76,8 +77,7 @@
 ;; 的形式流进来, 不必让上一层自己猜地址。end / size 至少给一个。
 ;; 产物多 (items …) (size …)，最终产物 (build) 把 items 换成 (bytes …)。
 (define (segment-field* s key)
-  (define hit (assoc key (cdr s)))
-  (and hit (cadr hit)))
+  (tag-ref* 'layout s key #f))
 
 (define (align-up n align)
   (* align (quotient (+ n (sub1 align)) align)))

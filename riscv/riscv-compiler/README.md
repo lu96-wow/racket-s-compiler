@@ -54,6 +54,7 @@ canonical 操作数顺序来自 `riscv-asm` 的 `instruction-info-operands`，�
 | [`STRUCT.md`](STRUCT.md) | struct 布局、静态数据、字段访问与最终导出 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 分层地图与 stage |
 | [`IR.md`](IR.md) | 层间 IR 类型 |
+| [`DATA.md`](DATA.md) | 数据形状、解析入口、共享解析器与重复逻辑清单 |
 | [`encode/syntax/DESIGN.md`](encode/syntax/DESIGN.md) | native plan / direct form |
 | [`flow/DESIGN.md`](flow/DESIGN.md) | 构建流与硬边界 |
 | `*/DESIGN.md` | 每层细节 |

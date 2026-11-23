@@ -41,7 +41,7 @@ rich-data + program-items
 | --- | --- | --- |
 | `expand-struct` | `struct/struct.rkt` | struct 布局 + 静态数据 + 字段访问展开 |
 | `expand-data` | `expand-data/expand.rkt` | rich 数据 → 核心数据 item |
-| `flatten` | `flatten/flatten.rkt` | module / provide / require 的名字解析 |
+| `flatten` | `flatten/flatten.rkt` | label 名字空间的 module / provide / require 解析 |
 | `analyze` | `analyze/analyze.rkt` | 切块 + 流 + root；操作数位置按 native |
 | `dce` | `dce/dce.rkt` | 死代码消除 |
 | `layout` | `layout/layout.rkt` | 放置 + 尺寸 + anchors/problems；不选形式 |
@@ -72,6 +72,10 @@ rich-data + program-items
 | 文件 | 内容 |
 | --- | --- |
 | `sexp.rkt` | form / name / path / as-items；地址表达式形状与 `eval-address(expr, resolve)` |
+| `modules.rkt` | 共享模块树 + provide/require/prefix/rename/re-export 不动点；label 和 struct 各自提供声明表 |
+| `meta.rkt` | 带标签元数据的公共读取器：`tagged-form?` / `tag-ref` / `tag-ref*` |
+| `struct-meta.rkt` | struct 元数据 `struct-def` ↔ `sdef`，以及 `sdef` → 布局无关声明 |
+| `unit.rkt` | 布局前接口：模块可见性 + label kind + struct 声明 |
 | `target.rkt` | `(struct target (xlen extensions))`；端序固定 little；`integer->bytes` / `padding-bytes` |
 
 ## 外部包

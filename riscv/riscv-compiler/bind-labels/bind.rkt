@@ -17,6 +17,7 @@
 
 (require racket/list
          "../sexp.rkt"
+         "../meta.rkt"
          (only-in "../layout/layout.rkt"
                   layout-phase layout-origin layout-externs
                   layout-problems
@@ -38,8 +39,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define (segment-field seg key)
-  (define hit (assoc key (cdr seg)))
-  (and hit (cadr hit)))
+  (tag-ref* 'bind-labels seg key #f))
 
 ;; anchor 行 (anchor 链 段名 偏移) -> 符号行 (symbol 链 段名 偏移 绝对地址)
 ;; 外部符号行: 地址已知的就是 (symbol 链 #f #f 地址) —— 段名/偏移是空的,

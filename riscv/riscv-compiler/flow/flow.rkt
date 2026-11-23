@@ -23,10 +23,13 @@
 ;;;
 ;;; stage 名字是契约；目录名现在也叫这个，但**流只认名字**，不认目录结构。
 
-(require (only-in "../struct/struct.rkt" expand-struct-inputs)
+(require (only-in "../struct/struct.rkt" expand-struct-inputs layout-extern-struct-decls)
+         (only-in "../program.rkt" make-program)
+         (only-in "../unit.rkt" make-unit parse-units unit-target unit->struct-decls unit->label-provides unit->struct-provides)
          (only-in "../expand-data/expand.rkt" expand-data)
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../externs.rkt" extern-names extern-rows)
+         (only-in "../target.rkt" target-xlen)
          (only-in "../analyze/analyze.rkt" analyze)
          (only-in "../dce/dce.rkt" eliminate-dead)
          (only-in "../layout/layout.rkt" layout-program)
@@ -52,6 +55,13 @@
 ;;
 ;;   rich-data      人写的 rich 数据（expand-struct / expand-data 的输入）
 ;;   structs        结构体定义 + 布局信息（expand-struct 的输出）
+;;   extern-structs 上一份 build 的 structs 元数据（跨编译单元的输入）
+;;   extern-units   上一份 build 的 unit（布局前接口，跨编译单元 require/provide）
+;;   struct-provides struct 的 provide 表（模块 -> 外部名/绝对名）
+;;   unit            布局前接口（名字 / 可见性 / 类型 / struct 声明，无地址）
+;;   extern-struct-provides 上一份 build 的 struct-provides（跨单元 require 用）
+;;   label-provides label 的 provide 表（模块 -> 外部名/绝对名）
+;;   extern-label-provides 上一份 build 的 label-provides（跨单元 require 用）
 ;;   data-items     核心数据 item（label / bytes / fill / value / align / pad）
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
 ;;   names          flatten 建的名字表（链 -> 位置）
@@ -74,17 +84,47 @@
 
 (define stage-table
   (hash
-   'expand-struct
-   (stage 'expand-struct '(program-items rich-data)
-          '(program-items rich-data structs)
+   'load-units
+   (stage 'load-units
+          '((optional extern-units)
+            (optional extern-structs)
+            (optional extern-struct-provides)
+            (optional extern-label-provides))
+          '(extern-structs extern-struct-provides extern-label-provides)
           (lambda (target in)
-            (define-values (program rich structs)
+            (define units (parse-units (hash-ref in 'extern-units '())))
+            (for ([u (in-list units)])
+              (unless (eq? (unit-target u) (target-xlen target))
+                (error 'load-units "unit target ~a 和当前 target ~a 不一致"
+                       (unit-target u) (target-xlen target))))
+            (hash 'extern-structs
+                  (append (hash-ref in 'extern-structs '())
+                          (layout-extern-struct-decls target (unit->struct-decls units)))
+                  'extern-struct-provides
+                  (append (hash-ref in 'extern-struct-provides '())
+                          (unit->struct-provides units))
+                  'extern-label-provides
+                  (append (hash-ref in 'extern-label-provides '())
+                          (unit->label-provides units))))
+          "加载 extern-units：struct 声明按当前 target 重新布局；provide 表转成现有输入")
+
+   'expand-struct
+   (stage 'expand-struct
+          '(program-items rich-data
+                          (optional extern-structs)
+                          (optional extern-struct-provides))
+          '(program-items rich-data structs struct-provides)
+          (lambda (target in)
+            (define-values (program rich structs struct-provides)
               (expand-struct-inputs target
                                     (hash-ref in 'program-items)
-                                    (hash-ref in 'rich-data)))
+                                    (hash-ref in 'rich-data)
+                                    (hash-ref in 'extern-structs '())
+                                    (hash-ref in 'extern-struct-provides '())))
             (hash 'program-items program
                   'rich-data rich
-                  'structs structs))
+                  'structs structs
+                  'struct-provides struct-provides))
           "结构体: 布局 + 静态数据 + 字段访问展开（前端层，不依赖 layout）")
 
    'expand-data
@@ -93,18 +133,26 @@
           "数据定义: rich 数据 -> 核心 item（宽度/值域/字符串/数组/地址字）")
 
    'flatten
-   (stage 'flatten '(program-items data-items (optional externs))
-          '(program-items data-items names exports)
+   (stage 'flatten
+          '(program-items data-items
+                          (optional externs)
+                          (optional struct-provides)
+                          (optional extern-label-provides))
+          '(program-items data-items names exports label-provides module-requires)
           (lambda (_target in)
-            (define-values (outs names exports)
+            (define-values (outs names exports label-provides module-requires)
               (flatten-inputs (list (hash-ref in 'program-items)
                                     (hash-ref in 'data-items))
                               #:externs (let ([e (hash-ref in 'externs '())])
-                                          (if (null? e) '() (extern-names e)))))
+                                          (if (null? e) '() (extern-names e)))
+                              #:extern-provides (hash-ref in 'extern-label-provides '())
+                              #:struct-provides (hash-ref in 'struct-provides '())))
             (hash 'program-items (list-ref outs 0)
                   'data-items (list-ref outs 1)
                   'names names
-                  'exports exports))
+                  'exports exports
+                  'label-provides label-provides
+                  'module-requires module-requires))
           "模块展平 + 链式查表（程序和数据共享一张名字表）；顺带记下导出集合")
 
    'analyze
@@ -118,6 +166,25 @@
    (stage 'dce '(program) '(program)
           (lambda (_target in) (hash 'program (eliminate-dead (hash-ref in 'program))))
           "死代码消除（三个 pass 跑到不动点）")
+
+   'emit-unit
+   (stage 'emit-unit
+          '(program data-items
+                    (optional structs)
+                    (optional label-provides)
+                    (optional struct-provides)
+                    (optional module-requires))
+          '(unit)
+          (lambda (target in)
+            (hash 'unit
+                  (make-unit target
+                             (hash-ref in 'program)
+                             (hash-ref in 'data-items)
+                             (hash-ref in 'structs '())
+                             (hash-ref in 'label-provides '())
+                             (hash-ref in 'struct-provides '())
+                             (hash-ref in 'module-requires '()))))
+          "布局前接口: 名字 / 模块可见性 / label kind / struct 声明；不含地址/offset")
 
    'layout
    (stage 'layout '(program data-items layout-spec (optional externs))
@@ -148,13 +215,38 @@
           "地址绑定: anchors -> symbols（偏移 -> 绝对地址）+ link/provides + 宽度/容量检查")
 
    'encode
-   (stage 'encode '(bound-layout (optional structs)) '(build)
+   (stage 'encode
+          '(bound-layout
+            (optional structs)
+            (optional label-provides)
+            (optional struct-provides)
+            (optional unit))
+          '(build)
           (lambda (target in)
             (hash 'build
                   (encode-layout target
                                  (hash-ref in 'bound-layout)
-                                 #:structs (hash-ref in 'structs '()))))
-          "编码: bound-layout -> (build …)；有 problem 就拒绝出产物")))
+                                 #:structs (hash-ref in 'structs '())
+                                 #:label-provides (hash-ref in 'label-provides '())
+                                 #:struct-provides (hash-ref in 'struct-provides '())
+                                 #:unit (hash-ref in 'unit '()))))
+          "编码: bound-layout -> (build …)；有 problem 就拒绝出产物")
+
+   'emit-program
+   (stage 'emit-program
+          '(build (optional unit) program data-items
+                  (optional extern-units)
+                  (optional externs))
+          '(program)
+          (lambda (_target in)
+            (hash 'program
+                  (make-program (hash-ref in 'unit '())
+                                (hash-ref in 'program)
+                                (hash-ref in 'data-items)
+                                (hash-ref in 'build)
+                                (hash-ref in 'extern-units '())
+                                (hash-ref in 'externs '()))))
+          "最终 s-exp: (program (internal ...) (external ...))")))
 
 ;; ---------------------------------------------------------------------------
 ;; 查询
@@ -170,7 +262,7 @@
 
 ;; 默认流: canonical native。
 (define default-flow
-  '(expand-struct expand-data flatten analyze dce layout check bind-labels encode))
+  '(load-units expand-struct expand-data flatten analyze dce emit-unit layout check bind-labels encode emit-program))
 
 ;; ---------------------------------------------------------------------------
 ;; 选择器: 层名 / 层组 / 任意片段
@@ -180,9 +272,9 @@
 ;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
 (define stage-groups
   (hash
-   'frontend '(expand-struct expand-data flatten)
-   'ir       '(analyze dce)
-   'backend  '(layout check bind-labels encode)
+   'frontend '(load-units expand-struct expand-data flatten)
+   'ir       '(analyze dce emit-unit)
+   'backend  '(layout check bind-labels encode emit-program)
    'all      default-flow))
 
 (define (group-names)

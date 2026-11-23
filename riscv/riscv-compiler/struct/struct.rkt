@@ -29,15 +29,20 @@
 ;;;
 ;;; 布局: 自然对齐；字段按声明顺序；支持 (align n) / (pad n)；
 ;;; 整体 size 向上对齐到最大 align。
-;;; 不处理 bitfield / union / packed / 跨模块 require 的 struct。
+;;; 模块: struct 和 label 一样支持 provide / require / prefix-in / rename-in /
+;;; re-export；另保留完整链直接可见的兼容路径。
+;;; 不处理 bitfield / union / packed / 跨编译单元（分离编译）的 struct。
 
 (require racket/list
          "../sexp.rkt"
+         "../modules.rkt"
+         "../struct-meta.rkt"
          (only-in "../target.rkt" target-xlen)
          (only-in "../../riscv-asm/base/register.rkt"
                   same-register? zero-register?))
 
-(provide expand-struct-inputs)
+(provide expand-struct-inputs
+         layout-extern-struct-decls)
 
 ;; ---------------------------------------------------------------------------
 ;; 内部类型
@@ -48,16 +53,9 @@
 (struct raw-pad (n) #:transparent)
 (struct raw-def (name scope items) #:transparent)
 
-(struct field (name type offset size align) #:transparent)
-(struct align-item (n offset size) #:transparent)
-(struct pad-item (n offset size) #:transparent)
-(struct sdef (name fields items padding size align) #:transparent)
-
 ;; ---------------------------------------------------------------------------
 ;; 基本形状
 ;; ---------------------------------------------------------------------------
-
-(define (module-form? x) (and (form? x) (eq? (car x) 'module)))
 
 (define (struct-name-ref? x)
   (or (name? x) (path? x)))
@@ -97,54 +95,53 @@
 ;; 收集定义
 ;; ---------------------------------------------------------------------------
 
-(define (collect-structs! items scope table)
-  (for ([it (in-list items)])
-    (cond
-      [(module-form? it)
-       (unless (and (>= (length it) 2) (name? (cadr it)))
-         (error 'struct "module needs a name: ~e" it))
-       (collect-structs! (cddr it) (append scope (list (cadr it))) table)]
-      [(struct-decl? it)
-       (define name (cadr it))
-       (define local (if (path? name) name (list name)))
-       (define full (append scope local))
-       (when (hash-has-key? table full)
-         (error 'struct "struct ~s is defined twice" full))
-       (define items
-         (for/list ([spec (in-list (cddr it))])
-           (cond
-             [(and (form? spec) (= 2 (length spec)) (eq? (car spec) 'align))
-              (define n (cadr spec))
-              (unless (and (exact-positive-integer? n)
-                           (zero? (bitwise-and n (sub1 n))))
-                (error 'struct "struct align needs a positive power of two: ~e" spec))
-              (raw-align n)]
-             [(and (form? spec) (= 2 (length spec)) (eq? (car spec) 'pad))
-              (define n (cadr spec))
-              (unless (exact-nonnegative-integer? n)
-                (error 'struct "struct pad needs a non-negative integer: ~e" spec))
-              (raw-pad n)]
-             [(and (form? spec) (= 2 (length spec))
-                   (symbol? (car spec)))
-              (when (memq (car spec) '(align pad))
-                (error 'struct "align/pad are reserved struct directives: ~e" spec))
-              (raw-field (car spec) (cadr spec))]
-             [else
-              (error 'struct "struct item must be (field type), (align n), or (pad n): ~e" spec)])))
-       (define names (for/list ([x (in-list items)]
-                                #:when (raw-field? x))
-                       (raw-field-name x)))
-       (unless (= (length names) (length (remove-duplicates names)))
-         (error 'struct "struct ~s has duplicate field names" full))
-       (hash-set! table full (raw-def full scope items))]
-      [else (void)])))
+;; 模块树由 modules.rkt 收集；这里只索引 struct 声明，并记下每个模块
+;; 直接声明了哪些 struct 本地链（给 provide * 用）。
+(define (index-struct-decl! it scope table own)
+  (define name (cadr it))
+  (define local (if (path? name) name (list name)))
+  (define full (append scope local))
+  (when (hash-has-key? table full)
+    (error 'struct "struct ~s is defined twice" full))
+  (define items
+    (for/list ([spec (in-list (cddr it))])
+      (cond
+        [(and (form? spec) (= 2 (length spec)) (eq? (car spec) 'align))
+         (define n (cadr spec))
+         (unless (and (exact-positive-integer? n)
+                      (zero? (bitwise-and n (sub1 n))))
+           (error 'struct "struct align needs a positive power of two: ~e" spec))
+         (raw-align n)]
+        [(and (form? spec) (= 2 (length spec)) (eq? (car spec) 'pad))
+         (define n (cadr spec))
+         (unless (exact-nonnegative-integer? n)
+           (error 'struct "struct pad needs a non-negative integer: ~e" spec))
+         (raw-pad n)]
+        [(and (form? spec) (= 2 (length spec))
+              (symbol? (car spec)))
+         (when (memq (car spec) '(align pad))
+           (error 'struct "align/pad are reserved struct directives: ~e" spec))
+         (raw-field (car spec) (cadr spec))]
+        [else
+         (error 'struct "struct item must be (field type), (align n), or (pad n): ~e" spec)])))
+  (define names (for/list ([x (in-list items)]
+                           #:when (raw-field? x))
+                  (raw-field-name x)))
+  (unless (= (length names) (length (remove-duplicates names)))
+    (error 'struct "struct ~s has duplicate field names" full))
+  (hash-set! table full (raw-def full scope items))
+  (hash-update! own scope (lambda (l) (append l (list local))) '()))
+
+(define (collect-structs! annotated table own)
+  (for ([entry (in-list annotated)])
+    (define scope (car entry))
+    (define it (cdr entry))
+    (when (struct-decl? it)
+      (index-struct-decl! it scope table own))))
 
 ;; ---------------------------------------------------------------------------
 ;; 类型 / 布局
 ;; ---------------------------------------------------------------------------
-
-(define (scalar-type? t)
-  (memq t '(b8 b16 b32 b64 s8 s16 s32 s64 ptr)))
 
 (define (xlen-bytes target)
   (if (eq? (target-xlen target) 'rv32) 4 8))
@@ -161,50 +158,49 @@
 (define (align-up n align)
   (* align (quotient (+ n (sub1 align)) align)))
 
-(define (ancestors-and-self scope)
-  (let loop ([s scope] [acc '()])
-    (cond
-      [(null? s) (reverse (cons '() acc))]
-      [else (loop (drop-right s 1) (cons s acc))])))
-
-(define (resolve-struct-name table scope ref)
+(define (resolve-struct-name table scope ref imports)
   (define local
     (cond
       [(path? ref) ref]
       [(name? ref) (list ref)]
       [else (error 'struct "struct name must be a name or chain: ~e" ref)]))
-  (or (for/or ([p (in-list (ancestors-and-self scope))])
+  (or ;; require 绑定：由内到外
+      (for/or ([p (in-list (ancestors-and-self scope))])
+        (define hit (assoc local (hash-ref imports p '())))
+        (and hit (cdr hit)))
+      ;; 本地 / 祖先 struct：原有的词法路径
+      (for/or ([p (in-list (ancestors-and-self scope))])
         (define full (append p local))
         (and (hash-ref table full #f) full))
       (error 'struct "undefined struct ~s" ref)))
 
-(define (resolve-type type scope table)
+(define (resolve-type type scope table imports)
   (cond
     [(scalar-type? type) type]
     [(and (form? type) (eq? (car type) 'array) (= 3 (length type))
           (exact-nonnegative-integer? (cadr type)))
-     (list 'array (cadr type) (resolve-type (caddr type) scope table))]
+     (list 'array (cadr type) (resolve-type (caddr type) scope table imports))]
     [(or (symbol? type) (path? type))
-     (list 'struct-ref (resolve-struct-name table scope type))]
+     (list 'struct-ref (resolve-struct-name table scope type imports))]
     [else
      (error 'struct "unknown struct field type: ~e" type)]))
 
-(define (type-size-align type table defs xlen visiting)
+(define (type-size-align type table defs xlen visiting imports)
   (cond
     [(scalar-type? type)
      (scalar-size-align type xlen)]
     [(and (form? type) (eq? (car type) 'array))
      (define elem (caddr type))
      (define-values (es ea)
-       (type-size-align elem table defs xlen visiting))
+       (type-size-align elem table defs xlen visiting imports))
      (values (* (cadr type) es) ea)]
     [(and (form? type) (eq? (car type) 'struct-ref))
-     (define d (compute-struct (cadr type) table defs xlen visiting))
+     (define d (compute-struct (cadr type) table defs xlen visiting imports))
      (values (sdef-size d) (sdef-align d))]
     [else
      (error 'struct "bad resolved struct type: ~e" type)]))
 
-(define (compute-struct full table defs xlen visiting)
+(define (compute-struct full table defs xlen visiting imports)
   (cond
     [(hash-ref defs full #f) (hash-ref defs full)]
     [(member full visiting)
@@ -220,9 +216,9 @@
      (for ([spec (in-list (raw-def-items raw))])
        (cond
          [(raw-field? spec)
-          (define type (resolve-type (raw-field-type spec) (raw-def-scope raw) table))
+          (define type (resolve-type (raw-field-type spec) (raw-def-scope raw) table imports))
           (define-values (sz al)
-            (type-size-align type table defs xlen (cons full visiting)))
+            (type-size-align type table defs xlen (cons full visiting) imports))
           (set! cursor (align-up cursor al))
           (define f (field (raw-field-name spec) type cursor sz al))
           (set! fields (cons f fields))
@@ -257,20 +253,20 @@
 
 (define (chain-string chain) (format "~a" chain))
 
-(define (compute-all table xlen)
-  (define defs (make-hash))
+(define (compute-all table xlen imports [initial-defs (make-hash)])
+  (define defs initial-defs)
   (for ([full (in-list (sort (hash-keys table)
                              (lambda (a b) (string<? (chain-string a)
                                                       (chain-string b)))))])
-    (compute-struct full table defs xlen '()))
+    (compute-struct full table defs xlen '() imports))
   defs)
 
 ;; ---------------------------------------------------------------------------
 ;; 查找
 ;; ---------------------------------------------------------------------------
 
-(define (def-of table defs ref scope)
-  (define full (resolve-struct-name table scope ref))
+(define (def-of table defs ref scope imports)
+  (define full (resolve-struct-name table scope ref imports))
   (hash-ref defs full))
 
 (define (field-of d name)
@@ -307,7 +303,7 @@
 (define (pad-if n)
   (if (zero? n) '() (list (list 'pad n))))
 
-(define (expand-static-struct d inits scope table defs target)
+(define (expand-static-struct d inits scope table defs target imports)
   (define ih (init-fields d inits))
   (define items
     (if (> (sdef-align d) 1)
@@ -324,7 +320,7 @@
        (define hit (hash-ref ih (field-name item) #f))
        (define f-items
          (if hit
-             (expand-static-value (field-type item) hit scope table defs target)
+             (expand-static-value (field-type item) hit scope table defs target imports)
              (pad-if (field-size item))))
        (set! items (append items f-items))
        (set! cursor (+ off (field-size item)))]
@@ -345,26 +341,26 @@
       [else (error 'struct "bad struct layout item: ~e" item)]))
   (append items (pad-if (- (sdef-size d) cursor))))
 
-(define (expand-static-value type vals scope table defs target)
+(define (expand-static-value type vals scope table defs target imports)
   (cond
     [(scalar-type?/resolved type)
      (unless (= 1 (length vals))
        (error 'struct "scalar field needs exactly one initializer: ~e" vals))
      (list (list 'value (scalar-width type (xlen-bytes target))
-                 (expand-expr (car vals) scope table defs)))]
+                 (expand-expr (car vals) scope table defs imports)))]
     [(and (form? type) (eq? (car type) 'array))
-     (expand-static-array type vals scope table defs target)]
+     (expand-static-array type vals scope table defs target imports)]
     [(and (form? type) (eq? (car type) 'struct-ref))
      (define d (hash-ref defs (cadr type)))
      (unless (and (list? vals)
                   (andmap (lambda (p) (and (form? p) (>= (length p) 1) (symbol? (car p))))
                           vals))
        (error 'struct "nested struct initializer must be (field value ...): ~e" vals))
-     (expand-static-struct d vals scope table defs target)]
+     (expand-static-struct d vals scope table defs target imports)]
     [else
      (error 'struct "unknown field type: ~e" type)]))
 
-(define (expand-static-array type vals scope table defs target)
+(define (expand-static-array type vals scope table defs target imports)
   (define n (cadr type))
   (define elem (caddr type))
   (define elements
@@ -382,9 +378,9 @@
       [(and (form? elem) (eq? (car elem) 'array)) (list v)]
       [else (list v)]))
   (define values (for/list ([v (in-list elements)])
-                   (expand-static-value elem (element-vals v) scope table defs target)))
+                   (expand-static-value elem (element-vals v) scope table defs target imports)))
   (define-values (es _ea)
-    (type-size-align elem table defs (xlen-bytes target) '()))
+    (type-size-align elem table defs (xlen-bytes target) '() imports))
   (append (append* values)
           (pad-if (* (- n (length elements)) es))))
 
@@ -392,27 +388,27 @@
 ;; 编译期整数
 ;; ---------------------------------------------------------------------------
 
-(define (sizeof-value form scope table defs)
-  (define d (def-of table defs (cadr form) scope))
+(define (sizeof-value form scope table defs imports)
+  (define d (def-of table defs (cadr form) scope imports))
   (sdef-size d))
 
-(define (offsetof-value form scope table defs)
+(define (offsetof-value form scope table defs imports)
   (define name (cadr form))
   (define field-name (caddr form))
   (unless (symbol? field-name)
     (error 'struct "offsetof field must be a symbol: ~e" form))
-  (define d (def-of table defs name scope))
+  (define d (def-of table defs name scope imports))
   (field-offset (field-of d field-name)))
 
 ;; ---------------------------------------------------------------------------
 ;; 表达式递归：只替换 sizeof / offsetof
 ;; ---------------------------------------------------------------------------
 
-(define (expand-expr x scope table defs)
+(define (expand-expr x scope table defs imports)
   (cond
-    [(sizeof-form? x) (sizeof-value x scope table defs)]
-    [(offsetof-form? x) (offsetof-value x scope table defs)]
-    [(form? x) (for/list ([y (in-list x)]) (expand-expr y scope table defs))]
+    [(sizeof-form? x) (sizeof-value x scope table defs imports)]
+    [(offsetof-form? x) (offsetof-value x scope table defs imports)]
+    [(form? x) (for/list ([y (in-list x)]) (expand-expr y scope table defs imports))]
     [else x]))
 
 ;; ---------------------------------------------------------------------------
@@ -460,10 +456,10 @@
     (when (same-register? tmp r)
       (error who "scratch must differ from ~a" r))))
 
-(define (struct-load-short it scope table defs target)
+(define (struct-load-short it scope table defs target imports)
   (define rd (cadr it))
   (define base (caddr it))
-  (define d (def-of table defs (cadddr it) scope))
+  (define d (def-of table defs (cadddr it) scope imports))
   (define f (field-of d (car (cddddr it))))
   (ensure-scalar-field f)
   (unless (fits-s12? (field-offset f))
@@ -471,9 +467,9 @@
            (field-name f) (field-offset f)))
   (list (load-mnemonic (field-type f) target) rd base (field-offset f)))
 
-(define (struct-store-short it scope table defs target)
+(define (struct-store-short it scope table defs target imports)
   (define base (cadr it))
-  (define d (def-of table defs (caddr it) scope))
+  (define d (def-of table defs (caddr it) scope imports))
   (define f (field-of d (cadddr it)))
   (define rs (car (cddddr it)))
   (ensure-scalar-field f)
@@ -482,20 +478,20 @@
            (field-name f) (field-offset f)))
   (list (store-mnemonic (field-type f) target) (field-offset f) base rs))
 
-(define (struct-address-short it scope table defs)
+(define (struct-address-short it scope table defs imports)
   (define dst (cadr it))
   (define base (caddr it))
-  (define d (def-of table defs (cadddr it) scope))
+  (define d (def-of table defs (cadddr it) scope imports))
   (define f (field-of d (car (cddddr it))))
   (unless (fits-s12? (field-offset f))
     (error 'struct "field ~s offset ~a exceeds simm12; use struct-address-far"
            (field-name f) (field-offset f)))
   (list 'addi dst base (field-offset f)))
 
-(define (struct-load-far it scope table defs target)
+(define (struct-load-far it scope table defs target imports)
   (define rd (cadr it))
   (define base (caddr it))
-  (define d (def-of table defs (cadddr it) scope))
+  (define d (def-of table defs (cadddr it) scope imports))
   (define f (field-of d (car (cddddr it))))
   (define tmp (list-ref it 5))
   (ensure-scalar-field f)
@@ -504,9 +500,9 @@
         (list 'add tmp base tmp)
         (list (load-mnemonic (field-type f) target) rd tmp 0)))
 
-(define (struct-store-far it scope table defs target)
+(define (struct-store-far it scope table defs target imports)
   (define base (cadr it))
-  (define d (def-of table defs (caddr it) scope))
+  (define d (def-of table defs (caddr it) scope imports))
   (define f (field-of d (cadddr it)))
   (define rs (list-ref it 4))
   (define tmp (list-ref it 5))
@@ -516,10 +512,10 @@
         (list 'add tmp base tmp)
         (list (store-mnemonic (field-type f) target) 0 tmp rs)))
 
-(define (struct-address-far it scope table defs)
+(define (struct-address-far it scope table defs imports)
   (define dst (cadr it))
   (define base (caddr it))
-  (define d (def-of table defs (cadddr it) scope))
+  (define d (def-of table defs (cadddr it) scope imports))
   (define f (field-of d (car (cddddr it))))
   (define tmp (list-ref it 5))
   (ensure-tmp 'struct-address-far tmp base)
@@ -530,72 +526,36 @@
 ;; 遍历展开
 ;; ---------------------------------------------------------------------------
 
-(define (expand-item it scope table defs target)
+(define (expand-item it scope table defs target imports)
   (cond
     [(struct-decl? it) '()]
-    [(module-form? it)
-     (list (cons 'module
-                 (cons (cadr it)
-                       (expand-items (cddr it)
-                                     (append scope (list (cadr it)))
-                                     table defs target))))]
+    [(or (module-form? it) (clause-form? it 'provide) (clause-form? it 'require))
+     (if (module-form? it)
+         (list (cons 'module
+                     (cons (cadr it)
+                           (expand-items (cddr it)
+                                         (append scope (list (cadr it)))
+                                         table defs target imports))))
+         ;; provide / require 是 flatten 的子句；这里原样保留。
+         (list it))]
     [(struct-data? it)
-     (define d (def-of table defs (cadr it) scope))
-     (expand-static-struct d (cddr it) scope table defs target)]
-    [(struct-load? it) (list (struct-load-short it scope table defs target))]
-    [(struct-store? it) (list (struct-store-short it scope table defs target))]
-    [(struct-address? it) (list (struct-address-short it scope table defs))]
-    [(struct-load-far? it) (list (struct-load-far it scope table defs target))]
-    [(struct-store-far? it) (list (struct-store-far it scope table defs target))]
-    [(struct-address-far? it) (list (struct-address-far it scope table defs))]
-    [else (list (expand-expr it scope table defs))]))
+     (define d (def-of table defs (cadr it) scope imports))
+     (expand-static-struct d (cddr it) scope table defs target imports)]
+    [(struct-load? it) (list (struct-load-short it scope table defs target imports))]
+    [(struct-store? it) (list (struct-store-short it scope table defs target imports))]
+    [(struct-address? it) (list (struct-address-short it scope table defs imports))]
+    [(struct-load-far? it) (list (struct-load-far it scope table defs target imports))]
+    [(struct-store-far? it) (list (struct-store-far it scope table defs target imports))]
+    [(struct-address-far? it) (list (struct-address-far it scope table defs imports))]
+    [else (list (expand-expr it scope table defs imports))]))
 
-(define (expand-items items scope table defs target)
+(define (expand-items items scope table defs target imports)
   (append* (for/list ([it (in-list items)])
-             (expand-item it scope table defs target))))
+             (expand-item it scope table defs target imports))))
 
 ;; ---------------------------------------------------------------------------
 ;; 导出元数据
 ;; ---------------------------------------------------------------------------
-
-(define (type->sexp t)
-  (cond
-    [(scalar-type? t) t]
-    [(and (form? t) (eq? (car t) 'array))
-     (list 'array (cadr t) (type->sexp (caddr t)))]
-    [(and (form? t) (eq? (car t) 'struct-ref))
-     (list 'struct-ref (cadr t))]
-    [else (error 'struct "bad type in metadata: ~e" t)]))
-
-(define (field->sexp f)
-  (list 'field
-        (list 'name (field-name f))
-        (list 'type (type->sexp (field-type f)))
-        (list 'offset (field-offset f))
-        (list 'size (field-size f))
-        (list 'align (field-align f))))
-
-(define (padding->sexp p)
-  (cond
-    [(align-item? p)
-     (list 'align
-           (list 'n (align-item-n p))
-           (list 'offset (align-item-offset p))
-           (list 'size (align-item-size p)))]
-    [(pad-item? p)
-     (list 'pad
-           (list 'n (pad-item-n p))
-           (list 'offset (pad-item-offset p))
-           (list 'size (pad-item-size p)))]
-    [else (error 'struct "bad padding item: ~e" p)]))
-
-(define (sdef->sexp d)
-  (list 'struct-def
-        (list 'name (sdef-name d))
-        (list 'size (sdef-size d))
-        (list 'align (sdef-align d))
-        (cons 'fields (map field->sexp (sdef-fields d)))
-        (cons 'padding (map padding->sexp (sdef-padding d)))))
 
 (define (structs->sexp defs)
   (map sdef->sexp
@@ -608,11 +568,70 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (expand-struct-inputs target program-items rich-data)
+;; ---------------------------------------------------------------------------
+;; 外部 struct（跨编译单元）
+;;
+;; 输入就是上一份 build 的 (structs …) 元数据。它已经是算好的布局，所以直接
+;; 装进 defs，不再重新推导 offset / size / align。名字按完整链可见。
+;; ---------------------------------------------------------------------------
+
+(define (install-extern-structs! table defs extern-defs)
+  (for ([d (in-list extern-defs)])
+    (define name (sdef-name d))
+    (cond
+      [(hash-ref defs name #f)
+       (unless (equal? (hash-ref defs name) d)
+         (error 'struct "外部 struct ~s 有两份不同的定义" name))]
+      [(hash-has-key? table name)
+       (error 'struct "struct ~s 同时由本单元和外部定义" name)]
+      [else
+       (hash-set! table name (raw-def name '() '()))
+       (hash-set! defs name d)])))
+
+(define (parse-extern-structs datum)
+  (map parse-sdef (extern-struct-defs datum)))
+
+;; ---------------------------------------------------------------------------
+;; 入口
+;; ---------------------------------------------------------------------------
+
+;; 把 extern-units 里的布局无关 struct 声明按当前 target 重新算成 struct-def 元数据。
+(define (layout-extern-struct-decls target decls)
   (define table (make-hash))
-  (collect-structs! program-items '() table)
-  (collect-structs! rich-data '() table)
-  (define defs (compute-all table (xlen-bytes target)))
-  (values (expand-items program-items '() table defs target)
-          (expand-items rich-data '() table defs target)
-          (structs->sexp defs)))
+  (define own (make-hash))
+  (for ([d (in-list decls)])
+    (index-struct-decl! d '() table own))
+  (define defs (compute-all table (xlen-bytes target) (make-hash)))
+  (structs->sexp defs))
+
+(define (expand-struct-inputs target program-items rich-data
+                              [extern-structs '()]
+                              [extern-struct-provides '()])
+  (define table (make-hash))
+  (define modules (make-hash))
+  (define own (make-hash))
+  (define annotated
+    (collect-modules (append program-items rich-data) '() modules))
+  (collect-structs! annotated table own)
+  (define extern-provides
+    (parse-extern-provides extern-struct-provides 'struct-provides))
+  (define-values (imports provides _unresolved)
+    (resolve-modules modules
+                     #:declarations table
+                     #:own own
+                     #:extern-provides extern-provides
+                     ;; require 可能是给 label 层用的；这里不能替它判未知模块。
+                     #:allow-unknown-modules? #t))
+  (define local-struct-names (make-hash))
+  (for ([name (in-hash-keys table)]) (hash-set! local-struct-names name #t))
+  (define seeded-defs (make-hash))
+  (install-extern-structs! table seeded-defs (parse-extern-structs extern-structs))
+  (define defs (compute-all table (xlen-bytes target) imports seeded-defs))
+  (values (expand-items program-items '() table defs target imports)
+          (expand-items rich-data '() table defs target imports)
+          ;; unit 只描述本单元；外部 struct 由 extern-units 带进来。
+          (structs->sexp
+           (for/hash ([(name d) (in-hash defs)]
+                      #:when (hash-ref local-struct-names name #f))
+             (values name d)))
+          (provides->sexp provides)))

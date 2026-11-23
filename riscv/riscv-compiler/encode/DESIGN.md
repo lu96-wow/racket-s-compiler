@@ -24,6 +24,8 @@
 (build (link (base B) (symbol 链 地址) …)
        (provides 链 …)
        (structs (struct-def …) …)
+       (label-provides (module 链 (provide 外部链 绝对链) …) …)
+       (struct-provides (module 链 (provide 外部链 绝对链) …) …)
        (segment (name …) (kind …) (start …) (size …) (bytes #vu8…)) …)
 ```
 

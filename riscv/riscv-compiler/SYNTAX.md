@@ -324,6 +324,8 @@ native 分支的目标**不固定在最后**：
 
 `struct` 的名字和 label 一样是链，例如 `(point)` / `(m point)`；单元素链可简写成 symbol。
 `struct` 是前端布局描述，展开成 `align` / `pad` / `value` 和 native 访问指令。
+跨模块时和 label 一样用 `provide` / `require`（支持 `prefix-in` / `rename-in`）；
+struct 和 label 是独立名字空间。
 完整说明见 [`STRUCT.md`](STRUCT.md)。
 
 ```scheme

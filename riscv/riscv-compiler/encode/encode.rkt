@@ -27,7 +27,8 @@
 ;;; (offset k ...) 是**断言**: 写出去的字节数必须正好让它落在 k。
 ;;; 不符说明 layout 和 encode 对尺寸的理解不一致, 直接报错(这是抓这类 bug 的地方)。
 
-(require (only-in "../layout/layout.rkt"
+(require "../meta.rkt"
+         (only-in "../layout/layout.rkt"
                   layout-problems layout-phase layout-segments)
          "../layout/forms.rkt"
          (only-in "../bind-labels/bind.rkt"
@@ -48,7 +49,7 @@
 ;; 小工具
 ;; ---------------------------------------------------------------------------
 
-(define (segment-field seg key) (cadr (assoc key (cdr seg))))
+(define (segment-field seg key) (tag-ref 'encode seg key))
 (define (segment-items seg) (cdr (assoc 'items (cdr seg))))
 
 ;; (offset k ...) 是断言: 走到这条 item 时, 已落的位置必须正好是 k。
@@ -246,7 +247,11 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (encode-layout target layout #:structs [structs '()])
+(define (encode-layout target layout
+                       #:structs [structs '()]
+                       #:label-provides [label-provides '()]
+                       #:struct-provides [struct-provides '()]
+                       #:unit [unit '()])
   (unless (eq? (layout-phase layout) 'bound)
     (error 'encode
            "需要 bind-labels 之后的 bound-layout；先跑 bind-labels（当前 phase: ~e）"
@@ -270,5 +275,8 @@
          (cons 'link link)
          (cons 'provides provides)
          (cons 'structs structs)
+         (cons 'label-provides label-provides)
+         (cons 'struct-provides struct-provides)
+         (if (null? unit) '(unit) (cons 'unit (cdr unit)))
          (for/list ([seg (in-list (layout-segments layout))])
            (encode-segment target seg symbols))))
