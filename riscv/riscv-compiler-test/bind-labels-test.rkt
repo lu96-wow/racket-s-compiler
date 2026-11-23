@@ -17,7 +17,6 @@
                   symbol-row symbol-address eval-symbol-address)
          (only-in "../riscv-compiler/check/check.rkt" check-layout)
          (only-in "../riscv-compiler/target.rkt" target-rv64-base)
-         (only-in "../riscv-compiler/analyze/analyze.rkt" analyze)
          (only-in "../riscv-compiler/flatten/flatten.rkt" flatten-program))
 
 (define test-target target-rv64-base)
@@ -33,7 +32,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define measured
-  (lay (analyze '((label main) (jalr x0 ra 0)
+  (lay (code-of '((label main) (jalr x0 ra 0)
                   (label f) (jalr x0 ra 0)))
        '((label d t) (value 8 (main)))
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4))
@@ -74,7 +73,7 @@
 
 ;; measured 不查 value 宽度；bind-labels 才查
 (define wide
-  (lay (analyze '((label main) (jalr x0 ra 0)))
+  (lay (code-of '((label main) (jalr x0 ra 0)))
        '((label d t) (value 4 (d t)))
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4))
                    (segment (name d) (kind data) (start #x100000000) (end #x100001000) (align 8)))
@@ -85,7 +84,7 @@
 
 ;; segment 容量也是最终尺寸才算
 (define overflow
-  (lay (analyze '((label main) (addi a0 a0 1) (addi a0 a0 1)))
+  (lay (code-of '((label main) (addi a0 a0 1) (addi a0 a0 1)))
        '()
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1007) (align 4)))
          (place c (main)))))
@@ -95,7 +94,7 @@
 
 ;; hole 段也受同一套容量检查: 洞的尺寸不能超过声明的范围
 (define hole-overflow
-  (lay (analyze '((label main) (jalr x0 ra 0)))
+  (lay (code-of '((label main) (jalr x0 ra 0)))
        '((label bss) (reserve 64))
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
                    (segment (name b) (kind hole) (start #x2000) (end #x2010) (align 8)))
@@ -108,7 +107,7 @@
 (define hole-symbols
   (layout-symbols
    (bind-labels
-    (lay (analyze '((label main) (jalr x0 ra 0)))
+    (lay (code-of '((label main) (jalr x0 ra 0)))
          '((label bss) (reserve 8) (label buf) (reserve 8))
          '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 16))
                      (segment (name b) (kind hole) (start #x2000) (end #x2010) (align 8)))
@@ -123,7 +122,7 @@
 ;; ---------------------------------------------------------------------------
 
 (define with-ghost
-  (lay (analyze '((label main) (jal x0 (ghost))))
+  (lay (code-of '((label main) (jal x0 (ghost))))
        '()
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place c (main)))))
@@ -167,7 +166,7 @@
 
 ;; base 跟着 spec 的 (origin …) 走, 而不是段的 start。
 (define moved
-  (lay (analyze '((label main) (jalr x0 ra 0)))
+  (lay (code-of '((label main) (jalr x0 ra 0)))
        '()
        '((origin #x400000)
          (segments (segment (name c) (kind code) (start #x401000) (end #x402000) (align 4)))
@@ -177,7 +176,7 @@
 
 ;; 排序: 段声明顺序和地址顺序不一致时, link 表仍按地址升序。
 (define shuffled
-  (lay (analyze '((label low) (jalr x0 ra 0)
+  (lay (code-of '((label low) (jalr x0 ra 0)
                   (label high) (jalr x0 ra 0)))
        '()
        '((segments (segment (name hi) (kind code) (start #x9000) (end #x9FFF) (align 4))
@@ -190,7 +189,7 @@
 
 ;; 同址多个名字: 两个名字都在表里(一个位置可以有多个 label 链)。
 (define aliased
-  (lay (analyze '((label a) (label b) (jalr x0 ra 0)))
+  (lay (code-of '((label a) (label b) (jalr x0 ra 0)))
        '()
        '((segments (segment (name c) (kind code) (start #x1000) (end #x1FFF) (align 4)))
          (place c (a) (b)))))
@@ -230,7 +229,7 @@
 ;; rename-out: 外部名和本地链不同 -> link 表里补一行别名, provides 用外部名。
 ;; 注意: module 必须先 flatten(本层不认识 module 壳, 会当成一条不透明 item)。
 (define renamed
-  (lay (analyze (flatten-program
+  (lay (code-of (flatten-program
                  '((module a (provide (rename-out (f out)))
                             (label f) (jalr x0 ra 0)))))
        '()

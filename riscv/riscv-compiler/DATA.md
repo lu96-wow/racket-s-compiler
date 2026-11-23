@@ -20,14 +20,14 @@
 | `expand-struct` | `program-items` `rich-data`；可选 `extern-structs` `extern-struct-provides` | `program-items` `rich-data` `structs` `struct-provides` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items`；可选 `externs` `struct-provides` `extern-label-provides` | `program-items` `data-items` `names` `exports` `label-provides` `module-requires` |
-| `analyze` | `program-items` `data-items` | `program` |
-| `dce` | `program` | `program` |
-| `emit-unit` | `program` `data-items`；可选 `structs` `label-provides` `struct-provides` `module-requires` | `unit` |
-| `layout` | `program` `data-items` `layout-spec`；可选 `externs` | `measured-layout` |
+| `lower-code` | 可选 `program-items` / `code` | `code` |
+| `validate` | `code` | `code` |
+| `emit-unit` | `code` `data-items`；可选 `structs` `label-provides` `struct-provides` `module-requires` | `unit` |
+| `layout` | `code` `data-items` `layout-spec`；可选 `externs` | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout`（追加 problems） |
 | `bind-labels` | `measured-layout`；可选 `exports` | `bound-layout` |
 | `encode` | `bound-layout`；可选 `structs` `label-provides` `struct-provides` `unit` | `build`（布局镜像） |
-| `emit-program` | `build` `program` `data-items`；可选 `unit` `extern-units` `externs` | `program`（最终 s-exp） |
+| `emit-program` | `build` `code` `data-items`；可选 `unit` `extern-units` `externs` | `program`（最终 s-exp） |
 
 ## 3. 名字 / 可见性
 

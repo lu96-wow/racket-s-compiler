@@ -204,8 +204,8 @@ native 分支的目标**不固定在最后**：
 (j (end))             ; 目标在第一个操作数
 ```
 
-`analyze` / `layout` / `check` / `encode` 使用
-`analyze/insn.rkt` 的 `jump-target` / `jump-target-position`，
+`lower-code` / `layout` / `check` / `encode` 使用
+`code/insn.rkt` 的 `jump-target` / `jump-target-position`，
 不再假设 `last`。
 
 ### 3.4 `li` / `la-pcrel`
@@ -545,7 +545,7 @@ main:
 | native 操作数计划 | `encode/syntax/native.rkt` |
 | 特殊指令形式（`fence` 等） | `encode/syntax/direct.rkt` |
 | 操作数种类（GPR / CSR / …） | `encode/syntax/operand*.rkt` |
-| 控制转移目标位置 | `analyze/insn.rkt` |
+| 控制转移目标位置 | `code/insn.rkt` |
 | 段、place、对齐、item 合法性 | `layout/layout.rkt`、`layout/forms.rkt` |
 | `li` / `la-pcrel` / 显式分支展开 | `../riscv-help/` |
 | 指令名、宽度、位域 | `../riscv-asm/generated/` |

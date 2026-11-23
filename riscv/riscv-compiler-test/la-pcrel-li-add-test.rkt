@@ -56,7 +56,7 @@
 ;; 近形式够不着: check 报 la-too-far, 不自动升级
 (define near-checked
   (flow-value (run '((label main) (la-pcrel x10 (far-data)) (jalr x0 ra 0))
-                   '(expand-data flatten analyze dce layout check))
+                   '(expand-data flatten lower-code validate layout check))
               'measured-layout))
 (check-true (has-problem? near-checked 'la-too-far))
 

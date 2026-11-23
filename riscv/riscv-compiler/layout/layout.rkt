@@ -1,7 +1,7 @@
 #lang racket
 ;;; layout/layout.rkt
 ;;;
-;;; 布局度量: program + data + layout 输入
+;;; 布局度量: code + data + layout 输入
 ;;;   -> ((phase measured) (segments ...) (anchors ...) (problems ...))
 ;;;
 ;;; 本层只产出“位置”，不产出绝对地址:
@@ -13,9 +13,9 @@
 ;;; 只算, 不选择: 不升级远形式、不造 label、不填 scratch、不重排。
 ;;;
 ;;; 输入:
-;;;   program : dce 输出的 program
+;;;   code    : 前端产出的 code
 ;;;             blocks : ((block <头 label 链列表> item ...) ...)   ; 身份 + 程序
-;;;             flows  : ((flow (succ id ...) (fallthrough id|#f) (root? bool)) ...)
+;;;             falls  : ((fall from-id to-id) ...)                 ; 物理 fallthrough
 ;;;   data    : 普通 item 列表 ((label ...) (bytes ...) (fill n b)
 ;;;                              (value 宽度 值) (align n) (reserve n) ...)
 ;;;   layout  : ((segments (segment 名 kind start end align) ...)
@@ -29,7 +29,7 @@
 ;;; 代码里没有 section: 段归属只写在 layout 的 place 行里。
 ;;;
 ;;; 放置:
-;;;   - 单位 = analyze 的块(代码) / 游程 run(数据, 没有控制流)
+;;;   - 单位 = code 的块(代码) / 游程 run(数据, 没有控制流)
 ;;;   - place 行按**精确链**匹配块头或数据游程的 label
 ;;;   - 命中的块是一个 region 的锚点; 之后直到下一个锚点的块跟随它
 ;;;   - 段内顺序 = 源顺序; 不做前缀、不做按 kind 的自动落位
@@ -38,8 +38,8 @@
 (require "../sexp.rkt"
          "../meta.rkt"
          "forms.rkt"
-         (only-in "../analyze/analyze.rkt" program? program-blocks program-flows
-                  block-head block-items flow-fallthrough))
+         (only-in "../code.rkt" code? code-blocks code-falls
+                  block-head block-items fall-from fall-to))
 
 (provide layout-program
          as-items
@@ -156,11 +156,11 @@
 ;; 两种放置单位
 ;; ---------------------------------------------------------------------------
 
-;; 代码: analyze/dce 的块(struct)
-(define (program-parts prog)
-  (unless (program? prog)
-    (error 'layout "program must be analyze/dce output ((blocks ...) (flows ...)); got: ~e" prog))
-  (values (program-blocks prog) (program-flows prog)))
+;; 代码: 前端产出的 code(s-exp)
+(define (code-parts c)
+  (unless (code? c)
+    (error 'layout "program must be code (blocks + falls); got: ~e" c))
+  (values (code-blocks c) (code-falls c)))
 
 ;; 数据: 从一条 label 到下一条 label 之间的 item
 (struct run (labels items) #:transparent)
@@ -322,27 +322,29 @@
 ;; fallthrough 检查: 顺序后继必须紧挨着
 ;; ---------------------------------------------------------------------------
 
-(define (check-fallthrough measured-segs flows problem!)
+(define (check-fallthrough measured-segs falls problem!)
   (define where (make-hash))                    ; 块下标 -> (cons 段名 段内序号)
   (define labels-of (make-hash))                ; 块下标 -> 块头 labels
-  (for ([m (in-list measured-segs)])
-    (for ([e (in-list (measured-blocks m))] [i (in-naturals)])
-      (hash-set! where (car e) (cons (segment-name (measured-segment m)) i))
-      (hash-set! labels-of (car e) (block-head (cdr e)))))
+  (define next-of (make-hash))                  ; 块下标 -> 同段物理下一块下标
   (for ([m (in-list measured-segs)])
     (define blks (measured-blocks m))
     (for ([e (in-list blks)] [i (in-naturals)])
-      (define idx (car e))
-      (define ft (flow-fallthrough (list-ref flows idx)))
-      (when ft
-        (define nxt (and (< (add1 i) (length blks)) (list-ref blks (add1 i))))
-        (unless (and nxt
-                     (= (car nxt) ft)
-                     (equal? (hash-ref where ft #f)
-                             (cons (segment-name (measured-segment m)) (add1 i))))
-          (problem! `(broken-fallthrough ,idx ,ft
-                                         ,(hash-ref labels-of idx '())
-                                         ,(hash-ref labels-of ft '()))))))))
+      (hash-set! where (car e) (cons (segment-name (measured-segment m)) i))
+      (hash-set! labels-of (car e) (block-head (cdr e)))
+      (when (< (add1 i) (length blks))
+        (hash-set! next-of (car e) (car (list-ref blks (add1 i)))))))
+  (for ([f (in-list falls)])
+    (define idx (fall-from f))
+    (define ft (fall-to f))
+    (define nxt (hash-ref next-of idx #f))
+    (unless (and nxt
+                 (= nxt ft)
+                 (equal? (hash-ref where ft #f)
+                         (let ([w (hash-ref where idx #f)])
+                           (and w (cons (car w) (add1 (cdr w)))))))
+      (problem! `(broken-fallthrough ,idx ,ft
+                                     ,(hash-ref labels-of idx '())
+                                     ,(hash-ref labels-of ft '()))))))
 
 ;; ---------------------------------------------------------------------------
 ;; anchors / 临时位置
@@ -384,7 +386,7 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (layout-program target program data layout-input [externs '()])
+(define (layout-program target code data layout-input [externs '()])
   (define origin (origin-of layout-input))
   (define segs (resolve-segment-starts (parse-segments layout-input) origin))
   (define places (parse-places layout-input))
@@ -395,7 +397,7 @@
   (define by-name (for/hash ([s (in-list segs)]) (values (segment-name s) s)))
   (define rules (rules-of places by-name problem!))
 
-  (define-values (blocks flows) (program-parts program))
+  (define-values (blocks falls) (code-parts code))
   (define matched (make-hash))             ; 用到过的 place 链
   (define code-by-seg (place-blocks blocks rules matched problem!))
   (define data-by-seg (place-runs (split-runs (as-items data)) rules matched problem!))
@@ -408,7 +410,7 @@
   (ensure-segments segs data-by-seg)
 
   (define measured-segs (measure-all target segs code-by-seg data-by-seg problem!))
-  (check-fallthrough measured-segs flows problem!)
+  (check-fallthrough measured-segs falls problem!)
   (define anchors (collect-anchors measured-segs))
 
   (layout->sexp origin externs measured-segs anchors

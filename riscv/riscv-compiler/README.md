@@ -11,22 +11,23 @@ rich-data + program-items
   -> expand-struct
   -> expand-data
   -> flatten
-  -> analyze
-  -> dce
+  -> lower-code        ; 前端结构: blocks + falls
+  -> validate          ; 显式形式 arity/形状
+  -> emit-unit         ; 布局前接口
   -> layout
   -> check
   -> bind-labels
   -> encode
-  -> build
+  -> emit-program
 ```
 
 输入是 canonical native；没有可选别名层。
 
 ```racket
-'(expand-struct expand-data flatten analyze dce layout check bind-labels encode)
+`(load-units expand-struct expand-data flatten lower-code validate emit-unit layout check bind-labels encode emit-program)`
 ```
 
-`layout` 只度量位置；`check` 只检查前端显式选择的跳转/地址形式，不改尺寸。
+`lower-code` 只做前端结构（blocks + falls），不建 CFG、不做 DCE。`layout` 只度量位置；`check` 只检查前端显式选择的跳转/地址形式，不改尺寸。
 
 ## native 顺序
 
@@ -49,6 +50,7 @@ canonical 操作数顺序来自 `riscv-asm` 的 `instruction-info-operands`，�
 
 | 文档 | 内容 |
 | --- | --- |
+| [`USAGE.md`](USAGE.md) | **完整使用手册：语法、API、流水线、产物、边界** |
 | [`SYNTAX.md`](SYNTAX.md) | native 表面语法 |
 | [`RICH-DATA.md`](RICH-DATA.md) | rich-data 的完整数据语法与展开规则 |
 | [`STRUCT.md`](STRUCT.md) | struct 布局、静态数据、字段访问与最终导出 |

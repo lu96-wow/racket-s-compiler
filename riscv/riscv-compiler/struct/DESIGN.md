@@ -25,7 +25,7 @@ program-items + rich-data
   -> expand-struct
   -> expand-data
   -> flatten
-  -> analyze
+  -> lower-code
   ...
 ```
 

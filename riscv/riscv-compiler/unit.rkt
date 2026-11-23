@@ -18,7 +18,7 @@
          "target.rkt"
          "modules.rkt"
          "struct-meta.rkt"
-         (only-in "analyze/analyze.rkt" program-blocks block-items block-head))
+         (only-in "code.rkt" code-blocks block-items block-head))
 
 (provide make-unit
          unit-form?
@@ -43,13 +43,13 @@
 ;; ---------------------------------------------------------------------------
 ;; label 类型
 ;;
-;; 这里不需要 layout：program 的块是 code，data-items 的 label 是 data。
+;; 这里不需要 layout：code 的块是 code，data-items 的 label 是 data。
 ;; 如果某个 provide 的名字两边都找不到，记 unknown。
 ;; ---------------------------------------------------------------------------
 
-(define (collect-label-kinds program data-items)
+(define (collect-label-kinds code data-items)
   (define h (make-hash))
-  (for ([b (in-list (program-blocks program))])
+  (for ([b (in-list (code-blocks code))])
     (for ([l (in-list (block-head b))])
       (hash-set! h l 'function))
     (for ([it (in-list (block-items b))]
@@ -218,9 +218,9 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (make-unit target program data-items
+(define (make-unit target code data-items
                    structs label-provides struct-provides module-requires)
-  (define label-kinds (collect-label-kinds program data-items))
+  (define label-kinds (collect-label-kinds code data-items))
   (define labels
     (parse-extern-provides label-provides 'label-provides))
   (define struct-provides-hash

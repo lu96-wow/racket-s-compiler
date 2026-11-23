@@ -4,14 +4,14 @@
 ;;; 汇编器契约测试:
 ;;;   - native 是默认基础语法
 ;;;   - 便利别名是另一个可选层
-;;;   - analyze / layout / check / encode 不再假设“目标在最后一个操作数”
+;;;   - code / layout / check / encode 不再假设“目标在最后一个操作数”
 
 (require rackunit
          (only-in "../flow/flow.rkt"
                   run-flow flow-value default-flow)
          (only-in "../target.rkt" target-rv64-base)
          (only-in "../layout/layout.rkt" layout-problems)
-         (only-in "../analyze/insn.rkt"
+         (only-in "../code/insn.rkt"
                   jump-target jump-target-position jump-register)
          (only-in "../encode/syntax/coverage.rkt" syntax-coverage))
 
@@ -199,7 +199,7 @@
     (label far) (jalr x0 ra 0)))
 
 (define short-far-out
-  (run-code (remq 'encode default-flow) short-far-src short-far-spec))
+  (run-code (remove* '(encode emit-program) default-flow) short-far-src short-far-spec))
 (check-true (pair? (layout-problems (flow-value short-far-out 'bound-layout))))
 (check-not-false (memq 'out-of-range
                         (map car (layout-problems (flow-value short-far-out 'bound-layout)))))

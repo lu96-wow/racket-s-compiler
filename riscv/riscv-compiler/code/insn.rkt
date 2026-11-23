@@ -1,9 +1,10 @@
 #lang racket
-;;; analyze/insn.rkt
+;;; code/insn.rkt
 ;;;
-;;; analyze 的输入是 native 指令 + label。这里只做分类, 不改写。
+;;; native 指令 + label 的分类。这里只做分类, 不改写。
+;;; 布局/编码需要知道“哪条是分支/跳转、目标在哪”；这里不建 CFG。
 ;;;
-;;; 分类决定 CFG 的形状。操作数顺序是 riscv-opcodes native 顺序:
+;;; 操作数顺序是 riscv-opcodes native 顺序:
 ;;;   - 分支        (beq L a b) / (c.beqz a L)   两条边: 目标 + 顺序
 ;;;   - 直接跳转    (jal x0 L) / (c.j L)          一条边: 目标(无顺序边)
 ;;;   - 调用        (jal x1 L) / (c.jal L)        两条边: 目标 + 顺序
@@ -97,32 +98,32 @@
     (case (car x)
       [(jal)
        (unless (= 3 (length x))
-         (error 'analyze
+         (error 'validate
                 "jal 必须显式写 link: (jal rd L)，收到 ~s"
                 x))]
       [(branch-jal)
        (unless (= 5 (length x))
-         (error 'analyze
+         (error 'validate
                 "branch-jal 形状必须是 (branch-jal cond rs1 rs2 L)，收到 ~s"
                 x))]
       [(branch-auipc-jalr)
        (unless (= 6 (length x))
-         (error 'analyze
+         (error 'validate
                 "branch-auipc-jalr 形状必须是 (branch-auipc-jalr tmp cond rs1 rs2 L)，收到 ~s"
                 x))]
       [(jump-auipc-jalr)
        (unless (= 4 (length x))
-         (error 'analyze
+         (error 'validate
                 "jump-auipc-jalr 形状必须是 (jump-auipc-jalr link base L)，收到 ~s"
                 x))]
       [(la-pcrel)
        (unless (= 3 (length x))
-         (error 'analyze
+         (error 'validate
                 "la-pcrel 形状必须是 (la-pcrel rd expr)，收到 ~s"
                 x))]
       [(la-pcrel-li-add)
        (unless (= 4 (length x))
-         (error 'analyze
+         (error 'validate
                 "la-pcrel-li-add 形状必须是 (la-pcrel-li-add rd tmp expr)，收到 ~s"
                 x))]
       [else (void)])))

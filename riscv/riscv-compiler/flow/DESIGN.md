@@ -20,7 +20,7 @@
 | `data-items` | 核心数据 item | `expand-data` / `flatten` / seed |
 | `program-items` | 扁平程序 item（native） | seed / `expand-struct` / `flatten` |
 | `names` | 完整链 → 位置 | `flatten` |
-| `program` | `(struct program blocks flows)` | `analyze` / `dce` |
+| `code` | `(code (blocks …) (falls …))` | `lower-code` / seed |
 | `unit` | 布局前接口：模块 provide + label kind + struct 声明 | `emit-unit` |
 | `measured-layout` | segments + anchors + problems | `layout` / `check` |
 | `bound-layout` | measured + symbols | `bind-labels` |
@@ -35,28 +35,27 @@
 | `expand-struct` | `program-items` `rich-data` (`optional extern-structs`) (`optional extern-struct-provides`) | `program-items` `rich-data` `structs` `struct-provides` |
 | `expand-data` | `rich-data` | `data-items` |
 | `flatten` | `program-items` `data-items` (`optional externs`) (`optional struct-provides`) (`optional extern-label-provides`) | `program-items` `data-items` `names` `exports` `label-provides` `module-requires` |
-| `analyze` | `program-items` `data-items` | `program` |
-| `dce` | `program` | `program` |
-| `emit-unit` | `program` `data-items` (`optional structs`) (`optional label-provides`) (`optional struct-provides`) (`optional module-requires`) | `unit` |
-| `layout` | `program` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
+| `lower-code` | (`optional program-items`) (`optional code`) | `code` |
+| `validate` | `code` | `code` |
+| `emit-unit` | `code` `data-items` (`optional structs`) (`optional label-provides`) (`optional struct-provides`) (`optional module-requires`) | `unit` |
+| `layout` | `code` `data-items` `layout-spec` (`optional externs`) | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout` |
 | `bind-labels` | `measured-layout` (`optional exports`) | `bound-layout` |
 | `encode` | `bound-layout` (`optional structs`) (`optional label-provides`) (`optional struct-provides`) (`optional unit`) | `build` |
-| `emit-program` | `build` `program` `data-items` (`optional unit`) (`optional extern-units`) (`optional externs`) | `program` |
+| `emit-program` | `build` `code` `data-items` (`optional unit`) (`optional extern-units`) (`optional externs`) | `program`（最终 s-exp） |
 
 ## 层组
 
 | 组名 | 展开 |
 | --- | --- |
-| `frontend` | `expand-struct expand-data flatten` |
-| `ir` | `analyze dce` |
-| `backend` | `layout check bind-labels encode` |
+| `frontend` | `load-units expand-struct expand-data flatten lower-code` |
+| `backend` | `validate emit-unit layout check bind-labels encode emit-program` |
 | `all` | `default-flow` |
 
 默认流：
 
 ```racket
-'(expand-struct expand-data flatten analyze dce layout check bind-labels encode)
+'(load-units expand-struct expand-data flatten lower-code validate emit-unit layout check bind-labels encode emit-program)
 ```
 
 ## 硬边界
@@ -70,7 +69,7 @@
 6. **`bind-labels` 是尺寸不变的收尾**：不松弛、不填 scratch、不补跳。
 7. **寄存器策略**：会改尺寸的 regalloc/spill 必须在 `layout` 之前完成；
    `layout` 之后只能做尺寸不变的收尾。详见 [`../CONSTRAINTS.md`](../CONSTRAINTS.md)。
-8. **层间只传 plain list 或 `struct program`**；不认识的 item 原样透传。
+8. **层间只传 plain list 或 `code` / `program` 等 s-exp**；不认识的 item 原样透传。
 9. **target 是显式参数**：`layout` / `check` / `encode` 使用；`bind-labels` 不需要。
 10. **谁产生 item，谁负责尺寸**；中间层不替 encode 做指令合法性检查。
 11. **native 是唯一编码方言**：`encode` 只认 `instruction-info-operands` 顺序。

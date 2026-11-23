@@ -8,7 +8,7 @@
 ;;; (真指令名单不在本层维护; 编不出来是后面编码层的事)
 
 (require "../sexp.rkt"
-         (only-in "../analyze/insn.rkt"
+         (only-in "../code/insn.rkt"
                   branch-instruction? jump-instruction?
                   jump-target jump-target-position)
          (only-in "../target.rkt" target-xlen)
@@ -71,12 +71,12 @@
 ;; 分类
 ;; ---------------------------------------------------------------------------
 
-;; 分支/跳转的名单不在这里重复: 直接借 analyze/insn.rkt 的分类。
+;; 分支/跳转的名单不在这里重复: 直接借 code/insn.rkt 的分类。
 ;; 名字保留: 这是本层的词汇(尺寸/距离/目标位都按它查)。
 (define (branch-form? x) (branch-instruction? x))
 (define (jump-form? x)   (jump-instruction? x))
 
-;; 有控制流目标。目标位置由 analyze/insn.rkt 按形式决定，
+;; 有控制流目标。目标位置由 code/insn.rkt 按形式决定，
 ;; 不能假设它总在最后一个操作数。
 (define (control-form? x) (or (branch-form? x) (jump-form? x)))
 (define (control-target x) (and (control-form? x) (jump-target x)))
@@ -166,7 +166,7 @@
 ;; 形式形状 / 必需操作数
 ;;
 ;; 所有 scratch/base/tmp 都是**必需操作数**, 没有可省略的空槽。
-;; 缺操作数在 analyze 的 arity 检查里挡掉; check 只检查寄存器值是否合法。
+;; 缺操作数在 validate 的 arity 检查里挡掉; check 只检查寄存器值是否合法。
 ;; ---------------------------------------------------------------------------
 
 ;; 近 la: (la-pcrel rd expr) = auipc + addi

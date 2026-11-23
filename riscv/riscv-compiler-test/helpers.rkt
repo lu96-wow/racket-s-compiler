@@ -1,12 +1,12 @@
 #lang racket
 ;;; helpers.rkt -- 黑盒测试共用的小工具
 ;;;
-;;; 这里只放"看产物"的函数, 不放任何编译器逻辑。
-;;; 每个测试文件都通过公开 API 调用 riscv-compiler, 不 require 其内部私有绑定。
+;;; 这里放"看产物"的函数，以及测试用的前端 code 构造器。
+;;; code-of 只是测试/示例入口，不是 backend 的 CFG 分析。
 
 (require rackunit
-         (only-in "../riscv-compiler/analyze/analyze.rkt"
-                  sexp->program))
+         (only-in "../riscv-compiler/code.rkt" sexp->code)
+         (only-in "../riscv-compiler/frontend/blockify.rkt" blockify))
 
 (provide (all-defined-out))
 
@@ -23,7 +23,11 @@
 ;; ---------------------------------------------------------------------------
 
 (define (program-of blocks+flows)
-  (sexp->program blocks+flows))
+  (sexp->code blocks+flows))
+
+;; 测试用前端: 扁平 item -> code(blocks + falls)。
+(define (code-of items)
+  (blockify items))
 
 ;; build 里除了 (segment …) 还有 (link …); 取段要先按 tag 过滤。
 (define (build-segments build)

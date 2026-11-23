@@ -31,7 +31,7 @@ target-rv32-all
 target 是显式参数，没有全局 `current-target`：
 
 ```racket
-(layout-program target program data layout-input)
+(layout-program target code data layout-input)
 (check-layout target measured-layout)
 (encode-layout target bound-layout)
 (encode-instruction target name operands)

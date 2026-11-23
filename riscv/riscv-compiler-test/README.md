@@ -1,8 +1,8 @@
 # riscv-compiler-test
 
 > 本目录已经迁移到新实现：契约是 **riscv-opcodes native 顺序**。
-> 没有 GAS 方言层；专项用例见
-> [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
+> 没有 GAS 方言层；完整使用手册见 [`../riscv-compiler/USAGE.md`](../riscv-compiler/USAGE.md)，
+> 专项用例见 [`../riscv-compiler/test/compiler-test.rkt`](../riscv-compiler/test/compiler-test.rkt)。
 
 黑盒契约测试：只通过 `riscv-compiler` 的公开 API 验证每一层的 s-exp
 输入/输出、边界、问题交接，以及整条 `flow` 到字节的产物。
@@ -27,14 +27,14 @@ racket integration-test.rkt
 | `sexp-test.rkt` | `form?` `name?` `path?` `normalize-path` `address-expr?` `as-items` |
 | `expand-data-test.rkt` | rich 数据 → `(value 宽度 值)` / `(bytes …)` / `(fill …)` / `(pad …)` |
 | `flatten-test.rkt` | `module` + `provide`/`require` + `prefix-in`/`rename-in`/`rename-out` |
-| `analyze-test.rkt` | 指令分类、切块、`succ`/`fallthrough`、`root?` |
-| `dce-test.rkt` | 不可达块、转移到下一块、空块合并、重新编号 |
+| `insn-test.rkt` | 指令分类、目标位置、显式形式 arity |
+| `code-test.rkt` | `code`（blocks + falls）、前端 blockify、validate |
 | `layout-test.rkt` | `item-size`/`item-kind`/`form-range`、放置、对齐、anchors、problems、`hole` 段（`align` → `reserve`） |
 | `bind-labels-test.rkt` | anchors → symbols、phase、绝对地址、最终宽度/容量、problems 保留 |
 | `check-test.rkt` | 显式短/远形式、范围边界、`zero-scratch` / `bad-scratch`、`la-too-far`、check 不改布局 |
 | `struct-test.rkt` | struct 布局、内部 align/pad、sizeof/offsetof、静态数据、字段访问 short/far、模块作用域、`require` 导入、跨编译单元 `extern-structs` / `extern-struct-provides`、build 导出 |
 | `encode-test.rkt` | 指令字、端序、全部原子指令、`fence`/`fence.tso`/`fence.i`、CSR、aq/rl、填充策略、`li`/`la-pcrel`/显式形式、`hole` 段（`size` 保留 + `bytes` 为空）、断言 |
-| `flow-test.rkt` | stage 表、依赖检查、`layout`/`check`、`bind-labels`、层组/选择器、`run-stage`、context 续跑 |
+| `flow-test.rkt` | stage 表、依赖检查、`lower-code`/`validate`、`layout`/`check`、层组/选择器、`run-stage`、context 续跑 |
 | `unit-test.rkt` | 布局前接口：模块 provide、label kind、struct 声明；确认没有地址/offset |
 | `program-test.rkt` | 最终 `(program (internal …) (external …))`：modules / rich-data / functions / addresses |
 | `integration-test.rkt` | 规范例子逐字节、模块+数据、rich 数据、原子指令+fence、显式远形式、跨编译单元 label `require`、错误 |
@@ -44,8 +44,8 @@ racket integration-test.rkt
 ```
 expand-data : (label …) (bytes …) (fill n b) (pad n) (value w v) (align n)
 flatten     : 输入的链 -> 完整链；module/provide/require 壳消失
-analyze     : (program (block <头链列表> item...) ...)
-              (program (flow (succ id...) (fallthrough id|#f) (root? bool)) ...)
+code        : (code (blocks (block <头链列表> item...) ...)
+                    (falls (fall from to) ...))
 layout      : ((phase measured)
                (segments (segment (name …) (kind …) (start …) (end …) (align …)
                                   (items (offset k item) ...) (size n)) ...)
@@ -84,6 +84,6 @@ link 文件   : link 表按 provides 过滤后单独写一个文件（link-file.
 
 | 位置 | 现象 | 修正 |
 | --- | --- | --- |
-| `analyze/analyze.rkt` | `(jal x0 L)` 的目标正好是物理下一块时，`fallthrough` 被算成下一块（它并不会顺序落下） | `fallthrough` 用 `falls-through?` 判断，不再只看下一块是否在 `succ` 里 |
+| `code.rkt` / `frontend/blockify.rkt` | `(jal x0 L)` 的目标正好是物理下一块时，fallthrough 被算成下一块（它并不会顺序落下） | `falls` 用 `falls-through?` 判断，不再只看下一块是否在 succ 里 |
 | `flatten/flatten.rkt` | `(prefix-in p: a)` 导入 `(d table)` 时只绑成 `(p:d)`，丢了 `table` | 前缀只加在链的头一节，保留尾巴 |
 | `encode/encode.rkt` | `(jump-auipc-jalr ra ra L)` 的 link 非零，却被当成 scratch 空槽拒绝 | scratch/base 是必需操作数，按形式固定 arity 检查 |

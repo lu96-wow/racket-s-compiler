@@ -40,7 +40,7 @@
     (place c (lib f))))
 
 (define (measured src externs)
-  (flow-value (compile src externs '(expand-data flatten analyze dce layout check))
+  (flow-value (compile src externs '(expand-data flatten lower-code validate layout check))
               'measured-layout))
 
 (define (problems src externs) (cdr (assoc 'problems (measured src externs))))
@@ -151,7 +151,7 @@
 (define lib-out
   (compile '((label lib f) (jalr x0 ra 0))
            '()
-           '(expand-data flatten analyze dce layout check bind-labels encode)
+           '(expand-data flatten lower-code validate layout check bind-labels encode)
            lib-spec))
 (define lib-build (flow-value lib-out 'build))
 (define lib-link (findf (lambda (x) (eq? (car x) 'link)) (cdr lib-build)))

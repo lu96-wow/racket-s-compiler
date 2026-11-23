@@ -7,9 +7,7 @@
          (only-in "../riscv-compiler/target.rkt" target-rv64-base)
          (only-in "../riscv-compiler/layout/layout.rkt"
                   layout-problems)
-         (only-in "../riscv-compiler/analyze/analyze.rkt"
-                  program-blocks program-flows block-head
-                  flow-root? flow-fallthrough))
+         (only-in "../riscv-compiler/code.rkt" code-blocks))
 
 (define test-target target-rv64-base)
 (define (run-flow selector [seeds '()]) (run-flow* test-target selector seeds))
@@ -62,16 +60,14 @@
                 (label hot) (addi a0 a0 1) (jalr x0 ra 0)
                 (label end) (ld t0 sp 8)))
 
-(define doc-program
-  (flow-value (run-flow pre-emit-flow doc-seeds) 'program))
-(check-equal? (length (program-blocks doc-program)) 4)
-(check-true (flow-root? (car (program-flows doc-program))))
-(check-false (flow-root? (cadr (program-flows doc-program))))
+(define doc-code
+  (flow-value (run-flow pre-emit-flow doc-seeds) 'code))
+(check-equal? (length (code-blocks doc-code)) 4)
 
 (check-equal? (layout-problems (flow-value doc-out 'bound-layout)) '())
 
 ;; ---------------------------------------------------------------------------
-;; 模块 + 数据侧地址字: flatten / expand-data / analyze roots 一起工作
+;; 模块 + 数据侧地址字: flatten / expand-data / lower-code 一起工作
 ;; ---------------------------------------------------------------------------
 
 (define mod-prog
@@ -127,16 +123,6 @@
                       (list #x13 #x05 #x15 #x00)      ; addi a0, a0, 1
                       (list #x67 #x80 #x00 #x00)))    ; jalr x0, ra, 0
 
-;; 数据侧的 root: 有间接跳转时, 数据里存了 (p f) 的地址, 所以 f 是 root
-(check-true
- (flow-root?
-  (last (program-flows
-         (flow-value
-          (run-flow pre-emit-flow
-                    (list (cons 'rich-data mod-rich)
-                          (cons 'program-items mod-prog)
-                          (cons 'layout-spec mod-spec)))
-          'program)))))
 
 ;; ---------------------------------------------------------------------------
 ;; rich 数据全链路: 端序 / 字符串 / 数组压缩
@@ -288,7 +274,7 @@
 
 ;; 跳过 expand-data: hole 的 item 直接当 data-items seed 进来
 (define bss-out
-  (run-flow '(flatten analyze dce layout check bind-labels encode)
+  (run-flow '(flatten lower-code validate layout check bind-labels encode)
             (list (cons 'program-items '((label main) (jalr x0 ra 0)))
                   (cons 'data-items bss-items)
                   (cons 'layout-spec bss-spec))))

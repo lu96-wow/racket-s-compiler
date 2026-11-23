@@ -11,17 +11,19 @@ rich-data + program-items
   -> expand-struct
   -> expand-data
   -> flatten
-  -> analyze
-  -> dce
+  -> lower-code
+  -> validate
+  -> emit-unit
   -> layout
   -> check
   -> bind-labels
   -> encode
-  -> build
+  -> emit-program
 ```
 
 - 输入是 canonical native；没有可选别名层。
 - `expand-struct` 是前端布局展开层：struct 定义、静态数据、字段访问。
+- `lower-code` 是前端结构层：扁平 item -> `code`（blocks + falls），不建 CFG、不做 DCE。
 - `layout` 只度量位置；`check` 检查显式形式，不改尺寸。
 - `measured-layout` 只有 `anchors`，没有绝对地址。
 - `bind-labels` 把 `anchors` 落到 `symbols`，产出可编码的 `bound-layout`。
@@ -42,13 +44,18 @@ rich-data + program-items
 | `expand-struct` | `struct/struct.rkt` | struct 布局 + 静态数据 + 字段访问展开 |
 | `expand-data` | `expand-data/expand.rkt` | rich 数据 → 核心数据 item |
 | `flatten` | `flatten/flatten.rkt` | label 名字空间的 module / provide / require 解析 |
-| `analyze` | `analyze/analyze.rkt` | 切块 + 流 + root；操作数位置按 native |
-| `dce` | `dce/dce.rkt` | 死代码消除 |
+| `lower-code` | `frontend/blockify.rkt` | 前端结构：扁平 item -> `code`（blocks + falls） |
+| `validate` | `code/validate.rkt` | 显式形式 arity/形状检查；不改代码 |
+| `emit-unit` | `unit.rkt` | 布局前接口：模块可见性 + label kind + struct 声明 |
 | `layout` | `layout/layout.rkt` | 放置 + 尺寸 + anchors/problems；不选形式 |
 | `check` | `check/check.rkt` | 检查显式控制转移/地址形式；只报 problems |
 | `bind-labels` | `bind-labels/bind.rkt` | anchors → symbols，最终宽度/容量检查 |
 | `encode` | `encode/encode.rkt` | bound-layout → 每段字节 |
 | `flow` | `flow/flow.rkt` | 用 stage 表 + 选择器串流程 |
+
+使用手册：
+
+- [`USAGE.md`](USAGE.md)
 
 每层细节：
 
@@ -57,8 +64,6 @@ rich-data + program-items
 - [`struct/DESIGN.md`](struct/DESIGN.md)
 - [`expand-data/DESIGN.md`](expand-data/DESIGN.md)
 - [`flatten/DESIGN.md`](flatten/DESIGN.md)
-- [`analyze/DESIGN.md`](analyze/DESIGN.md)
-- [`dce/DESIGN.md`](dce/DESIGN.md)
 - [`layout/DESIGN.md`](layout/DESIGN.md)
 - [`check/DESIGN.md`](check/DESIGN.md)
 - [`bind-labels/DESIGN.md`](bind-labels/DESIGN.md)
@@ -72,6 +77,9 @@ rich-data + program-items
 | 文件 | 内容 |
 | --- | --- |
 | `sexp.rkt` | form / name / path / as-items；地址表达式形状与 `eval-address(expr, resolve)` |
+| `code.rkt` | backend 代码契约：`code` / `blocks` / `falls`；不含 CFG |
+| `code/insn.rkt` | 指令分类、目标位置、显式形式 arity |
+| `frontend/blockify.rkt` | 前端参考结构：扁平 item -> `code` |
 | `modules.rkt` | 共享模块树 + provide/require/prefix/rename/re-export 不动点；label 和 struct 各自提供声明表 |
 | `meta.rkt` | 带标签元数据的公共读取器：`tagged-form?` / `tag-ref` / `tag-ref*` |
 | `struct-meta.rkt` | struct 元数据 `struct-def` ↔ `sdef`，以及 `sdef` → 布局无关声明 |

@@ -12,7 +12,7 @@
 | 链 | 非空名字列表，例如 `(prog1 main)` |
 | 地址表达式 | 整数 \| `(链)` \| `(+ a b …)` \| `(- a b …)` |
 | 入口壳 | 接受 `(quote …)` / `(begin …)`，出口一律 plain list |
-| 层间载荷 | plain list 或 `(struct program …)` |
+| 层间载荷 | plain list（`code` / `program` 等 s-exp） |
 
 `sexp.rkt` 提供形状判定、`as-items`、地址表达式判定和求值：
 
@@ -30,14 +30,14 @@
 | `expand-struct` | `program-items` + `rich-data` (+ optional `extern-structs` / `extern-struct-provides`) | 展开后的 `program-items` + `rich-data` + `structs` + `struct-provides` |
 | `expand-data` | rich 数据 | 核心数据 item |
 | `flatten` | `program-items` + `data-items` (+ optional `externs` / `extern-label-provides`) | 完整链的 `program-items` + `data-items` + `names` + `exports` + `label-provides` + `module-requires` |
-| `analyze` | `program-items` + `data-items` | `program`（blocks + flows） |
-| `dce` | `program` | `program` |
-| `emit-unit` | `program` + `data-items` (+ optional `structs` / `label-provides` / `struct-provides` / `module-requires`) | 布局前 `unit` |
-| `layout` | `program` + `data-items` + `layout-spec` | `measured-layout` |
+| `lower-code` | optional `program-items` + optional `code` | `code`（blocks + falls） |
+| `validate` | `code` | `code`（只检查） |
+| `emit-unit` | `code` + `data-items` (+ optional `structs` / `label-provides` / `struct-provides` / `module-requires`) | 布局前 `unit` |
+| `layout` | `code` + `data-items` + `layout-spec` | `measured-layout` |
 | `check` | `measured-layout` | `measured-layout`（追加 problems） |
 | `bind-labels` | `measured-layout` | `bound-layout` |
 | `encode` | `bound-layout` (+ optional `structs` / `label-provides` / `struct-provides` / `unit`) | `build`（布局镜像） |
-| `emit-program` | `build` + `program` + `data-items` (+ optional `unit` / `extern-units` / `externs`) | `program`（最终 s-exp） |
+| `emit-program` | `build` + `code` + `data-items` (+ optional `unit` / `extern-units` / `externs`) | `program`（最终 s-exp） |
 
 ## 关键类型
 
@@ -52,6 +52,7 @@
 | `(struct name (field type) …)` | 前端布局定义；展开后消失 |
 | `(struct-data name (field value …) …)` | 静态数据实例；展开成 align/pad/value |
 | `(sizeof name)` / `(offsetof name field)` | 编译期整数 |
+| `code` | `(code (blocks (block 头链列表 item…) …) (falls (fall from to) …))`；backend 的代码输入，不含 CFG |
 | `(anchor 链 段名 偏移)` | measured 的 label 位置，无绝对地址 |
 | `(symbol 链 段名 偏移 地址)` | bound 的最终符号 |
 | `(problems …)` | 放置 / 段 / fallthrough / `undefined-target` / `out-of-range` / `zero-scratch` / `bad-scratch` / `la-too-far` / 最终宽度/容量 |

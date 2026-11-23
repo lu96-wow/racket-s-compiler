@@ -10,6 +10,7 @@
 | 短/远分支、短/远跳转 | 前端 | 产生 item 时 |
 | `la-pcrel` / `la-pcrel-li-add` | 前端 | 产生 item 时 |
 | `li` 展开 | 前端/共享 `li-size` | 产生 item 时 |
+| CFG / 可达性 / DCE / 块顺序 / fallthrough | 前端 | 产生 `code` 时 |
 | 指令顺序、段、对齐、label 位置 | `layout` | 一次线性度量 |
 | 目标存在/范围/scratch 检查 | `check` | 布局之后 |
 | 绝对地址、宽度/容量 | `bind-labels` | 检查之后 |
@@ -64,8 +65,8 @@ frontend / lower
   -> expand-struct          ; struct 布局 + 静态数据 + 字段访问展开
   -> expand-data
   -> flatten
-  -> analyze
-  -> dce
+  -> lower-code          ; 前端结构: blocks + falls
+  -> validate            ; 显式形式 arity/形状
   -> layout              ; 位置 + 尺寸 + anchors；不选形式
   -> check               ; 显式形式检查；只报 problems
   -> bind-labels         ; 绝对地址 + 宽度/容量
@@ -76,7 +77,8 @@ frontend / lower
 
 | 阶段 | 允许改尺寸 | 允许改 label | scratch |
 | --- | --- | --- | --- |
-| frontend / lower | 是 | 是 | 前端显式写 |
+| frontend / lower-code | 是 | 是 | 前端显式写 |
+| validate | 否 | 否 | 不关心 |
 | layout | 否 | 否 | 不关心 |
 | check | 否 | 否 | 只检查缺失 |
 | bind-labels | 否 | 否 | 不关心 |

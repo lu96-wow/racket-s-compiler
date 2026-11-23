@@ -13,9 +13,7 @@
          (rename-in "../riscv-compiler/layout/layout.rkt"
                     [layout-program layout-program*])
          (only-in "../riscv-compiler/check/check.rkt" check-layout)
-         (only-in "../riscv-compiler/target.rkt" target-rv64-base)
-         (only-in "../riscv-compiler/analyze/analyze.rkt" analyze))
-
+         (only-in "../riscv-compiler/target.rkt" target-rv64-base))
 (define target target-rv64-base)
 (define (lay prog data spec) (layout-program* target prog data spec))
 (define (checked prog data spec) (check-layout target (lay prog data spec)))
@@ -24,7 +22,7 @@
   '((segments (segment (name c) (kind code) (start #x1000) (end #x1100) (align 4)))
     (place c (main))))
 
-(define (src items) (analyze (append '((label main)) items)))
+(define (src items) (code-of (append '((label main)) items)))
 
 ;; ---------------------------------------------------------------------------
 ;; 短形式

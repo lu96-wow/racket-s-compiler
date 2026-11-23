@@ -10,8 +10,8 @@ rich-data + program-items
   -> expand-struct
   -> expand-data
   -> flatten
-  -> analyze
-  -> dce
+  -> lower-code
+  -> validate
   -> layout
   -> check
   -> bind-labels
@@ -550,7 +550,7 @@ align / pad / value
 lw / lwu / ld / sw / sd / li / add / addi
 ```
 
-`analyze` 之后不会再有 `struct-load` / `sizeof` / `offsetof`。
+`lower-code` 之后不会再有 `struct-load` / `sizeof` / `offsetof`。
 
 ## 11. v1 边界
 

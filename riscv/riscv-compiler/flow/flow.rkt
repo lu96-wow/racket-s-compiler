@@ -4,7 +4,8 @@
 ;;; 构建流: 用一张 stage 表 + 一个名字列表把各层串起来。
 ;;;
 ;;;   (run-flow target
-;;;             (list 'expand-struct 'expand-data 'flatten 'analyze 'dce 'layout 'check 'bind-labels 'encode)
+;;;             (list 'expand-struct 'expand-data 'flatten 'lower-code 'validate
+;;;                   'emit-unit 'layout 'check 'bind-labels 'encode 'emit-program)
 ;;;             '((rich-data . …) (program-items . …) (layout-spec . …)))
 ;;;
 ;;;   输入是 canonical native；没有可选别名层。
@@ -30,8 +31,8 @@
          (only-in "../flatten/flatten.rkt" flatten-inputs)
          (only-in "../externs.rkt" extern-names extern-rows)
          (only-in "../target.rkt" target-xlen)
-         (only-in "../analyze/analyze.rkt" analyze)
-         (only-in "../dce/dce.rkt" eliminate-dead)
+         (only-in "../frontend/blockify.rkt" blockify)
+         (only-in "../code/validate.rkt" validate-code)
          (only-in "../layout/layout.rkt" layout-program)
          (only-in "../check/check.rkt" check-layout)
          (only-in "../bind-labels/bind.rkt" bind-labels)
@@ -66,12 +67,12 @@
 ;;   program-items  扁平的程序 item（可以是 (module …) 嵌套）
 ;;   names          flatten 建的名字表（链 -> 位置）
 ;;   exports        flatten 记下的导出集合（绝对链列表，或 'all）
-;;   program        (struct program blocks flows)
+;;   code           前端产出的 (code (blocks ...) (falls ...))
 ;;   measured-layout 度量/检查产物（segments + anchors + problems）
 ;;   bound-layout    绑定产物（segments + anchors + symbols + problems）
 ;;   build           最终产物 (build (link …) (provides …) (structs …) (segment …) …)
 ;;
-;;   外部输入（seed）：rich-data / program-items / data-items / layout-spec
+;;   外部输入（seed）：code / rich-data / program-items / data-items / layout-spec
 ;; ---------------------------------------------------------------------------
 
 (struct stage (name requires provides run doc) #:transparent)
@@ -155,22 +156,26 @@
                   'module-requires module-requires))
           "模块展平 + 链式查表（程序和数据共享一张名字表）；顺带记下导出集合")
 
-   'analyze
-   (stage 'analyze '(program-items data-items) '(program)
+   'lower-code
+   (stage 'lower-code '((optional program-items) (optional code)) '(code)
           (lambda (_target in)
-            (hash 'program
-                  (analyze (hash-ref in 'program-items) (hash-ref in 'data-items))))
-          "控制流分析: item -> program(blocks + flows)；data 只贡献 roots")
+            (hash 'code
+                  (or (hash-ref in 'code #f)
+                      (and (hash-ref in 'program-items #f)
+                           (blockify (hash-ref in 'program-items)))
+                      (error 'flow "lower-code 需要 code 或 program-items"))))
+          "前端结构: 扁平 item -> code(blocks + falls)；不建 succ/root，不做 DCE")
 
-   'dce
-   (stage 'dce '(program) '(program)
-          (lambda (_target in) (hash 'program (eliminate-dead (hash-ref in 'program))))
-          "死代码消除（三个 pass 跑到不动点）")
+   'validate
+   (stage 'validate '(code) '(code)
+          (lambda (_target in)
+            (hash 'code (validate-code (hash-ref in 'code))))
+          "校验 code 的显式控制转移 arity/形状；不改代码")
 
    'emit-unit
    (stage 'emit-unit
-          '(program data-items
-                    (optional structs)
+          '(code data-items
+                 (optional structs)
                     (optional label-provides)
                     (optional struct-provides)
                     (optional module-requires))
@@ -178,7 +183,7 @@
           (lambda (target in)
             (hash 'unit
                   (make-unit target
-                             (hash-ref in 'program)
+                             (hash-ref in 'code)
                              (hash-ref in 'data-items)
                              (hash-ref in 'structs '())
                              (hash-ref in 'label-provides '())
@@ -187,12 +192,12 @@
           "布局前接口: 名字 / 模块可见性 / label kind / struct 声明；不含地址/offset")
 
    'layout
-   (stage 'layout '(program data-items layout-spec (optional externs))
+   (stage 'layout '(code data-items layout-spec (optional externs))
           '(measured-layout)
           (lambda (target in)
             (hash 'measured-layout
                   (layout-program target
-                                  (hash-ref in 'program)
+                                  (hash-ref in 'code)
                                   (hash-ref in 'data-items)
                                   (hash-ref in 'layout-spec)
                                   (extern-rows (hash-ref in 'externs '())))))
@@ -234,14 +239,14 @@
 
    'emit-program
    (stage 'emit-program
-          '(build (optional unit) program data-items
+          '(build (optional unit) code data-items
                   (optional extern-units)
                   (optional externs))
           '(program)
           (lambda (_target in)
             (hash 'program
                   (make-program (hash-ref in 'unit '())
-                                (hash-ref in 'program)
+                                (hash-ref in 'code)
                                 (hash-ref in 'data-items)
                                 (hash-ref in 'build)
                                 (hash-ref in 'extern-units '())
@@ -262,7 +267,7 @@
 
 ;; 默认流: canonical native。
 (define default-flow
-  '(load-units expand-struct expand-data flatten analyze dce emit-unit layout check bind-labels encode emit-program))
+  '(load-units expand-struct expand-data flatten lower-code validate emit-unit layout check bind-labels encode emit-program))
 
 ;; ---------------------------------------------------------------------------
 ;; 选择器: 层名 / 层组 / 任意片段
@@ -272,9 +277,8 @@
 ;; 组里只写层名; 想临时组合就直接写列表, 不必先定义组。
 (define stage-groups
   (hash
-   'frontend '(load-units expand-struct expand-data flatten)
-   'ir       '(analyze dce emit-unit)
-   'backend  '(layout check bind-labels encode emit-program)
+   'frontend '(load-units expand-struct expand-data flatten lower-code)
+   'backend  '(validate emit-unit layout check bind-labels encode emit-program)
    'all      default-flow))
 
 (define (group-names)
@@ -291,10 +295,10 @@
 
 ;; selector -> 扁平层名列表
 ;;
-;;   'analyze                单层
+;;   'validate               单层
 ;;   'frontend               层组
-;;   '(frontend ir backend)  多个层/组, 按顺序展开
-;;   '((analyze dce))        任意片段; 嵌套列表也按顺序展开
+;;   '(frontend backend)     多个层/组, 按顺序展开
+;;   '((expand-data flatten)) 任意片段; 嵌套列表也按顺序展开
 ;;
 ;; 返回的列表仍然由 run-flow 按顺序执行, 所以"层组"只是写法, 没有额外语义。
 (define (select-stages selector)

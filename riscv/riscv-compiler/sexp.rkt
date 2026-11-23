@@ -10,7 +10,7 @@
 ;;; expand-data 生产、layout 消费，两边用同一个边界。
 ;;;
 ;;; 各层可以原样 re-provide 这里的绑定, 于是
-;;;   (require "analyze/analyze.rkt" "layout/layout.rkt")
+;;;   (require "code.rkt" "layout/layout.rkt")
 ;;; 不会再因为两边都 provide as-items 而冲突 —— 它们是同一个绑定。
 
 (provide form?

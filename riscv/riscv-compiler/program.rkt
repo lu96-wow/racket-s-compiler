@@ -25,7 +25,7 @@
          "sexp.rkt"
          "meta.rkt"
          "unit.rkt"
-         (only-in "analyze/analyze.rkt" program-blocks)
+         (only-in "code.rkt" code-blocks block-head block-items)
          (only-in "externs.rkt" extern-link-tables))
 
 (provide make-program
@@ -77,9 +77,9 @@
     (define body (cadr run))
     (cons 'data (cons labels body))))
 
-(define (program-blocks->functions program)
-  (for/list ([b (in-list (program-blocks program))])
-    (list 'function (cadr b) (cons 'body (cddr b)))))
+(define (code-blocks->functions code)
+  (for/list ([b (in-list (code-blocks code))])
+    (list 'function (block-head b) (cons 'body (block-items b)))))
 
 ;; ---------------------------------------------------------------------------
 ;; 外部声明
@@ -115,7 +115,7 @@
 ;; internal / external
 ;; ---------------------------------------------------------------------------
 
-(define (internal-unit unit program data-items build)
+(define (internal-unit unit code data-items build)
   (define decls-row (and (pair? unit) (assq 'declarations (cdr unit))))
   (define decls (if decls-row (cdr decls-row) '()))
   (define base (link-base build))
@@ -132,7 +132,7 @@
                                  #:when (eq? (car d) 'struct))
                         d)
                       (data-runs->sexp data-items)))
-        (cons 'functions (program-blocks->functions program))
+        (cons 'functions (code-blocks->functions code))
         (cons 'offsets
               (for/list ([row (in-list (link-rows build))])
                 (list 'offset (cadr row)
@@ -173,9 +173,9 @@
 ;; 入口
 ;; ---------------------------------------------------------------------------
 
-(define (make-program unit program data-items build extern-units externs)
+(define (make-program unit code data-items build extern-units externs)
   (list 'program
-        (internal-unit unit program data-items build)
+        (internal-unit unit code data-items build)
         (external-section extern-units externs)))
 
 (define (program-internal p)
