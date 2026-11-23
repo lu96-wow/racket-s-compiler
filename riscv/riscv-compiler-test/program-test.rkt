@@ -53,14 +53,14 @@
 (check-equal? (cdr (assoc 'functions (cdr a-internal)))
               '((function ((a f)) (body (jalr x0 ra 0)))))
 
-(check-equal? (cdr (assoc 'addresses (cdr a-internal)))
-              '((address (a f) 4096)
-                (address (d table) 8192)))
+(check-equal? (cdr (assoc 'offsets (cdr a-internal)))
+              '((offset (a f) 4096)
+                (offset (d table) 8192)))
 
 (check-equal? (cdr (assoc 'modules (cdr a-external))) '())
 (check-equal? (cdr (assoc 'rich-data (cdr a-external))) '())
 (check-equal? (cdr (assoc 'functions (cdr a-external))) '())
-(check-equal? (cdr (assoc 'addresses (cdr a-external))) '())
+(check-equal? (cdr (assoc 'offsets (cdr a-external))) '())
 
 ;; B 用 extern-units 消费 A：internal 只有 b，external 有 a。
 (define a-build (flow-value a-ctx 'build))
@@ -90,8 +90,8 @@
 (check-equal? (cdr (assoc 'modules (cdr b-internal))) '((module b (base #x80002000) (require (a)))))
 (check-equal? (cdr (assoc 'functions (cdr b-internal)))
               '((function ((b main)) (body (jal x0 (a f))))))
-(check-equal? (cdr (assoc 'addresses (cdr b-internal)))
-              '((address (b main) 0)))
+(check-equal? (cdr (assoc 'offsets (cdr b-internal)))
+              '((offset (b main) 0)))
 
 (check-equal? (cdr (assoc 'modules (cdr b-external)))
               '((module a
@@ -100,7 +100,7 @@
                   (provide (struct (point) (a point))))))
 (check-equal? (cdr (assoc 'functions (cdr b-external)))
               '((function (a f))))
-(check-equal? (cdr (assoc 'addresses (cdr b-external)))
-              '((address (a f) 4096)))
+(check-equal? (cdr (assoc 'offsets (cdr b-external)))
+              '((offset (a f) 4096)))
 
 (finish-tests "program")

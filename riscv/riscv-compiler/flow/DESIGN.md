@@ -25,7 +25,7 @@
 | `measured-layout` | segments + anchors + problems | `layout` / `check` |
 | `bound-layout` | measured + symbols | `bind-labels` |
 | `build` | link + provides + structs + label/struct provides + unit + 每段字节 | `encode` |
-| `program` | `(program (internal …) (external …))`；根 module 带 base，addresses 是相对地址 | `emit-program` |
+| `program` | `(program (internal …) (external …))`；根 module 带 base，offsets 是相对地址 | `emit-program` |
 
 ## stage 表
 

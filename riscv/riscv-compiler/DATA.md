@@ -170,9 +170,9 @@ struct 声明会在这一步按当前 target 重新算 offset/size。
         (provide ...)))
     (rich-data ...)
     (functions ...)
-    (addresses
-      (address (main f) #x1000)
-      (address (main table) #x2000)))
+    (offsets
+      (offset (main f) #x1000)
+      (offset (main table) #x2000)))
   (external
     (modules
       (module lib
@@ -180,15 +180,15 @@ struct 声明会在这一步按当前 target 重新算 offset/size。
         (provide ...)))
     (rich-data ...)
     (functions ...)
-    (addresses
-      (address (lib g) #x100))))
+    (offsets
+      (offset (lib g) #x100))))
 ```
 
 - `internal.modules` 是一个根 module（一个项目一个根）；多个顶层 module 时根是 `(module ())`。
 - `external.modules` 每个外部项目一个根 module；`require` 写在 module 里，不需要 `project-require`。
 - **base 是项目根 module 的属性**。
-- **addresses 里的地址是相对该项目 base 的偏移**。
-- 绝对地址 = 项目根 module 的 `base` + `addresses` 里的偏移。
+- **offsets 里是相对该项目 base 的偏移**。
+- 绝对地址 = 项目根 module 的 `base` + `offsets` 里的偏移。
 - `internal.modules` 是 `provide` / `require` 的唯一来源。
 - 数据对象是 `(data (链 ...) item ...)`；函数是 `(function (链 ...) (body item ...))`。
 

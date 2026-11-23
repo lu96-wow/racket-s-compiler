@@ -10,15 +10,15 @@
 ;;;         (module main (base B) ...))
 ;;;       (rich-data ...)
 ;;;       (functions ...)
-;;;       (addresses (address (main f) offset) ...))
+;;;       (offsets (offset (main f) offset) ...))
 ;;;     (external
 ;;;       (modules
 ;;;         (module lib (base B) ...))
 ;;;       (rich-data ...)
 ;;;       (functions ...)
-;;;       (addresses (address (lib g) offset) ...)))
+;;;       (offsets (offset (lib g) offset) ...)))
 ;;;
-;;; base 属于项目根 module；addresses 存相对 base 的偏移。
+;;; base 属于项目根 module；offsets 存相对 base 的偏移。
 ;;; internal 是本程序定义的；external 是本程序引用但不在本程序里的。
 
 (require racket/list
@@ -99,7 +99,7 @@
       (list 'function (cadr d))))
   (values function-decls data-decls struct-decls))
 
-(define (external-addresses tables names)
+(define (external-offsets tables names)
   (define allowed (make-hash))
   (for ([n (in-list names)]) (hash-set! allowed n #t))
   (append*
@@ -108,7 +108,7 @@
      (define rows (cdr t))
      (for/list ([row (in-list rows)]
                 #:when (hash-ref allowed (cadr row) #f))
-       (list 'address (cadr row)
+       (list 'offset (cadr row)
              (and (caddr row) (- (caddr row) base)))))))
 
 ;; ---------------------------------------------------------------------------
@@ -133,9 +133,9 @@
                         d)
                       (data-runs->sexp data-items)))
         (cons 'functions (program-blocks->functions program))
-        (cons 'addresses
+        (cons 'offsets
               (for/list ([row (in-list (link-rows build))])
-                (list 'address (cadr row)
+                (list 'offset (cadr row)
                       (- (caddr row) base-value))))))
 
 (define (external-section extern-units externs)
@@ -167,7 +167,7 @@
         (cons 'modules roots)
         (cons 'rich-data (append structs data))
         (cons 'functions functions)
-        (cons 'addresses (external-addresses tables names))))
+        (cons 'offsets (external-offsets tables names))))
 
 ;; ---------------------------------------------------------------------------
 ;; 入口

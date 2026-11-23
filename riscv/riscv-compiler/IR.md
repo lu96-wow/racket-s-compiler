@@ -64,7 +64,7 @@
 | `label-provides` | `(label-provides (module (a) (provide 外部链 绝对链) …) …)`；按模块的 label 导出表 |
 | `struct-provides` | 同上，只是 struct 名字空间 |
 | `unit` | `(unit (format 1) (target …) (modules …) (declarations …))`；布局前接口 |
-| `program` | `(program (internal …) (external …))`；根 module 带 `(base B)`，addresses 存相对 base 的偏移 |
+| `program` | `(program (internal …) (external …))`；根 module 带 `(base B)`，offsets 存相对 base 的偏移 |
 | `build` | `(build (link …) (provides …) (structs …) (label-provides …) (struct-provides …) (unit …) (segment …) …)` |
 | link 文件 | `link-file.rkt` 把 link 按 provides 过滤后写成**单独一个文件**，形状同 `(link …)`，可直接当下一份的输入 |
 
